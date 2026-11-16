@@ -27,6 +27,33 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
         )
     }
 
+    static func isMainWindowCandidate(_ window: NSWindow) -> Bool {
+        guard !(window is NSPanel), window.canBecomeMain else { return false }
+        let identifier = window.identifier?.rawValue ?? ""
+        if identifier == "main" || identifier.hasPrefix("main-") {
+            return true
+        }
+        if identifier.localizedCaseInsensitiveContains("settings")
+            || identifier.localizedCaseInsensitiveContains("sparkle") {
+            return false
+        }
+        let className = NSStringFromClass(type(of: window))
+        if className.localizedCaseInsensitiveContains("Settings")
+            || className.hasPrefix("SPU")
+            || className.hasPrefix("SU") {
+            return false
+        }
+        if let controller = window.windowController {
+            let controllerClass = NSStringFromClass(type(of: controller))
+            if controllerClass.hasPrefix("SPU")
+                || controllerClass.hasPrefix("SU")
+                || controllerClass.localizedCaseInsensitiveContains("Settings") {
+                return false
+            }
+        }
+        return true
+    }
+
     func showMainWindow() {
         Self.logger.info(
             "showMainWindow requested. mainWindow exists=\(self.mainWindow != nil)"
@@ -41,10 +68,8 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
             return
         }
 
-        // Fallback: search for a candidate window in NSApplication.shared.windows
-        if let window = NSApplication.shared.windows.first(where: {
-            !($0 is NSPanel) && $0.canBecomeMain
-        }) {
+        // Fallback: search for a candidate main window (excluding Settings/Sparkle).
+        if let window = NSApplication.shared.windows.first(where: Self.isMainWindowCandidate) {
             registerMainWindow(window)
             if window.isMiniaturized {
                 window.deminiaturize(nil)

@@ -244,7 +244,7 @@ struct CommandPaletteView: View {
                 title: AppLocalization.string("Test latency"),
                 subtitle: proxyGroupDisplayName(group.name),
                 symbol: "bolt",
-                isEnabled: !tunnel.proxyLatencyRequests.contains(group.name),
+                isEnabled: !tunnel.latencyStore.proxyLatencyRequests.contains(group.name),
                 perform: { Task { await tunnel.testProxyLatency(group: group.name) } }
             ))
             let selected = tunnel.proxySelections[group.name]?.selectedMember

@@ -51,7 +51,7 @@ struct BypassRulesSection: View {
                         : "checkmark.circle"
                 )
                 .font(.callout)
-                .foregroundStyle(tunnel.bypassPolicyMessageIsError ? .red : .green)
+                .foregroundStyle(AetherReadableTint(color: tunnel.bypassPolicyMessageIsError ? .red : .green))
                 .transition(.opacity)
             }
 

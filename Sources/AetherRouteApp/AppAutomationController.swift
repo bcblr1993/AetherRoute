@@ -53,7 +53,7 @@ final class AppAutomationController: ObservableObject {
     private let shortcutStore: AppAutomationPreferenceStore
     private let networkAutomationStore: NetworkAutomationPreferenceStore
     private let userDefaults: UserDefaults
-    private let notificationCenter: UNUserNotificationCenter
+    private let notificationCenter: UNUserNotificationCenter?
     private let isUIReviewMode: Bool
     private var hotKeyRegistrar: GlobalHotKeyRegistrar?
     private var stateObservation: AnyCancellable?
@@ -63,15 +63,19 @@ final class AppAutomationController: ObservableObject {
     private var proxySwitchObservation: AnyCancellable?
     private var licenseRefreshTask: Task<Void, Never>?
     private var networkEnvironmentTask: Task<Void, Never>?
-    private var lastEvaluatedEnvironment: NetworkEnvironmentSnapshot?
+    private(set) var lastEvaluatedEnvironment: NetworkEnvironmentSnapshot?
     private var previousTunnelState: TunnelManager.State
+
+    private static func defaultNotificationCenter() -> UNUserNotificationCenter? {
+        Bundle.main.bundleURL.pathExtension == "app" ? .current() : nil
+    }
 
     init(
         tunnel: TunnelManager,
         distribution: IndependentDistributionController,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         userDefaults: UserDefaults = .standard,
-        notificationCenter: UNUserNotificationCenter = .current()
+        notificationCenter: UNUserNotificationCenter? = AppAutomationController.defaultNotificationCenter()
     ) {
         self.tunnel = tunnel
         self.distribution = distribution
@@ -268,36 +272,53 @@ final class AppAutomationController: ObservableObject {
         }
     }
 
-    private func evaluateNetworkAutomationIfNeeded(force: Bool) {
-        guard !isUIReviewMode else { return }
-        let snapshot = PhysicalUplinkDetector.currentNetworkEnvironment()
+    func evaluateNetworkAutomationIfNeeded(
+        force: Bool,
+        environmentOverride: NetworkEnvironmentSnapshot? = nil
+    ) {
+        guard !isUIReviewMode || environmentOverride != nil else { return }
+        let snapshot = environmentOverride ?? PhysicalUplinkDetector.currentNetworkEnvironment()
         currentNetworkEnvironment = snapshot
         guard networkAutomationPreferences.isEnabled, let snapshot else { return }
         if !force, lastEvaluatedEnvironment == snapshot {
             return
         }
-        lastEvaluatedEnvironment = snapshot
         guard let action = networkAutomationPreferences.matchedAction(for: snapshot) else {
+            lastEvaluatedEnvironment = snapshot
             return
         }
         switch action {
         case let .setRoutingMode(mode):
-            guard tunnel.routingMode != mode, tunnel.canChangeRoutingMode else { return }
-            Task { await tunnel.setRoutingMode(mode) }
+            if tunnel.routingMode != mode {
+                guard tunnel.canChangeRoutingMode else { return }
+                Task { await tunnel.setRoutingMode(mode) }
+            }
+            lastEvaluatedEnvironment = snapshot
         case .connect:
-            guard !tunnel.isEnabled, tunnel.canPerformPrimaryAction else { return }
-            Task { await tunnel.setEnabled(true) }
+            if !tunnel.isEnabled {
+                guard tunnel.canPerformPrimaryAction else { return }
+                Task { await tunnel.setEnabled(true) }
+            }
+            lastEvaluatedEnvironment = snapshot
         case .disconnect:
-            guard tunnel.isEnabled, tunnel.canPerformPrimaryAction else { return }
-            Task { await tunnel.setEnabled(false) }
+            if tunnel.isEnabled {
+                guard tunnel.canPerformPrimaryAction else { return }
+                Task { await tunnel.setEnabled(false) }
+            }
+            lastEvaluatedEnvironment = snapshot
         case let .switchProfile(profileID):
-            guard tunnel.activeProfileID != profileID,
-                  tunnel.profiles.contains(where: { $0.id == profileID }),
-                  tunnel.canModifyProfiles else { return }
-            Task { await tunnel.activateProfile(id: profileID) }
+            if tunnel.activeProfileID != profileID,
+               tunnel.profiles.contains(where: { $0.id == profileID }) {
+                guard tunnel.canActivateProfile else { return }
+                Task { await tunnel.activateProfile(id: profileID) }
+            }
+            lastEvaluatedEnvironment = snapshot
         case let .setEngineMode(mode):
-            guard tunnel.networkEngineMode != mode, tunnel.canChangeNetworkEngine else { return }
-            Task { await tunnel.setNetworkEngineMode(mode) }
+            if tunnel.networkEngineMode != mode {
+                guard tunnel.canChangeNetworkEngine else { return }
+                Task { await tunnel.setNetworkEngineMode(mode) }
+            }
+            lastEvaluatedEnvironment = snapshot
         }
     }
 
@@ -311,9 +332,14 @@ final class AppAutomationController: ObservableObject {
         if !isEnabled {
             subscriptionNotificationsEnabled = false
             userDefaults.set(false, forKey: Self.subscriptionNotificationsPreferenceKey)
-            notificationCenter.removePendingNotificationRequests(
+            notificationCenter?.removePendingNotificationRequests(
                 withIdentifiers: [Self.subscriptionNotificationIdentifier]
             )
+            return
+        }
+        guard let notificationCenter else {
+            subscriptionNotificationsEnabled = false
+            notificationPermission = .unavailable
             return
         }
         let granted: Bool
@@ -342,9 +368,14 @@ final class AppAutomationController: ObservableObject {
         if !isEnabled {
             proxySwitchNotificationsEnabled = false
             userDefaults.set(false, forKey: Self.proxySwitchNotificationsPreferenceKey)
-            notificationCenter.removeDeliveredNotifications(
+            notificationCenter?.removeDeliveredNotifications(
                 withIdentifiers: [Self.proxySwitchNotificationIdentifier]
             )
+            return
+        }
+        guard let notificationCenter else {
+            proxySwitchNotificationsEnabled = false
+            notificationPermission = .unavailable
             return
         }
         let granted: Bool
@@ -378,7 +409,7 @@ final class AppAutomationController: ObservableObject {
             content.body = AppLocalization.string("Your preferred node answers again and carries traffic once more.")
         }
         // One entry in Notification Center, replaced by the next switch.
-        notificationCenter.add(UNNotificationRequest(
+        notificationCenter?.add(UNNotificationRequest(
             identifier: Self.proxySwitchNotificationIdentifier,
             content: content,
             trigger: nil
@@ -421,7 +452,7 @@ final class AppAutomationController: ObservableObject {
         content.title = title
         content.body = AppLocalization.string("Open AetherRoute to see your subscription details.")
         content.sound = .default
-        notificationCenter.add(UNNotificationRequest(
+        notificationCenter?.add(UNNotificationRequest(
             identifier: Self.subscriptionNotificationIdentifier,
             content: content,
             trigger: nil
@@ -438,10 +469,16 @@ final class AppAutomationController: ObservableObject {
         if !isEnabled {
             notificationsEnabled = false
             userDefaults.set(false, forKey: Self.notificationsPreferenceKey)
-            notificationCenter.removePendingNotificationRequests(
+            notificationCenter?.removePendingNotificationRequests(
                 withIdentifiers: [Self.notificationIdentifier]
             )
             await refreshNotificationAuthorization()
+            return
+        }
+
+        guard let notificationCenter else {
+            notificationsEnabled = false
+            notificationPermission = .unavailable
             return
         }
 
@@ -523,6 +560,10 @@ final class AppAutomationController: ObservableObject {
     }
 
     private func refreshNotificationAuthorization() async {
+        guard let notificationCenter else {
+            notificationPermission = .unavailable
+            return
+        }
         let settings = await notificationCenter.notificationSettings()
         switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
@@ -597,7 +638,76 @@ final class AppAutomationController: ObservableObject {
             content: content,
             trigger: nil
         )
-        notificationCenter.add(request)
+        notificationCenter?.add(request)
+    }
+}
+
+private final class HotKeyRegistrationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private weak var registrar: GlobalHotKeyRegistrar?
+    private var hotKeys: [EventHotKeyRef] = []
+    private var eventHandler: EventHandlerRef?
+    private var retainedContext: Unmanaged<HotKeyRegistrationBox>?
+
+    init(registrar: GlobalHotKeyRegistrar) {
+        self.registrar = registrar
+    }
+
+    func install(eventHandler: EventHandlerRef, retainedContext: Unmanaged<HotKeyRegistrationBox>) {
+        lock.lock()
+        self.eventHandler = eventHandler
+        self.retainedContext = retainedContext
+        lock.unlock()
+    }
+
+    func appendHotKey(_ hotKey: EventHotKeyRef) {
+        lock.lock()
+        hotKeys.append(hotKey)
+        lock.unlock()
+    }
+
+    func dispatch(identifier: UInt32) {
+        let target: GlobalHotKeyRegistrar? = lock.lockAndRun { registrar }
+        Task { @MainActor [weak target] in
+            target?.receive(identifier: identifier)
+        }
+    }
+
+    func unregisterAll() {
+        let (keys, handler, context): ([EventHotKeyRef], EventHandlerRef?, Unmanaged<HotKeyRegistrationBox>?) = lock.lockAndRun {
+            let k = hotKeys
+            let h = eventHandler
+            let c = retainedContext
+            hotKeys.removeAll(keepingCapacity: false)
+            eventHandler = nil
+            retainedContext = nil
+            return (k, h, c)
+        }
+        if Thread.isMainThread {
+            keys.forEach { UnregisterEventHotKey($0) }
+            if let handler {
+                RemoveEventHandler(handler)
+            }
+            context?.release()
+        } else {
+            nonisolated(unsafe) let mainKeys = keys
+            nonisolated(unsafe) let mainHandler = handler
+            DispatchQueue.main.async {
+                mainKeys.forEach { UnregisterEventHotKey($0) }
+                if let mainHandler {
+                    RemoveEventHandler(mainHandler)
+                }
+                context?.release()
+            }
+        }
+    }
+}
+
+private extension NSLock {
+    func lockAndRun<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
     }
 }
 
@@ -606,12 +716,15 @@ private final class GlobalHotKeyRegistrar {
     private static let signature: OSType = 0x4145_5448 // AETH
 
     private let actionHandler: (GlobalShortcutAction) -> Void
-    private var eventHandler: EventHandlerRef?
-    private var hotKeys: [EventHotKeyRef] = []
+    private var box: HotKeyRegistrationBox?
     private var actionsByIdentifier: [UInt32: GlobalShortcutAction] = [:]
 
     init(actionHandler: @escaping (GlobalShortcutAction) -> Void) {
         self.actionHandler = actionHandler
+    }
+
+    deinit {
+        box?.unregisterAll()
     }
 
     /// Returns the first key the system refused to register.
@@ -620,21 +733,27 @@ private final class GlobalHotKeyRegistrar {
     ) -> GlobalShortcutKey? {
         unregisterAll()
 
+        let registrationBox = HotKeyRegistrationBox(registrar: self)
+        let retained = Unmanaged.passRetained(registrationBox)
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
+        var installedHandler: EventHandlerRef?
         let installStatus = InstallEventHandler(
             GetApplicationEventTarget(),
             aetherRouteGlobalHotKeyHandler,
             1,
             &eventType,
-            Unmanaged.passUnretained(self).toOpaque(),
-            &eventHandler
+            retained.toOpaque(),
+            &installedHandler
         )
-        guard installStatus == noErr else {
+        guard installStatus == noErr, let installedHandler else {
+            retained.release()
             return preferences[.toggleConnection]
         }
+        registrationBox.install(eventHandler: installedHandler, retainedContext: retained)
+        box = registrationBox
 
         for (offset, action) in GlobalShortcutAction.allCases.enumerated() {
             let identifier = UInt32(offset + 1)
@@ -655,20 +774,16 @@ private final class GlobalHotKeyRegistrar {
                 unregisterAll()
                 return key
             }
-            hotKeys.append(reference)
+            registrationBox.appendHotKey(reference)
             actionsByIdentifier[identifier] = action
         }
         return nil
     }
 
     func unregisterAll() {
-        hotKeys.forEach { UnregisterEventHotKey($0) }
-        hotKeys.removeAll(keepingCapacity: false)
+        box?.unregisterAll()
+        box = nil
         actionsByIdentifier.removeAll(keepingCapacity: false)
-        if let eventHandler {
-            RemoveEventHandler(eventHandler)
-            self.eventHandler = nil
-        }
     }
 
     func receive(identifier: UInt32) {
@@ -695,16 +810,10 @@ private func aetherRouteGlobalHotKeyHandler(
     )
     guard status == noErr else { return status }
 
-    let address = UInt(bitPattern: userData)
-    Task { @MainActor in
-        guard let pointer = UnsafeMutableRawPointer(bitPattern: address) else {
-            return
-        }
-        Unmanaged<GlobalHotKeyRegistrar>
-            .fromOpaque(pointer)
-            .takeUnretainedValue()
-            .receive(identifier: identifier.id)
-    }
+    let registrationBox = Unmanaged<HotKeyRegistrationBox>
+        .fromOpaque(userData)
+        .takeUnretainedValue()
+    registrationBox.dispatch(identifier: identifier.id)
     return noErr
 }
 

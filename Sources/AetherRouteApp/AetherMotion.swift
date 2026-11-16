@@ -130,7 +130,7 @@ struct AetherCopyButton: View {
                     .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                     // Only the confirmation is tinted; otherwise the icon
                     // inherits the button's style, including its disabled dim.
-                    .foregroundStyle(didCopy ? AnyShapeStyle(Color.green) : AnyShapeStyle(ForegroundStyle()))
+                    .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(ForegroundStyle()))
             }
         }
         .animation(reduceMotion ? nil : AetherVisual.quickFade, value: didCopy)

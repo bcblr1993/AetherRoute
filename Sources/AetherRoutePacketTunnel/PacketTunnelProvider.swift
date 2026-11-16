@@ -59,6 +59,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let uplinkLock = NSLock()
     private let recipeLock = NSLock()
     private var activeRecipe: TunnelRecipe?
+    private var cachedSummary: (digest: String, summary: ProfileConfigurationSummary)?
     private var physicalInterfaces: [NWInterface] = []
     // Accessed only on the recovery coordinator's serial queue.
     private var resetLedger = UplinkResetLedger()
@@ -121,7 +122,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         options: [String: NSObject]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        uplinkLock.withLock { providerStopping = false }
+        uplinkLock.withLock {
+            providerStopping = false
+            lastPathSignature = nil
+        }
+        resetLedger.invalidate()
         Self.runtimeLogger.info("stage=startTunnel requested")
         let completion = TunnelStartCompletion(completionHandler)
         do {
@@ -234,7 +239,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         )
         stopPathMonitoring()
         dataPlaneSampler.stop()
-        uplinkLock.withLock { providerStopping = true }
+        uplinkLock.withLock {
+            providerStopping = true
+            lastPathSignature = nil
+        }
+        resetLedger.invalidate()
         recipeLock.withLock { activeRecipe = nil }
         recovery.cancel(reason: "stopTunnel")
         // macOS keeps the tunnel's interface, routes and DNS installed until
@@ -476,8 +485,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             cachedPathInterfaces: cached
         )
         let signature = PhysicalUplinkDetector.pathSignature(store: store, uplink: uplink)
-        let previous = lastPathSignature
-        lastPathSignature = signature
+        let previous = uplinkLock.withLock { () -> String? in
+            let prev = lastPathSignature
+            lastPathSignature = signature
+            return prev
+        }
         guard let previous, previous != signature else { return }
         Self.runtimeLogger.info(
             "stage=physicalUplinkChanged scheduling recovery reason=\(reason, privacy: .public) signature=\(signature, privacy: .public) previous=\(previous, privacy: .public)"
@@ -620,6 +632,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         return .diagnosticLogLevelApplied
     }
 
+    private func cachedProfileSummary(for yaml: String) -> ProfileConfigurationSummary {
+        let digest = ProxySelectionStore.profileDigest(yaml: yaml)
+        if let existing = recipeLock.withLock({ cachedSummary }), existing.digest == digest {
+            return existing.summary
+        }
+        let inspected = ProfileConfigurationInspector.inspect(yaml: yaml)
+        recipeLock.withLock {
+            cachedSummary = (digest: digest, summary: inspected)
+        }
+        return inspected
+    }
+
     private func handleTraceRoute(
         _ request: RouteTraceRequest,
         core: any CoreBridge
@@ -627,7 +651,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         let snapshot = recipeLock.withLock { activeRecipe?.snapshot }
         let mode = uplinkLock.withLock { recoveryRoutingMode }
         let profileYAML = snapshot?.profileYAML
-        let summary = profileYAML.map { ProfileConfigurationInspector.inspect(yaml: $0) }
+        let summary = profileYAML.map { cachedProfileSummary(for: $0) }
         var liveSelections = snapshot?.proxySelections ?? [:]
         if let summary {
             for group in summary.proxyGroups {
@@ -646,7 +670,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             summary: summary,
             proxySelections: liveSelections,
             customRules: customRules,
+            customHosts: request.customHosts,
             geoSiteData: snapshot?.routingResources[.geoSite],
+            countryMMDBData: snapshot?.routingResources[.countryMMDB],
+            asnMMDBData: snapshot?.routingResources[.asnMMDB],
+            resolvedAddresses: request.resolvedAddresses,
             source: .liveProvider
         )
         return .traceRoute(result)
@@ -682,6 +710,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             if !payloadData.isEmpty {
                 Self.runtimeLogger.info("stage=handleReloadProfile decoding payload from message")
                 let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
+                let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? diagnosticLogLevel
+                if reloadPayload.diagnosticLogLevel != nil {
+                    DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
+                    uplinkLock.withLock { launchDiagnosticLogLevel = effectiveDiagnosticLevel }
+                }
                 let resourceStore = RoutingResourceStore(
                     applicationSupportDirectory: store.directoryURL
                 )
@@ -696,7 +729,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     proxySelections: reloadPayload.proxySelections,
                     routingResources: resources,
                     fakeIPCacheKey: fakeIPCacheKey,
-                    diagnosticLogLevel: diagnosticLogLevel
+                    diagnosticLogLevel: effectiveDiagnosticLevel
                 )
             } else {
                 Self.runtimeLogger.info("stage=handleReloadProfile loading active profile from store")
@@ -743,6 +776,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 bypassPlan: bypassPlan
             )
 
+            guard !uplinkLock.withLock({ providerStopping }) else {
+                completion(.failure(.unavailable))
+                return
+            }
             Self.runtimeLogger.info("stage=handleReloadProfile stopping current core")
             let oldCore = currentCore()
             oldCore.stop { [weak self] in
@@ -750,16 +787,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     completion(.failure(.unavailable))
                     return
                 }
+                guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    completion(.failure(.unavailable))
+                    return
+                }
                 Self.runtimeLogger.info("stage=handleReloadProfile starting replacement core")
                 let newCore = RustCoreBridge(packetFlow: self.packetFlow)
                 _ = self.swapCore(with: newCore)
+                guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    newCore.stop { completion(.failure(.unavailable)) }
+                    return
+                }
                 do {
                     try newCore.start(
                         configuration: configuration,
                         snapshot: snapshot
                     ) { [weak self] coreError in
                         guard let self else {
-                            completion(.failure(.unavailable))
+                            newCore.stop { completion(.failure(.unavailable)) }
+                            return
+                        }
+                        if self.uplinkLock.withLock({ self.providerStopping }) {
+                            newCore.stop { completion(.failure(.unavailable)) }
                             return
                         }
                         if let coreError {
@@ -779,7 +828,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         let settings = self.makeNetworkSettings(settingsPlan)
                         self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
                             guard let self else {
-                                completion(.failure(.unavailable))
+                                newCore.stop { completion(.failure(.unavailable)) }
+                                return
+                            }
+                            if self.uplinkLock.withLock({ self.providerStopping }) {
+                                newCore.stop { completion(.failure(.unavailable)) }
                                 return
                             }
                             if let settingsError {
@@ -845,6 +898,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         triggerError: Error,
         completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
     ) {
+        guard !uplinkLock.withLock({ providerStopping }) else {
+            completion(.failure(.unavailable))
+            return
+        }
         guard let previousRecipe else {
             Self.runtimeLogger.error("stage=handleReloadProfile rollbackFailed reason=missingPreviousRecipe")
             completion(.failure(.internalFailure))
@@ -854,13 +911,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         Self.runtimeLogger.info("stage=handleReloadProfile rollingBackToPreviousRecipe")
         let rollbackCore = RustCoreBridge(packetFlow: packetFlow)
         _ = swapCore(with: rollbackCore)
+        guard !uplinkLock.withLock({ providerStopping }) else {
+            rollbackCore.stop { completion(.failure(.unavailable)) }
+            return
+        }
         do {
             try rollbackCore.start(
                 configuration: previousRecipe.configuration,
                 snapshot: previousRecipe.snapshot
             ) { [weak self] rollbackError in
-                guard let self else {
-                    completion(.failure(.unavailable))
+                guard let self, !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    rollbackCore.stop { completion(.failure(.unavailable)) }
                     return
                 }
                 if let rollbackError {

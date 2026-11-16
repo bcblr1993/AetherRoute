@@ -108,7 +108,7 @@ enum AetherVisual {
     /// The edge of a card or callout that a state colours.
     static func tintBorder(_ color: Color) -> Color { color.opacity(0.4) }
     /// Behind a floating overlay (command palette).
-    static let scrimFill = Color.black.opacity(0.12)
+    static let scrimFill = Color.black.opacity(0.20)
     /// Secondary text on a row drawn with the accent selection.
     static let selectedSecondaryText = Color.white.opacity(0.82)
     /// The drawn connection switch: its track when off, its knob's edge.
@@ -717,6 +717,192 @@ struct AetherFilterBarLayout: Layout {
             anchor: .trailing,
             proposal: ProposedViewSize(width: split.search, height: nil)
         )
+    }
+}
+
+/// Two-item footer layout (leading button, trailing badge/version): keeps both
+/// on one line when they fit, or stacks vertically without `ViewThatFits` duplication.
+struct AetherWrapPairLayout: Layout {
+    var horizontalGap: CGFloat = AetherVisual.s2
+    var verticalGap: CGFloat = AetherVisual.s1
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count >= 2 else {
+            return subviews.first?.sizeThatFits(proposal) ?? .zero
+        }
+        let first = subviews[0].sizeThatFits(.unspecified)
+        let second = subviews[1].sizeThatFits(.unspecified)
+        let inlineHeight = max(first.height, second.height)
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            return CGSize(width: 0, height: inlineHeight)
+        }
+        if first.width + horizontalGap + second.width <= width {
+            return CGSize(width: width, height: inlineHeight)
+        }
+        return CGSize(width: width, height: first.height + verticalGap + second.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count >= 2 else {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+            return
+        }
+        let first = subviews[0].sizeThatFits(.unspecified)
+        let second = subviews[1].sizeThatFits(.unspecified)
+        if first.width + horizontalGap + second.width <= bounds.width {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+        } else {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), anchor: .topLeading, proposal: .unspecified)
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX + AetherVisual.sCompact, y: bounds.minY + first.height + verticalGap),
+                anchor: .topLeading,
+                proposal: .unspecified
+            )
+        }
+    }
+}
+
+/// Single-instantiation 4-child memory status strip (`[heading, coreWell, appWell, totalFooter]`):
+/// avoids `ViewThatFits` instantiating duplicate `@ObservedObject` telemetry leaves.
+struct AetherMemoryStripLayout: Layout {
+    var forceStacked: Bool = false
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count >= 4 else { return .zero }
+        let heading = subviews[0].sizeThatFits(.unspecified)
+        let core = subviews[1].sizeThatFits(.unspecified)
+        let app = subviews[2].sizeThatFits(.unspecified)
+        let total = subviews[3].sizeThatFits(.unspecified)
+        let inlineHeight = max(heading.height, core.height, app.height, total.height)
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            return CGSize(width: 0, height: inlineHeight)
+        }
+        let neededInline = heading.width + AetherVisual.s4 + core.width + AetherVisual.s4 + app.width + AetherVisual.s2 + total.width
+        if !forceStacked && neededInline <= width {
+            return CGSize(width: width, height: inlineHeight)
+        }
+        let row1Height = max(heading.height, total.height)
+        let row2Height = max(core.height, app.height)
+        return CGSize(width: width, height: row1Height + AetherVisual.s2 + row2Height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count >= 4 else { return }
+        let heading = subviews[0].sizeThatFits(.unspecified)
+        let core = subviews[1].sizeThatFits(.unspecified)
+        let app = subviews[2].sizeThatFits(.unspecified)
+        let total = subviews[3].sizeThatFits(.unspecified)
+        let neededInline = heading.width + AetherVisual.s4 + core.width + AetherVisual.s4 + app.width + AetherVisual.s2 + total.width
+        if !forceStacked && neededInline <= bounds.width {
+            var x = bounds.minX
+            subviews[0].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            x += heading.width + AetherVisual.s4
+            subviews[1].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            x += core.width + AetherVisual.s4
+            subviews[2].place(at: CGPoint(x: x, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            subviews[3].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+        } else {
+            let row1Height = max(heading.height, total.height)
+            let row2Y = bounds.minY + row1Height + AetherVisual.s2
+            let row2Height = max(core.height, app.height)
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY + row1Height * 0.5), anchor: .leading, proposal: .unspecified)
+            subviews[3].place(at: CGPoint(x: bounds.maxX, y: bounds.minY + row1Height * 0.5), anchor: .trailing, proposal: .unspecified)
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: row2Y + row2Height * 0.5), anchor: .leading, proposal: .unspecified)
+            subviews[2].place(at: CGPoint(x: bounds.minX + core.width + AetherVisual.s4, y: row2Y + row2Height * 0.5), anchor: .leading, proposal: .unspecified)
+        }
+    }
+}
+
+/// Single-instantiation 3-child Rules filter row (`[actionFilter, distributionBar, searchField]`):
+/// avoids `ViewThatFits` duplicating `AetherSegmentedPicker` and `RuleDistributionBar`.
+struct AetherRulesFilterBarLayout: Layout {
+    private static let minBarWidth: CGFloat = 80
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count >= 3 else { return .zero }
+        let filter = subviews[0].sizeThatFits(.unspecified)
+        let bar = subviews[1].sizeThatFits(.unspecified)
+        let search = subviews[2].sizeThatFits(ProposedViewSize(width: AetherVisual.searchFieldWidth, height: nil))
+        let inlineHeight = max(filter.height, bar.height, search.height)
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            return CGSize(width: 0, height: inlineHeight)
+        }
+        let inlineNeeded = filter.width + AetherVisual.s3 + Self.minBarWidth + AetherVisual.s3 + AetherVisual.searchFieldWidth
+        if inlineNeeded <= width {
+            return CGSize(width: width, height: inlineHeight)
+        }
+        let row1Height = max(filter.height, search.height)
+        return CGSize(width: width, height: row1Height + AetherVisual.s2 + bar.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count >= 3 else { return }
+        let filter = subviews[0].sizeThatFits(.unspecified)
+        let bar = subviews[1].sizeThatFits(.unspecified)
+        let search = subviews[2].sizeThatFits(ProposedViewSize(width: AetherVisual.searchFieldWidth, height: nil))
+        let inlineNeeded = filter.width + AetherVisual.s3 + Self.minBarWidth + AetherVisual.s3 + AetherVisual.searchFieldWidth
+        if inlineNeeded <= bounds.width {
+            let barWidth = max(Self.minBarWidth, bounds.width - filter.width - AetherVisual.searchFieldWidth - AetherVisual.s3 * 2)
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX + filter.width + AetherVisual.s3, y: bounds.midY),
+                anchor: .leading,
+                proposal: ProposedViewSize(width: barWidth, height: bar.height)
+            )
+            subviews[2].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.midY),
+                anchor: .trailing,
+                proposal: ProposedViewSize(width: AetherVisual.searchFieldWidth, height: search.height)
+            )
+        } else {
+            let row1Height = max(filter.height, search.height)
+            let searchWidth = max(AetherVisual.searchFieldMinWidth, bounds.width - filter.width - AetherVisual.s3)
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + row1Height * 0.5),
+                anchor: .leading,
+                proposal: .unspecified
+            )
+            subviews[2].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.minY + row1Height * 0.5),
+                anchor: .trailing,
+                proposal: ProposedViewSize(width: min(AetherVisual.searchFieldWidth, searchWidth), height: search.height)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + row1Height + AetherVisual.s2),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: bar.height)
+            )
+        }
+    }
+}
+
+/// Optional trailing/inline strip that expands to its natural width when room
+/// allows and collapses cleanly to zero when tight, without `ViewThatFits`.
+struct AetherSessionOptionalSlotLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let ideal = child.sizeThatFits(.unspecified)
+        guard let width = proposal.width else {
+            return ideal
+        }
+        guard width.isFinite else {
+            return ideal
+        }
+        guard width >= 1, width + 0.5 >= ideal.width else {
+            return CGSize(width: 0, height: ideal.height)
+        }
+        return ideal
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        let ideal = child.sizeThatFits(.unspecified)
+        if bounds.width >= 1 && bounds.width + 0.5 >= ideal.width {
+            child.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+        } else {
+            child.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: 0, height: 0))
+        }
     }
 }
 
@@ -1420,60 +1606,6 @@ public struct AetherTrafficMiniGraph: View {
     }
 }
 
-/// Smooth single-series sparkline for live memory footprint wells.
-struct AetherMemorySparkline: View {
-    let normalizedSamples: [Double]
-    let samplePositions: [Double]
-    let tint: Color
-    var height: CGFloat = 38
-
-    var body: some View {
-        let graph = AetherTrafficMiniGraph(
-            downloadSamples: normalizedSamples,
-            uploadSamples: [],
-            samplePositions: samplePositions,
-            height: height
-        )
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let actualHeight = proxy.size.height
-            let points = normalizedSamples.count > 1
-                ? graph.smoothPoints(
-                    samples: normalizedSamples,
-                    width: width,
-                    height: actualHeight,
-                    maxVal: 1.0
-                )
-                : []
-            ZStack {
-                VStack {
-                    Spacer()
-                    Divider().opacity(0.14)
-                }
-                if points.count > 1 {
-                    graph.smoothWaveformPath(points: points, height: actualHeight)
-                        .fill(
-                            LinearGradient(
-                                colors: [tint.opacity(0.22), tint.opacity(0.0)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                    graph.smoothWaveformLine(points: points)
-                        .stroke(
-                            tint,
-                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
-                        )
-                }
-            }
-        }
-        .frame(height: height)
-        .accessibilityHidden(true)
-    }
-}
-
-
-
 // MARK: - Glass forms
 
 /// Settings drawn like the rest of the app: each section a caption over a
@@ -1608,9 +1740,15 @@ struct AetherReadableTint: ShapeStyle {
 
 struct AetherPanelStrokeStyle: ShapeStyle {
     func resolve(in environment: EnvironmentValues) -> Color {
-        environment.colorScheme == .dark
-            ? Color.white.opacity(0.11)
-            : Color.primary.opacity(0.08)
+        resolve(colorScheme: environment.colorScheme, contrast: environment.colorSchemeContrast)
+    }
+
+    func resolve(colorScheme: ColorScheme, contrast: ColorSchemeContrast) -> Color {
+        let increased = contrast == .increased
+        if colorScheme == .dark {
+            return Color.white.opacity(increased ? 0.24 : 0.11)
+        }
+        return Color.primary.opacity(increased ? 0.22 : 0.08)
     }
 }
 
@@ -1623,6 +1761,14 @@ struct AetherTextStyle: ShapeStyle {
     let dark: Double
 
     func resolve(in environment: EnvironmentValues) -> Color {
-        Color(white: environment.colorScheme == .dark ? dark : light)
+        resolve(colorScheme: environment.colorScheme, contrast: environment.colorSchemeContrast)
+    }
+
+    func resolve(colorScheme: ColorScheme, contrast: ColorSchemeContrast) -> Color {
+        let increased = contrast == .increased
+        if colorScheme == .dark {
+            return Color(white: min(1.0, dark + (increased ? 0.12 : 0.0)))
+        }
+        return Color(white: max(0.0, light - (increased ? 0.14 : 0.0)))
     }
 }

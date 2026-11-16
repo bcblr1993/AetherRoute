@@ -9,7 +9,9 @@ import SwiftUI
 struct ConnectionsView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @ObservedObject var telemetry: NetworkTelemetryViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var filter: ConnectionOutletFilter = .all
+    @State private var filterBarWidth: CGFloat = 0
     @State private var sort: ConnectionSort = .traffic
     @State private var showingDisconnectConfirmation = false
     @State private var searchText = ""
@@ -186,15 +188,12 @@ struct ConnectionsView: View {
         // with 2,000 flows that was 8 passes over every proxy chain.
         let counts = outletCounts
         return VStack(alignment: .leading, spacing: 0) {
-            // The actions moved to the toolbar (1.5.2), so only the filter
-            // is left here: segments, or a pop-up menu when a long
-            // translation would draw them past the window. The old two-level
-            // ViewThatFits built every control twice on each visit.
-            // The filter leading and the search trailing, as on Rules; the
-            // search narrows first when the row is tight.
+            // Single-instantiation filter bar: choose either segmented or menu
+            // picker from the measured bar width rather than double-building via ViewThatFits.
             AetherFilterBarLayout {
-                ViewThatFits(in: .horizontal) {
+                if shouldShowSegmentedFilter(counts: counts) {
                     segmentedFilter(counts: counts)
+                } else {
                     menuFilter()
                 }
                 AetherSearchField(
@@ -206,6 +205,13 @@ struct ConnectionsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s3)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { newWidth in
+                if abs(filterBarWidth - newWidth) >= 1 {
+                    filterBarWidth = newWidth
+                }
+            }
 
             if let appFilter {
                 appFilterBar(appFilter)
@@ -763,6 +769,20 @@ struct ConnectionsView: View {
         .accessibilityIdentifier("connections-filter-picker")
     }
 
+    private func shouldShowSegmentedFilter(counts: [ConnectionOutletFilter: Int]) -> Bool {
+        guard filterBarWidth >= 1 else { return true }
+        let titles = ConnectionOutletFilter.allCases.map {
+            "\($0.localizedTitle) \(counts[$0, default: 0])"
+        }
+        let segmentsWidth = AetherSegmentedPicker<ConnectionOutletFilter>.measureTotalWidth(
+            for: titles,
+            controlSize: .regular
+        )
+        let horizontalInsets = AetherVisual.s3 * 2
+        let needed = segmentsWidth + AetherVisual.s3 + AetherVisual.searchFieldMinWidth + horizontalInsets
+        return needed <= filterBarWidth
+    }
+
     private func segmentedFilter(counts: [ConnectionOutletFilter: Int]) -> some View {
         AetherSegmentedPicker(
             selection: $filter,
@@ -860,7 +880,7 @@ struct ConnectionsView: View {
                 Text(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
             } icon: {
                 Image(systemName: pausedConnections == nil ? "pause.fill" : "play.fill")
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
             }
             // The symbol alone keeps the header on one line in the smallest
             // window; the name stays in the tooltip and for VoiceOver, and
@@ -1079,14 +1099,13 @@ private struct SessionBar: View {
                 }
             }
 
-            if let duration {
+            if let since = tunnel.connectedSince, tunnel.isConnected {
                 HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
                     Image(systemName: "clock")
                         .font(.caption)
                         .foregroundStyle(AetherVisual.secondaryText)
                         .accessibilityHidden(true)
-                    Text(duration)
-                        .font(.body.monospacedDigit())
+                    SessionDurationText(since: since)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(AppLocalization.string("Elapsed"))
@@ -1098,7 +1117,7 @@ private struct SessionBar: View {
             rate(symbol: "arrow.up", value: uploadText, tint: .purple)
                 .accessibilityIdentifier("connections-upload-title")
 
-            ViewThatFits(in: .horizontal) {
+            AetherSessionOptionalSlotLayout {
                 HStack(alignment: .center, spacing: AetherVisual.s2) {
                     Divider().frame(height: AetherVisual.inlineSeparatorHeight)
                     HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s1) {
@@ -1116,7 +1135,6 @@ private struct SessionBar: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("connections-memory-title")
                 }
-                Color.clear.frame(width: 0, height: 0)
             }
 
             Spacer(minLength: AetherVisual.s3)
@@ -1224,15 +1242,27 @@ private struct SessionBar: View {
         }
     }
 
-    private var duration: String? {
-        guard let since = tunnel.connectedSince, tunnel.isConnected else {
-            return nil
+}
+
+/// Leaf timer label so elapsed session seconds tick cleanly without re-evaluating `SessionBar`.
+private struct SessionDurationText: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            Text(formattedDuration(at: context.date))
+                .font(.body.monospacedDigit())
+                .aetherLiveValue()
         }
-        let elapsed = Int(Date.now.timeIntervalSince(since))
-        guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return nil }
-        return AppLocalization.duration(TimeInterval(elapsed), includesSeconds: true)
     }
 
+    private func formattedDuration(at date: Date) -> String {
+        let elapsed = Int(date.timeIntervalSince(since))
+        guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else {
+            return "—"
+        }
+        return AppLocalization.duration(TimeInterval(elapsed), includesSeconds: true)
+    }
 }
 
 /// The app's icon and name; the identifier and path show on hover.
@@ -1466,7 +1496,7 @@ private struct ConnectionDurationColumnCell: View {
         let revealClose = showsCloseButton && (isHovered || isSelected)
         HStack(spacing: AetherVisual.s1) {
             ConnectionDurationCell(connection: connection)
-            if revealClose {
+            if showsCloseButton {
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.caption)
@@ -1476,7 +1506,9 @@ private struct ConnectionDurationColumnCell: View {
                 .help(AppLocalization.string("Close Connection"))
                 .accessibilityLabel(AppLocalization.string("Close Connection"))
                 .accessibilityIdentifier("close-connection-row-button")
-                .transition(.opacity)
+                .opacity(revealClose ? 1 : 0)
+                .allowsHitTesting(revealClose)
+                .accessibilityHidden(!revealClose)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

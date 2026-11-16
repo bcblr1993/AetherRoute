@@ -46,10 +46,24 @@ public enum NetworkExtensionFlowErrorMapper {
 /// executor. This is the runtime basis for the `@unchecked Sendable` wrappers:
 /// Swift callers may arrive concurrently, while the Apple object never does.
 final class NetworkExtensionFlowExecutor: @unchecked Sendable {
+    private static let sharedQueues: [DispatchQueue] = (0..<32).map { index in
+        DispatchQueue(
+            label: "com.example.aetherroute.transparent-proxy.apple-flow.\(index)",
+            qos: .userInitiated
+        )
+    }
+    private static let indexLock = NSLock()
+    private static nonisolated(unsafe) var nextQueueIndex = 0
+
     private let queue: DispatchQueue
 
-    init(label: String = "com.example.aetherroute.flow") {
-        queue = DispatchQueue(label: label)
+    init(label _: String = "com.example.aetherroute.flow") {
+        let slot = Self.indexLock.withLock { () -> Int in
+            let current = Self.nextQueueIndex
+            Self.nextQueueIndex = (current &+ 1) % Self.sharedQueues.count
+            return current
+        }
+        queue = Self.sharedQueues[slot]
     }
 
     func execute(_ operation: @escaping @Sendable () -> Void) {

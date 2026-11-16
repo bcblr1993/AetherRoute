@@ -143,6 +143,10 @@ public enum SubscriptionPayloadNormalizer {
         filtered.reserveCapacity(lines.count)
         var removedAny = false
         for line in lines {
+            guard !line.hasPrefix(" "), !line.hasPrefix("\t") else {
+                filtered.append(line)
+                continue
+            }
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if let colonIdx = trimmed.firstIndex(of: ":") {
                 let key = String(trimmed[..<colonIdx])
@@ -498,39 +502,80 @@ public enum SubscriptionPayloadNormalizer {
         index: Int
     ) throws -> AetherNode {
         let encoded = String(line.dropFirst("vmess://".count))
-        guard let decoded = decodeBase64(encoded),
-              let object = try JSONSerialization.jsonObject(with: decoded)
-                as? [String: Any],
-              let server = string(object["add"]),
-              let port = uint16(object["port"]),
-              let uuid = string(object["id"])
-        else { throw SubscriptionPayloadError.invalidShareLink(index) }
+        let payloadPart: String
+        let fragmentName: String?
+        if let hash = encoded.firstIndex(of: "#") {
+            payloadPart = String(encoded[..<hash])
+            let rawFragment = String(encoded[encoded.index(after: hash)...])
+            let decodedFragment = decoded(rawFragment)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            fragmentName = decodedFragment.isEmpty ? nil : decodedFragment
+        } else {
+            payloadPart = encoded
+            fragmentName = nil
+        }
 
-        let transport = try transportOptions(
-            kind: string(object["net"]) ?? "tcp",
-            path: string(object["path"]) ?? "",
-            host: string(object["host"]) ?? "",
-            serviceName: string(object["serviceName"])
-                ?? string(object["service-name"]) ?? "",
-            xhttpMode: string(object["mode"]) ?? "",
-            index: index
-        )
-        let tlsValue = string(object["tls"])?.lowercased() ?? ""
+        if let decodedData = decodeBase64(payloadPart),
+           let object = try? JSONSerialization.jsonObject(with: decodedData) as? [String: Any],
+           let server = string(object["add"]),
+           let port = uint16(object["port"]),
+           let uuid = string(object["id"]) {
+            let transport = try transportOptions(
+                kind: string(object["net"]) ?? "tcp",
+                path: string(object["path"]) ?? "",
+                host: string(object["host"]) ?? "",
+                serviceName: string(object["serviceName"])
+                    ?? string(object["service-name"]) ?? "",
+                xhttpMode: string(object["mode"]) ?? "",
+                index: index
+            )
+            let tlsValue = string(object["tls"])?.lowercased() ?? ""
+            let psName = string(object["ps"])?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedName = (psName?.isEmpty == false ? psName : nil) ?? fragmentName ?? "VMess"
+            return AetherNode(
+                name: resolvedName,
+                protocolID: .vmess,
+                server: server,
+                port: port,
+                uuid: uuid,
+                cipher: string(object["scy"]) ?? "auto",
+                alterID: uint16(object["aid"]) ?? 0,
+                tls: AetherNodeTLS(
+                    enabled: tlsValue == "tls",
+                    serverName: string(object["sni"]) ?? "",
+                    skipCertificateVerification: bool(object["allowInsecure"]),
+                    clientFingerprint: string(object["fp"]) ?? "chrome"
+                ),
+                transport: transport
+            )
+        }
+
+        let link = try parsedURL(line, index: index)
+        let query = try queryMap(link.components, index: index)
+        guard !link.user.isEmpty else {
+            throw SubscriptionPayloadError.invalidShareLink(index)
+        }
+        let security = query["security"]?.lowercased() ?? (flag(query, "tls") ? "tls" : "none")
+        let tlsEnabled = security == "tls" || security == "reality" || security == "xtls"
+        let sniFallback = tlsEnabled ? (firstNonEmpty(query, "host") ?? "") : ""
+        let resolvedName = link.name.isEmpty ? (fragmentName ?? "VMess") : link.name
         return AetherNode(
-            name: string(object["ps"]) ?? "VMess",
+            name: resolvedName,
             protocolID: .vmess,
-            server: server,
-            port: port,
-            uuid: uuid,
-            cipher: string(object["scy"]) ?? "auto",
-            alterID: uint16(object["aid"]) ?? 0,
+            server: link.host,
+            port: link.port,
+            uuid: link.user,
+            cipher: firstNonEmpty(query, "encryption", "scy", "cipher") ?? "auto",
+            alterID: uint16(first(query, "alterid", "aid")) ?? 0,
             tls: AetherNodeTLS(
-                enabled: tlsValue == "tls",
-                serverName: string(object["sni"]) ?? "",
-                skipCertificateVerification: bool(object["allowInsecure"]),
-                clientFingerprint: string(object["fp"]) ?? "chrome"
+                enabled: tlsEnabled,
+                serverName: firstNonEmpty(query, "sni", "servername", "server-name", "peer") ?? sniFallback,
+                skipCertificateVerification: flag(query, "allowinsecure", "insecure"),
+                clientFingerprint: first(query, "fp", "fingerprint") ?? "chrome"
             ),
-            transport: transport
+            transport: try transportOptions(query: query, index: index),
+            dialerProxy: first(query, "dialer-proxy", "detour"),
+            fastOpen: flag(query, "tfo", "fast-open")
         )
     }
 

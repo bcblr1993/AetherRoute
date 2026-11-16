@@ -1137,7 +1137,7 @@ struct DNSView: View {
                     if let report = diagnosticReport {
                         Text(diagnosticStatusTitle(report.overallStatus))
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(diagnosticStatusColor(report.overallStatus))
+                            .foregroundStyle(diagnosticStatusStyle(report.overallStatus))
                             .padding(.horizontal, AetherVisual.pillHorizontalPadding)
                             .padding(.vertical, AetherVisual.pillVerticalPadding)
                             .background(
@@ -1153,7 +1153,7 @@ struct DNSView: View {
                         ForEach(report.checks) { check in
                             HStack(spacing: AetherVisual.s2) {
                                 Image(systemName: diagnosticStatusSymbol(check.status))
-                                    .foregroundStyle(diagnosticStatusColor(check.status))
+                                    .foregroundStyle(diagnosticStatusStyle(check.status))
                                     .font(.callout)
                                 Text(diagnosticCheckTitle(check.kind))
                                     .font(.callout.weight(.medium))
@@ -1171,7 +1171,7 @@ struct DNSView: View {
                                 }
                                 Text(diagnosticStatusTitle(check.status))
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(diagnosticStatusColor(check.status))
+                                    .foregroundStyle(diagnosticStatusStyle(check.status))
                             }
                         }
                     }
@@ -1307,6 +1307,15 @@ struct DNSView: View {
             .red
         case .skipped:
             .secondary
+        }
+    }
+
+    private func diagnosticStatusStyle(_ status: DiagnosticCheckStatus) -> AnyShapeStyle {
+        switch status {
+        case .passed, .warning, .failed:
+            AnyShapeStyle(AetherReadableTint(color: diagnosticStatusColor(status)))
+        case .skipped:
+            AnyShapeStyle(AetherVisual.secondaryText)
         }
     }
 
@@ -1593,17 +1602,17 @@ private struct RouteSimulatorSection: View {
                     .onSubmit(runSimulation)
                     .accessibilityIdentifier("route-sim-port-field")
 
-                    Picker(
-                        AppLocalization.inline("Protocol", chinese: "协议"),
-                        selection: $network
-                    ) {
-                        Text(verbatim: "TCP").tag(RouteTraceNetwork.tcp)
-                        Text(verbatim: "UDP").tag(RouteTraceNetwork.udp)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
+                    AetherSegmentedPicker(
+                        selection: $network,
+                        options: [
+                            .init(value: .tcp, title: "TCP"),
+                            .init(value: .udp, title: "UDP"),
+                        ],
+                        accessibilityLabel: AppLocalization.inline("Protocol", chinese: "协议"),
+                        accessibilityIdentifier: "route-sim-network-picker",
+                        fillsWidth: true
+                    )
                     .frame(width: 112)
-                    .accessibilityIdentifier("route-sim-network-picker")
                 }
 
                 HStack(spacing: AetherVisual.s2) {
@@ -1647,11 +1656,18 @@ private struct RouteSimulatorSection: View {
                                     : AppLocalization.inline("Static Fallback", chinese: "静态回退")
                             )
                             .font(.caption.weight(.semibold))
-                            .padding(.horizontal, AetherVisual.s2)
-                            .padding(.vertical, AetherVisual.s1)
+                            .foregroundStyle(
+                                result.source == .liveProvider
+                                    ? AnyShapeStyle(AetherReadableTint(color: .green))
+                                    : AnyShapeStyle(AetherVisual.secondaryText)
+                            )
+                            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+                            .padding(.vertical, AetherVisual.pillVerticalPadding)
                             .background(
-                                AetherVisual.cardFill,
-                                in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                                result.source == .liveProvider
+                                    ? AetherVisual.tintFill(.green)
+                                    : AetherVisual.neutralFill,
+                                in: Capsule()
                             )
 
                             Text(ruleSummaryText(result))
@@ -1710,6 +1726,8 @@ private struct RouteSimulatorSection: View {
                     .accessibilityIdentifier("route-sim-result")
                 }
             }
+            .padding(AetherVisual.cardPadding)
+            .aetherPanel()
         }
     }
 

@@ -181,6 +181,9 @@ test "$(/usr/libexec/PlistBuddy -c \
 # Runs unit tests with -scheme AetherRouteUnitTests via test_product_build.sh
 # Gate assertion: Performance measurement fixture escaped into the standard app build
 AETHERROUTE_DERIVED_DATA_PATH="$DERIVED_DATA_PATH" "$ROOT/scripts/test_product_build.sh"
+AETHERROUTE_PRODUCTS_DIR="$DERIVED_DATA_PATH/Build/Products/Debug" \
+  AETHERROUTE_REQUIRE_SPARKLE=1 \
+  sh "$ROOT/Tests/AetherRouteTests/run.sh"
 "$ROOT/scripts/core_smoke.sh"
 "$ROOT/scripts/core_smoke_direct.sh"
 "$ROOT/scripts/test_local_proxy.sh"

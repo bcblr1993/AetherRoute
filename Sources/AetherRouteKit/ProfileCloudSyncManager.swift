@@ -272,6 +272,7 @@ public final class ProfileCloudSyncManager: ObservableObject {
         kvStore: any CloudKeyValueStoring = NSUbiquitousKeyValueStore.default,
         keyStore: (any ProfileKeyStoring)? = nil,
         catalogStore: ProfileCatalogStore? = nil,
+        ruleProviderEngine: RuleProviderEngine? = nil,
         deviceIdentifier: String? = nil,
         deviceName: String? = nil
     ) {
@@ -312,10 +313,23 @@ public final class ProfileCloudSyncManager: ObservableObject {
         }
         self.deviceName = resolvedDeviceName
 
+        let resolvedRuleProviderEngine: RuleProviderEngine
+        if let ruleProviderEngine {
+            resolvedRuleProviderEngine = ruleProviderEngine
+        } else if let dir = catalogStore?.directoryURL {
+            resolvedRuleProviderEngine = RuleProviderEngine(
+                directoryURL: dir.appendingPathComponent("RuleProviders", isDirectory: true),
+                stagingBaseURL: dir
+            )
+        } else {
+            resolvedRuleProviderEngine = .shared
+        }
+
         self.worker = CloudSyncWorker(
             kvStore: self.kvStore,
             keyStore: self.keyStore,
             injectedCatalogStore: catalogStore,
+            ruleProviderEngine: resolvedRuleProviderEngine,
             deviceID: self.deviceID,
             initialDeviceName: resolvedDeviceName,
             needsHostLookup: needsHostLookup
@@ -548,6 +562,26 @@ public final class ProfileCloudSyncManager: ObservableObject {
         keyStore: any ProfileKeyStoring,
         fallbackKey: Data? = nil
     ) throws -> CloudSyncUserRulesSnapshot {
+        try reconcileRemoteUserRulesSnapshot(
+            payloadData,
+            localRules: localRules,
+            localBypassPolicy: localBypassPolicy,
+            localCustomRuleSync: localCustomRuleSync,
+            localBypassSync: localBypassSync,
+            keyStore: keyStore,
+            fallbackKey: fallbackKey
+        ).merged
+    }
+
+    nonisolated static func reconcileRemoteUserRulesSnapshot(
+        _ payloadData: Data,
+        localRules: [CustomRule],
+        localBypassPolicy: BypassPolicy,
+        localCustomRuleSync: RuleSyncMetadata = .empty,
+        localBypassSync: RuleSyncMetadata = .empty,
+        keyStore: any ProfileKeyStoring,
+        fallbackKey: Data? = nil
+    ) throws -> (merged: CloudSyncUserRulesSnapshot, shouldPushRemote: Bool) {
         guard let payload = try? JSONDecoder().decode(CloudSyncPayload.self, from: payloadData) else {
             throw CloudSyncError.catalogCorrupted
         }
@@ -604,12 +638,17 @@ public final class ProfileCloudSyncManager: ObservableObject {
         )
         let mergedBypassPolicy = (try? BypassPolicy(rules: bypassMerge.rules).validated()) ?? localBypassPolicy
 
-        return CloudSyncUserRulesSnapshot(
+        let merged = CloudSyncUserRulesSnapshot(
             customRules: customMerge.rules,
             bypassPolicy: mergedBypassPolicy,
             customRuleSync: customMerge.metadata,
             bypassSync: bypassMerge.metadata
         )
+        let shouldPushRemote = merged.customRules != remoteSnapshot.customRules
+            || merged.bypassPolicy != remoteSnapshot.bypassPolicy
+            || merged.customRuleSync != (remoteSnapshot.customRuleSync ?? .empty)
+            || merged.bypassSync != (remoteSnapshot.bypassSync ?? .empty)
+        return (merged, shouldPushRemote)
     }
 
     private func handleExternalChange() async throws {
@@ -796,6 +835,7 @@ private actor CloudSyncWorker {
     private let kvStore: any CloudKeyValueStoring
     private let keyStore: any ProfileKeyStoring
     private let injectedCatalogStore: ProfileCatalogStore?
+    private let ruleProviderEngine: RuleProviderEngine
     private let deviceID: String
     private var deviceName: String
     private var needsHostLookup: Bool
@@ -805,6 +845,7 @@ private actor CloudSyncWorker {
         kvStore: any CloudKeyValueStoring,
         keyStore: any ProfileKeyStoring,
         injectedCatalogStore: ProfileCatalogStore?,
+        ruleProviderEngine: RuleProviderEngine,
         deviceID: String,
         initialDeviceName: String,
         needsHostLookup: Bool
@@ -812,6 +853,7 @@ private actor CloudSyncWorker {
         self.kvStore = kvStore
         self.keyStore = keyStore
         self.injectedCatalogStore = injectedCatalogStore
+        self.ruleProviderEngine = ruleProviderEngine
         self.deviceID = deviceID
         self.deviceName = initialDeviceName
         self.needsHostLookup = needsHostLookup
@@ -873,6 +915,7 @@ private actor CloudSyncWorker {
                 || ((!localCatalog.profiles.isEmpty || !localTombstones.isEmpty) && remotePayload.deviceIdentifier != deviceID) {
                 Self.logger.info("Remote catalog found in iCloud. Pulling and merging...")
                 let (appliedCatalog, mergedTombstones, shouldPushBack) = try applyRemotePayload(remotePayload, to: catalogStore)
+                let didChangeLocal = appliedCatalog != localCatalog || mergedTombstones != localTombstones
                 if shouldPushBack {
                     Self.logger.info("Local profiles reconciled with cloud catalog; pushing reconciled state back to iCloud...")
                     try pushLocalToCloud(appliedCatalog, tombstones: mergedTombstones)
@@ -880,7 +923,7 @@ private actor CloudSyncWorker {
                         didSync: true,
                         status: .merged(profileCount: appliedCatalog.profiles.count),
                         newLastSyncedAt: Date(),
-                        updatedCatalog: appliedCatalog,
+                        updatedCatalog: didChangeLocal ? appliedCatalog : nil,
                         updatedProviders: updatedProviders,
                         updatedUserRules: updatedUserRules
                     )
@@ -889,7 +932,32 @@ private actor CloudSyncWorker {
                     didSync: true,
                     status: .pulledLatest(profileCount: appliedCatalog.profiles.count),
                     newLastSyncedAt: Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0),
-                    updatedCatalog: appliedCatalog,
+                    updatedCatalog: didChangeLocal ? appliedCatalog : nil,
+                    updatedProviders: updatedProviders,
+                    updatedUserRules: updatedUserRules
+                )
+            }
+
+            if remotePayload.deviceIdentifier == deviceID,
+               let (resolvedKey, decodedRemote, usedLegacyFallback) = try? ProfileCloudSyncManager.authenticateAndDecodeCatalogPayload(
+                   remotePayload,
+                   keyStore: keyStore,
+                   kvStore: kvStore
+               ),
+               decodedRemote.catalog.activeProfileID == localCatalog.activeProfileID,
+               decodedRemote.catalog == localCatalog,
+               decodedRemote.deletedProfiles == localTombstones {
+                _ = resolvedKey
+                if !usedLegacyFallback,
+                   kvStore.data(forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey) != nil {
+                    kvStore.set(nil, forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey)
+                    kvStore.synchronize()
+                }
+                return SyncOutcome(
+                    didSync: true,
+                    status: .pulledLatest(profileCount: localCatalog.profiles.count),
+                    newLastSyncedAt: Date(timeIntervalSince1970: Double(remotePayload.updatedAtUnixMilliseconds) / 1000.0),
+                    updatedCatalog: nil,
                     updatedProviders: updatedProviders,
                     updatedUserRules: updatedUserRules
                 )
@@ -942,7 +1010,10 @@ private actor CloudSyncWorker {
 
         var updatedProviders: [RuleProviderMetadata]?
         if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
-            updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
+            let outcome = await ruleProviderEngine.mergeCloudSyncPayloadOutcome(remoteRuleData)
+            if outcome.didChangeLocal {
+                updatedProviders = outcome.providers
+            }
         }
         let updatedUserRules = syncUserRulesSnapshot()
 
@@ -958,7 +1029,8 @@ private actor CloudSyncWorker {
 
     func performForcePush() async throws -> SyncOutcome {
         _ = resolveDeviceNameIfNeeded()
-        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+        if !(await ruleProviderEngine.allProviders().isEmpty),
+           let localRulePayload = await ruleProviderEngine.exportCloudSyncPayload(deviceIdentifier: deviceID) {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
             kvStore.synchronize()
         }
@@ -991,10 +1063,18 @@ private actor CloudSyncWorker {
 
     private func syncRuleProvidersAndUserRules() async -> ([RuleProviderMetadata]?, CloudSyncUserRulesSnapshot?) {
         var updatedProviders: [RuleProviderMetadata]?
+        var shouldPushProviders = false
         if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
-            updatedProviders = await RuleProviderEngine.shared.mergeCloudSyncPayload(remoteRuleData)
+            let outcome = await ruleProviderEngine.mergeCloudSyncPayloadOutcome(remoteRuleData)
+            if outcome.didChangeLocal {
+                updatedProviders = outcome.providers
+            }
+            shouldPushProviders = !outcome.matchesRemote && !outcome.providers.isEmpty
+        } else {
+            shouldPushProviders = !(await ruleProviderEngine.allProviders().isEmpty)
         }
-        if let localRulePayload = await RuleProviderEngine.shared.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+        if shouldPushProviders,
+           let localRulePayload = await ruleProviderEngine.exportCloudSyncPayload(deviceIdentifier: deviceID) {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
             kvStore.synchronize()
         }
@@ -1032,11 +1112,26 @@ private actor CloudSyncWorker {
         return (created, true)
     }
 
-    private func syncUserRulesSnapshot() -> CloudSyncUserRulesSnapshot? {
+    private func resolveUserRuleStores() -> (customStore: CustomRuleStore, bypassStore: BypassPolicyStore)? {
+        if let dir = injectedCatalogStore?.directoryURL {
+            return (
+                CustomRuleStore(directoryURL: dir),
+                BypassPolicyStore(directoryURL: dir, keyStore: keyStore)
+            )
+        }
         guard let customStore = try? CustomRuleStore.applicationGroup(),
               let bypassStore = try? BypassPolicyStore.applicationGroup() else {
             return nil
         }
+        return (customStore, bypassStore)
+    }
+
+    private func syncUserRulesSnapshot() -> CloudSyncUserRulesSnapshot? {
+        guard let stores = resolveUserRuleStores() else {
+            return nil
+        }
+        let customStore = stores.customStore
+        let bypassStore = stores.bypassStore
         let localRules = (try? customStore.load()) ?? []
         let localBypass = (try? bypassStore.load()) ?? .empty
         let localRuleSync = customStore.loadSyncMetadata()
@@ -1046,7 +1141,7 @@ private actor CloudSyncWorker {
                 .flatMap { $0.count == 32 ? $0 : nil }
 
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.userRulesStorageKey),
-           let merged = try? ProfileCloudSyncManager.decryptAndMergeUserRulesSnapshot(
+           let reconciled = try? ProfileCloudSyncManager.reconcileRemoteUserRulesSnapshot(
                remoteData,
                localRules: localRules,
                localBypassPolicy: localBypass,
@@ -1055,24 +1150,28 @@ private actor CloudSyncWorker {
                keyStore: keyStore,
                fallbackKey: fallbackKey
            ) {
+            let merged = reconciled.merged
             let mergedRuleSync = merged.customRuleSync ?? localRuleSync
             let mergedBypassSync = merged.bypassSync ?? localBypassSync
-            if merged.customRules != localRules || mergedRuleSync != localRuleSync {
+            let customChanged = merged.customRules != localRules || mergedRuleSync != localRuleSync
+            let bypassChanged = merged.bypassPolicy != localBypass || mergedBypassSync != localBypassSync
+            if customChanged {
                 try? customStore.saveSynchronized(merged.customRules, metadata: mergedRuleSync)
             }
-            if merged.bypassPolicy != localBypass || mergedBypassSync != localBypassSync {
+            if bypassChanged {
                 try? bypassStore.saveSynchronized(merged.bypassPolicy, metadata: mergedBypassSync)
             }
-            if let encoded = try? ProfileCloudSyncManager.encryptUserRulesSnapshot(
-                merged,
-                deviceIdentifier: deviceID,
-                keyStore: keyStore,
-                fallbackKey: resolveAuthenticatedLegacyFallbackKey()
-            ), encoded != remoteData {
+            if reconciled.shouldPushRemote,
+               let encoded = try? ProfileCloudSyncManager.encryptUserRulesSnapshot(
+                   merged,
+                   deviceIdentifier: deviceID,
+                   keyStore: keyStore,
+                   fallbackKey: resolveAuthenticatedLegacyFallbackKey()
+               ) {
                 kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
                 kvStore.synchronize()
             }
-            return merged
+            return (customChanged || bypassChanged) ? merged : nil
         } else if !localRules.isEmpty || !localBypass.rules.isEmpty
                     || !localRuleSync.deletedAt.isEmpty || !localBypassSync.deletedAt.isEmpty {
             pushLocalUserRulesToCloudIfAvailable()
@@ -1081,10 +1180,11 @@ private actor CloudSyncWorker {
     }
 
     private func pushLocalUserRulesToCloudIfAvailable() {
-        guard let customStore = try? CustomRuleStore.applicationGroup(),
-              let bypassStore = try? BypassPolicyStore.applicationGroup() else {
+        guard let stores = resolveUserRuleStores() else {
             return
         }
+        let customStore = stores.customStore
+        let bypassStore = stores.bypassStore
         let localRules = (try? customStore.load()) ?? []
         let localBypass = (try? bypassStore.load()) ?? .empty
         let ruleSync = customStore.loadSyncMetadata()
@@ -1199,7 +1299,8 @@ private actor CloudSyncWorker {
                 }
             guard let remoteManaged = match,
                   remoteManaged.profile == localManaged.profile,
-                  remoteManaged.updatedAt == localManaged.updatedAt else {
+                  remoteManaged.updatedAt == localManaged.updatedAt,
+                  remoteManaged.mergedSpec == localManaged.mergedSpec else {
                 return true
             }
         }

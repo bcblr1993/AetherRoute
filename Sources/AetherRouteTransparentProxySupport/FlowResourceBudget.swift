@@ -23,11 +23,11 @@ public enum TransparentFlowResourceKind: Sendable, Equatable {
     public var reservationBytes: Int {
         switch self {
         case .tcp:
-            // 64 KiB read buffer plus state-machine and FFI overhead.
-            256 * 1_024
+            // 64 KiB read buffer plus state-machine and FFI overhead bounded so 4,096 concurrent flows fit under 512 MiB.
+            128 * 1_024
         case .udp:
-            // Datagram staging runs deeper than TCP, so it charges more.
-            512 * 1_024
+            // Datagram staging stays bounded so UDP bursts do not exhaust the 4,096-session registry ceiling prematurely.
+            128 * 1_024
         }
     }
 }
@@ -47,10 +47,8 @@ public struct FlowResourceBudgetSnapshot: Sendable, Equatable {
 /// A session must own a lease before it can retain/open an Apple flow, and may
 /// release it only after the Rust destroy and Apple-open callback barriers.
 public final class FlowResourceBudget: @unchecked Sendable {
-    /// Global accounting ceiling. With the steady-state charges above this
-    /// admits roughly 2,048 concurrent TCP or 1,024 concurrent UDP flows, so
-    /// the session registry's 4,096-session limit is the intended binding
-    /// constraint for ordinary traffic instead of this backstop.
+    /// Global accounting ceiling. With 128 KiB per-flow reservation this admits
+    /// up to 4,096 concurrent TCP/UDP flows cleanly within the 512 MiB ceiling.
     public static let defaultMaximumBytes = 512 * 1_024 * 1_024
 
     private static let logger = AppLog.logger(category: AppLog.Category.proxyBudget)

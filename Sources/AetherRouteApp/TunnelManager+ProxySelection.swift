@@ -839,6 +839,18 @@ extension TunnelManager {
     }
 
     func clearProxySelectionRuntimeState() {
+        latencyRuntimeEpoch &+= 1
+        for (_, task) in activeLatencyRunTasks {
+            task.cancel()
+        }
+        activeLatencyRunTasks.removeAll()
+        latencyFlushTask?.cancel()
+        latencyFlushTask = nil
+        for (_, task) in proxySelectionModeTasks {
+            task.cancel()
+        }
+        proxySelectionModeTasks.removeAll()
+        proxySelectionModeTokens.removeAll()
         consecutiveProviderUnresponsiveCount = 0
         latencyMeasuredAt = [:]
         stopTelemetryPolling()

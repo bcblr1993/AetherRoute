@@ -487,7 +487,9 @@ public actor TCPFlowStateMachine {
             flowOutputFinished,
             bridgeOutputFinished
         else {
-            if bridgeInputEnded, flowOutputFinished, !flowInputEnded, halfCloseTimeoutTask == nil {
+            let serverHalfClosed = bridgeInputEnded && flowOutputFinished && !flowInputEnded
+            let clientHalfClosed = flowInputEnded && bridgeOutputFinished && !bridgeInputEnded
+            if (serverHalfClosed || clientHalfClosed), halfCloseTimeoutTask == nil {
                 lastTransferAt = .now
                 halfCloseTimeoutTask = Task { [weak self, timeout = halfCloseIdleTimeout] in
                     var delay = timeout
@@ -530,16 +532,24 @@ public actor TCPFlowStateMachine {
     /// One watchdog per half-closed flow. Traffic updates a timestamp instead
     /// of allocating/cancelling a timer task for every forwarded chunk.
     private func nextHalfCloseIdleDelay() -> Duration? {
-        guard lifecycle == .running, bridgeInputEnded, flowOutputFinished, !flowInputEnded else {
+        let serverHalfClosed = bridgeInputEnded && flowOutputFinished && !flowInputEnded
+        let clientHalfClosed = flowInputEnded && bridgeOutputFinished && !bridgeInputEnded
+        guard lifecycle == .running, serverHalfClosed || clientHalfClosed else {
             return nil
         }
-        // Rust owns the network-side idle policy. A pending bridge write can
-        // still be draining a slow upstream; it is not an idle local client.
-        guard bridgeWriteToken == nil else { return halfCloseIdleTimeout }
+        // Wait for any in-flight write to drain before counting idle time.
+        guard bridgeWriteToken == nil, flowWriteToken == nil else { return halfCloseIdleTimeout }
         let remaining = halfCloseIdleTimeout - lastTransferAt.duration(to: .now)
         if remaining > .zero { return remaining }
         terminationTrigger = "halfCloseTimeout"
-        cancel()
+        if clientHalfClosed, !serverHalfClosed {
+            lifecycle = .finished
+            invalidateOperations()
+            cancelTransports()
+            reportTermination()
+        } else {
+            cancel()
+        }
         return nil
     }
 

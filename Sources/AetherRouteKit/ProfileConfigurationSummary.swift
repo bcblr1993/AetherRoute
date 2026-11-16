@@ -197,6 +197,7 @@ public struct DNSConfigurationSummary: Equatable, Sendable {
     public let hasListener: Bool
     public let hasFallbackFilter: Bool
     public let hasEDNSClientSubnet: Bool
+    public let hasExplicitIPv6: Bool
 
     public init(
         isPresent: Bool = false,
@@ -215,7 +216,8 @@ public struct DNSConfigurationSummary: Equatable, Sendable {
         hasExplicitFakeIPRange: Bool = false,
         hasListener: Bool = false,
         hasFallbackFilter: Bool = false,
-        hasEDNSClientSubnet: Bool = false
+        hasEDNSClientSubnet: Bool = false,
+        hasExplicitIPv6: Bool? = nil
     ) {
         self.isPresent = isPresent
         self.isEnabled = isEnabled
@@ -234,6 +236,7 @@ public struct DNSConfigurationSummary: Equatable, Sendable {
         self.hasListener = hasListener
         self.hasFallbackFilter = hasFallbackFilter
         self.hasEDNSClientSubnet = hasEDNSClientSubnet
+        self.hasExplicitIPv6 = hasExplicitIPv6 ?? allowsIPv6
     }
 }
 
@@ -911,7 +914,7 @@ private struct CompatibilityBuilder {
         rules[kind] = entry
     }
 
-    private mutating func count(option: String) {
+    mutating func count(option: String) {
         order += 1
         var entry = options[option] ?? (order, 0)
         entry.count += 1
@@ -1000,6 +1003,7 @@ private struct Parser {
         var hasListener = false
         var hasFallbackFilter = false
         var hasEDNSClientSubnet = false
+        var hasExplicitIPv6 = false
 
         var summary: DNSConfigurationSummary {
             DNSConfigurationSummary(
@@ -1021,7 +1025,8 @@ private struct Parser {
                 hasExplicitFakeIPRange: hasExplicitFakeIPRange,
                 hasListener: hasListener,
                 hasFallbackFilter: hasFallbackFilter,
-                hasEDNSClientSubnet: hasEDNSClientSubnet
+                hasEDNSClientSubnet: hasEDNSClientSubnet,
+                hasExplicitIPv6: hasExplicitIPv6
             )
         }
     }
@@ -1293,6 +1298,9 @@ private struct Parser {
                     if let incProxies = Self.jsonScalar(fields["include-all-proxies"]).flatMap(Self.boolean), incProxies {
                         item?.includeAll = true
                     }
+                    if let incProviders = Self.jsonScalar(fields["include-all-providers"]).flatMap(Self.boolean), incProviders {
+                        item?.includeAll = true
+                    }
                     let filterStr = Self.jsonString(fields["filter"])
                     if !filterStr.isEmpty {
                         item?.filterPattern = filterStr
@@ -1480,7 +1488,7 @@ private struct Parser {
         switch nestedField {
         case "nameserver-policy":
             dns.nameserverPolicyCount += 1
-            recordDNSTransport(value)
+            recordDNSTransports(value)
         case "listen":
             dns.hasListener = true
         case "fallback-filter":
@@ -1498,7 +1506,10 @@ private struct Parser {
         case "enable":
             dns.isEnabled = Self.boolean(value) ?? dns.isEnabled
         case "ipv6":
-            dns.allowsIPv6 = Self.boolean(value) ?? dns.allowsIPv6
+            if let flag = Self.boolean(value) {
+                dns.allowsIPv6 = flag
+                dns.hasExplicitIPv6 = true
+            }
         case "use-hosts":
             dns.usesHosts = Self.boolean(value) ?? dns.usesHosts
         case "respect-rules":
@@ -1532,7 +1543,7 @@ private struct Parser {
             ) {
                 guard let (_, server) = Self.keyValue(in: item) else { continue }
                 dns.nameserverPolicyCount += 1
-                recordDNSTransport(server)
+                recordDNSTransports(server)
             }
         default:
             break
@@ -1554,10 +1565,23 @@ private struct Parser {
         case "proxy-server-nameserver":
             dns.proxyNameserverCount += 1
             recordDNSTransport(value)
+        case "nameserver-policy":
+            recordDNSTransports(value)
         case "fake-ip-filter":
             dns.fakeIPFilterCount += 1
         default:
             break
+        }
+    }
+
+    private mutating func recordDNSTransports(_ rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("["), trimmed.hasSuffix("]") {
+            for entry in Self.splitFlowSequence(trimmed) {
+                recordDNSTransport(entry)
+            }
+        } else {
+            recordDNSTransport(rawValue)
         }
     }
 
@@ -1638,20 +1662,20 @@ private struct Parser {
                 item?.members.append(contentsOf: Self.splitFlowSequence(value))
             }
         case let key where section == .proxyGroups
-            && (key == "include-all" || key == "include-all-proxies"):
+            && (key == "include-all" || key == "include-all-proxies" || key == "include-all-providers"):
             readingMembers = false
             if Self.boolean(value) == true {
                 item?.includeAll = true
             }
         case "filter" where section == .proxyGroups:
             readingMembers = false
-            let pattern = Self.scalar(value)
+            let pattern = Self.regexScalar(value)
             if !pattern.isEmpty {
                 item?.filterPattern = pattern
             }
         case "exclude-filter" where section == .proxyGroups:
             readingMembers = false
-            let pattern = Self.scalar(value)
+            let pattern = Self.regexScalar(value)
             if !pattern.isEmpty {
                 item?.excludeFilterPattern = pattern
             }
@@ -1683,17 +1707,17 @@ private struct Parser {
                 && (key == "proxies" || key == "use"):
                 item?.members.append(contentsOf: Self.splitFlowSequence(value))
             case let key where section == .proxyGroups
-                && (key == "include-all" || key == "include-all-proxies"):
+                && (key == "include-all" || key == "include-all-proxies" || key == "include-all-providers"):
                 if Self.boolean(value) == true {
                     item?.includeAll = true
                 }
             case "filter" where section == .proxyGroups:
-                let pattern = Self.scalar(value)
+                let pattern = Self.regexScalar(value)
                 if !pattern.isEmpty {
                     item?.filterPattern = pattern
                 }
             case "exclude-filter" where section == .proxyGroups:
-                let pattern = Self.scalar(value)
+                let pattern = Self.regexScalar(value)
                 if !pattern.isEmpty {
                     item?.excludeFilterPattern = pattern
                 }
@@ -1726,9 +1750,9 @@ private struct Parser {
                 }
             } else {
                 proxyCount += 1
-            }
-            if !item.name.isEmpty {
-                allProxyNames.append(item.name)
+                if !item.name.isEmpty {
+                    allProxyNames.append(item.name)
+                }
             }
             let recognition = Self.recognition(of: item)
             compatibility.record(item: item, recognition: recognition)
@@ -1815,26 +1839,32 @@ private struct Parser {
                     candidates.append(proxyName)
                 }
             }
-            if let pattern = spec.filterPattern,
-               let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                let explicitSet = Set(spec.explicitMembers)
-                candidates = candidates.filter { name in
-                    if explicitSet.contains(name) && spec.includeAll {
-                        return true
+            if let pattern = spec.filterPattern {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                    let explicitSet = Set(spec.explicitMembers)
+                    candidates = candidates.filter { name in
+                        if explicitSet.contains(name) && spec.includeAll {
+                            return true
+                        }
+                        let range = NSRange(name.startIndex..<name.endIndex, in: name)
+                        return regex.firstMatch(in: name, options: [], range: range) != nil
                     }
-                    let range = NSRange(name.startIndex..<name.endIndex, in: name)
-                    return regex.firstMatch(in: name, options: [], range: range) != nil
+                } else {
+                    compatibility.count(option: "group-filter-regex")
                 }
             }
-            if let excludePattern = spec.excludeFilterPattern,
-               let excludeRegex = try? NSRegularExpression(pattern: excludePattern, options: []) {
-                let explicitSet = Set(spec.explicitMembers)
-                candidates = candidates.filter { name in
-                    if explicitSet.contains(name) && spec.includeAll {
-                        return true
+            if let excludePattern = spec.excludeFilterPattern {
+                if let excludeRegex = try? NSRegularExpression(pattern: excludePattern, options: []) {
+                    let explicitSet = Set(spec.explicitMembers)
+                    candidates = candidates.filter { name in
+                        if explicitSet.contains(name) && spec.includeAll {
+                            return true
+                        }
+                        let range = NSRange(name.startIndex..<name.endIndex, in: name)
+                        return excludeRegex.firstMatch(in: name, options: [], range: range) == nil
                     }
-                    let range = NSRange(name.startIndex..<name.endIndex, in: name)
-                    return excludeRegex.firstMatch(in: name, options: [], range: range) == nil
+                } else {
+                    compatibility.count(option: "group-filter-regex")
                 }
             }
             let existing = groups[spec.groupIndex]
@@ -2299,6 +2329,10 @@ private struct Parser {
 
     private static func scalar(_ value: String) -> String {
         String(unquoted(value).prefix(160))
+    }
+
+    private static func regexScalar(_ value: String) -> String {
+        String(unquoted(value).prefix(2_048))
     }
 
     private static func boolean(_ value: String) -> Bool? {

@@ -266,14 +266,24 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             state.retainedContext = retainedContext
         }
 
+        guard let engineCompletion = EngineLifecycleGate.shared.claimEngineCompletion(
+            generation: engineGeneration
+        ) else {
+            PacketCoreRuntimeLog.logger.info(
+                "stage=startEngine cancelledBeforeSubmission generation=\(engineGeneration, privacy: .public)"
+            )
+            stateLock.withLock {
+                state.isActive = false
+                state.bridgeInstalled = false
+                state.retainedContext = nil
+                state.generation = nil
+            }
+            controlLock.withLock { clash_uninstall_packet_flow() }
+            releaseContext(retainedContext)
+            throw PacketTunnelError.startupCancelled
+        }
         beginReadingPackets()
         PacketCoreRuntimeLog.logger.info("stage=startEngine begin")
-        let engineCompletion = DispatchGroup()
-        engineCompletion.enter()
-        EngineLifecycleGate.shared.registerEngineCompletion(
-            engineCompletion,
-            generation: engineGeneration
-        )
         startEngine(
             profile: profileYAML,
             runtimeDirectory: runtimeDirectory,

@@ -559,19 +559,46 @@ public struct RouteTraceRequest: Codable, Equatable, Sendable {
     public var port: Int
     public var network: RouteTraceNetwork
     public var processPath: String?
+    public var resolvedAddresses: [String]
+    public var customHosts: [CustomHostMapping]
 
     public init(
         host: String,
         ip: String? = nil,
         port: Int = 443,
         network: RouteTraceNetwork = .tcp,
-        processPath: String? = nil
+        processPath: String? = nil,
+        resolvedAddresses: [String] = [],
+        customHosts: [CustomHostMapping] = []
     ) {
         self.host = host
         self.ip = ip
         self.port = port
         self.network = network
         self.processPath = processPath
+        self.resolvedAddresses = resolvedAddresses
+        self.customHosts = customHosts
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case host
+        case ip
+        case port
+        case network
+        case processPath
+        case resolvedAddresses
+        case customHosts
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        host = try container.decode(String.self, forKey: .host)
+        ip = try container.decodeIfPresent(String.self, forKey: .ip)
+        port = try container.decodeIfPresent(Int.self, forKey: .port) ?? 443
+        network = try container.decodeIfPresent(RouteTraceNetwork.self, forKey: .network) ?? .tcp
+        processPath = try container.decodeIfPresent(String.self, forKey: .processPath)
+        resolvedAddresses = try container.decodeIfPresent([String].self, forKey: .resolvedAddresses) ?? []
+        customHosts = try container.decodeIfPresent([CustomHostMapping].self, forKey: .customHosts) ?? []
     }
 }
 
@@ -621,6 +648,8 @@ public struct RouteTraceResult: Codable, Equatable, Sendable {
 }
 
 public enum RouteSimulationInspector {
+    private static let maximumLogicalRuleDepth = 16
+
     public static func evaluate(
         request: RouteTraceRequest,
         routingMode: RoutingMode,
@@ -631,6 +660,8 @@ public enum RouteSimulationInspector {
         customHosts: [CustomHostMapping] = [],
         asnLookup: (@Sendable (String) -> String?)? = nil,
         geoSiteData: Data? = nil,
+        countryMMDBData: Data? = nil,
+        asnMMDBData: Data? = nil,
         resolvedAddresses: [String] = [],
         dnsLatencyMilliseconds: Int? = nil,
         source: RouteTraceSource = .staticFallback
@@ -642,16 +673,18 @@ public enum RouteSimulationInspector {
         let explicitIP = (rawIP?.isEmpty == false) ? rawIP : nil
         let hostAsIP = isIPAddress(normalizedHost) ? normalizedHost : nil
 
+        let effectiveHostsList = !customHosts.isEmpty ? customHosts : request.customHosts
         let activeHosts = Dictionary(
-            customHosts.filter(\.isEnabled).map { ($0.domain.lowercased(), $0.ip) },
+            effectiveHostsList.filter(\.isEnabled).map { ($0.domain.lowercased(), $0.ip) },
             uniquingKeysWith: { _, last in last }
         )
         let alias = ProfileHostsInspector.resolveAlias(normalizedHost, in: activeHosts)
         let resolvedHostAlias: String? = alias != normalizedHost ? alias : nil
 
+        let suppliedAddresses = !resolvedAddresses.isEmpty ? resolvedAddresses : request.resolvedAddresses
         let effectiveAddresses: [String]
-        if !resolvedAddresses.isEmpty {
-            effectiveAddresses = resolvedAddresses
+        if !suppliedAddresses.isEmpty {
+            effectiveAddresses = suppliedAddresses
         } else if let explicitIP {
             effectiveAddresses = [explicitIP]
         } else if let resolvedHostAlias, isIPAddress(resolvedHostAlias) {
@@ -662,10 +695,20 @@ public enum RouteSimulationInspector {
             effectiveAddresses = []
         }
 
-        let effectiveIP = explicitIP
+        let explicitOrAliasIP = explicitIP
             ?? hostAsIP
             ?? (resolvedHostAlias.flatMap { isIPAddress($0) ? $0 : nil })
-            ?? effectiveAddresses.first(where: { isIPAddress($0) })
+        var candidateNonNoResolveIPs: [String] = []
+        var seenIPs = Set<String>()
+        if let explicitOrAliasIP, seenIPs.insert(explicitOrAliasIP).inserted {
+            candidateNonNoResolveIPs.append(explicitOrAliasIP)
+        }
+        for addr in effectiveAddresses where isIPAddress(addr) && !DNSLookupInspector.isFakeIPAddress(addr) {
+            if seenIPs.insert(addr).inserted {
+                candidateNonNoResolveIPs.append(addr)
+            }
+        }
+        let nonNoResolveIP = candidateNonNoResolveIPs.first
         let isFakeIP = effectiveAddresses.contains(where: DNSLookupInspector.isFakeIPAddress)
 
         if routingMode == .direct {
@@ -705,16 +748,26 @@ public enum RouteSimulationInspector {
             )
         }
 
+        let asnReader = asnLookup == nil ? asnMMDBData.flatMap(MMDBLookupReader.init(data:)) : nil
+        let effectiveASNLookup: (@Sendable (String) -> String?)? = asnLookup
+            ?? asnReader.map { reader in { @Sendable ip in reader.asn(for: ip) } }
+        let countryReader = countryMMDBData.flatMap(MMDBLookupReader.init(data:))
+        let countryLookup: (@Sendable (String) -> String?)? = countryReader.map { reader in
+            { @Sendable ip in reader.countryCode(for: ip) }
+        }
+
         // Custom rules (application then destination)
         let context = TraceEvaluationContext(
             host: hostAsIP == nil ? normalizedHost : "",
             resolvedHostAlias: resolvedHostAlias,
-            ip: effectiveIP,
-            nonNoResolveIP: effectiveIP ?? resolvedAddresses.first(where: { isIPAddress($0) }),
+            ip: explicitOrAliasIP,
+            nonNoResolveIP: nonNoResolveIP,
+            nonNoResolveIPs: candidateNonNoResolveIPs,
             port: request.port,
             network: request.network,
             processPath: request.processPath?.trimmingCharacters(in: .whitespacesAndNewlines),
-            asnLookup: asnLookup,
+            asnLookup: effectiveASNLookup,
+            countryLookup: countryLookup,
             geoSiteData: geoSiteData
         )
 
@@ -812,10 +865,12 @@ public enum RouteSimulationInspector {
         let resolvedHostAlias: String?
         let ip: String?
         let nonNoResolveIP: String?
+        let nonNoResolveIPs: [String]
         let port: Int
         let network: RouteTraceNetwork
         let processPath: String?
         let asnLookup: (@Sendable (String) -> String?)?
+        let countryLookup: (@Sendable (String) -> String?)?
         let geoSiteData: Data?
     }
 
@@ -835,9 +890,25 @@ public enum RouteSimulationInspector {
         return false
     }
 
-    private static func matchesRule(_ rule: RuleConfigurationSummary, context: TraceEvaluationContext) -> Bool {
+    private static func matchesRule(
+        _ rule: RuleConfigurationSummary,
+        context: TraceEvaluationContext,
+        depth: Int = 0
+    ) -> Bool {
+        guard depth <= maximumLogicalRuleDepth else { return false }
         let kind = rule.kind.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let criteria = (rule.criteria ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let ipCandidates: [String]
+        if rule.noResolve {
+            ipCandidates = context.ip.map { [$0] } ?? []
+        } else if !context.nonNoResolveIPs.isEmpty {
+            ipCandidates = context.nonNoResolveIPs
+        } else if let fallback = context.ip ?? context.nonNoResolveIP {
+            ipCandidates = [fallback]
+        } else {
+            ipCandidates = []
+        }
 
         switch kind {
         case "MATCH", "FINAL":
@@ -864,17 +935,27 @@ public enum RouteSimulationInspector {
             guard !criteria.isEmpty, !context.host.isEmpty else { return false }
             return matchesWildcard(pattern: criteria, against: context.host)
         case "IP-ASN":
-            let targetIP = rule.noResolve ? context.ip : (context.ip ?? context.nonNoResolveIP)
-            guard let targetIP, let asnLookup = context.asnLookup,
-                  let resolvedASN = asnLookup(targetIP)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !resolvedASN.isEmpty else {
+            guard !ipCandidates.isEmpty, let asnLookup = context.asnLookup else {
                 return false
             }
             let expected = normalizedASN(criteria)
-            let actual = normalizedASN(resolvedASN)
-            return !expected.isEmpty && expected == actual
+            guard !expected.isEmpty else { return false }
+            for targetIP in ipCandidates {
+                if let resolvedASN = asnLookup(targetIP)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !resolvedASN.isEmpty,
+                   normalizedASN(resolvedASN) == expected {
+                    return true
+                }
+            }
+            return false
         case "AND", "OR", "NOT":
-            return matchesLogicalRule(kind: kind, criteria: criteria, noResolve: rule.noResolve, context: context)
+            return matchesLogicalRule(
+                kind: kind,
+                criteria: criteria,
+                noResolve: rule.noResolve,
+                context: context,
+                depth: depth
+            )
         case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "GEOSITE":
             var candidates: [String] = []
             if !context.host.isEmpty { candidates.append(context.host) }
@@ -902,8 +983,7 @@ public enum RouteSimulationInspector {
             }
             return false
         case "IP-CIDR", "IP-CIDR6", "GEOIP", "SRC-IP-CIDR":
-            let targetIP = rule.noResolve ? context.ip : (context.ip ?? context.nonNoResolveIP)
-            guard let targetIP, !targetIP.isEmpty else { return false }
+            guard !ipCandidates.isEmpty else { return false }
             let normalizedKind = kind == "SRC-IP-CIDR" ? "IP-CIDR" : kind
             let single = RuleConfigurationSummary(
                 id: rule.id,
@@ -914,12 +994,27 @@ public enum RouteSimulationInspector {
                 isCustom: rule.isCustom,
                 noResolve: rule.noResolve
             )
-            return RouteMatchEngine.evaluate(
-                destination: targetIP,
-                against: [single],
-                totalRuleCount: 1,
-                geoSiteData: context.geoSiteData
-            ) != nil
+            for targetIP in ipCandidates where !targetIP.isEmpty {
+                if normalizedKind == "GEOIP",
+                   !criteria.isEmpty,
+                   criteria.lowercased() != "private",
+                   criteria.lowercased() != "lan",
+                   let countryLookup = context.countryLookup,
+                   let isoCode = countryLookup(targetIP)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !isoCode.isEmpty,
+                   isoCode.caseInsensitiveCompare(criteria) == .orderedSame {
+                    return true
+                }
+                if RouteMatchEngine.evaluate(
+                    destination: targetIP,
+                    against: [single],
+                    totalRuleCount: 1,
+                    geoSiteData: context.geoSiteData
+                ) != nil {
+                    return true
+                }
+            }
+            return false
         default:
             return false
         }
@@ -929,8 +1024,10 @@ public enum RouteSimulationInspector {
         kind: String,
         criteria: String,
         noResolve: Bool,
-        context: TraceEvaluationContext
+        context: TraceEvaluationContext,
+        depth: Int
     ) -> Bool {
+        guard depth < maximumLogicalRuleDepth else { return false }
         let inner = unwrapOuterParentheses(criteria)
         let childrenRaw = splitTopLevelComma(inner)
         guard !childrenRaw.isEmpty else { return false }
@@ -940,7 +1037,7 @@ public enum RouteSimulationInspector {
                   let childRule = parseEmbeddedRule(childrenRaw[0], noResolve: noResolve) else {
                 return false
             }
-            return !matchesRule(childRule, context: context)
+            return !matchesRule(childRule, context: context, depth: depth + 1)
         }
 
         let childRules = childrenRaw.compactMap { parseEmbeddedRule($0, noResolve: noResolve) }
@@ -948,9 +1045,9 @@ public enum RouteSimulationInspector {
 
         switch kind {
         case "AND":
-            return childRules.allSatisfy { matchesRule($0, context: context) }
+            return childRules.allSatisfy { matchesRule($0, context: context, depth: depth + 1) }
         case "OR":
-            return childRules.contains { matchesRule($0, context: context) }
+            return childRules.contains { matchesRule($0, context: context, depth: depth + 1) }
         default:
             return false
         }
@@ -1113,5 +1210,329 @@ public enum RouteSimulationInspector {
             break
         }
         return chain
+    }
+}
+
+/// Bounds-checked MaxMind DB v2 reader for simulator GEOIP (`Country.mmdb`) and
+/// IP-ASN (`ASN.mmdb`) lookups without pulling in external C dependencies.
+public struct MMDBLookupReader: Sendable {
+    private enum Value {
+        case string(String)
+        case uint(UInt64)
+        case map([String: Value])
+        case array([Value])
+        case other
+    }
+
+    private static let metadataMarker = Data([0xab, 0xcd, 0xef] + Array("MaxMind.com".utf8))
+    private let data: Data
+    private let nodeCount: Int
+    private let recordSize: Int
+    private let ipVersion: Int
+    private let dataSectionStart: Int
+    private let ipv4StartNode: Int
+
+    public init?(data: Data) {
+        guard !data.isEmpty else { return nil }
+        let searchLower = max(0, data.count - 128 * 1_024)
+        let markerRange = data.range(of: Self.metadataMarker, options: [.backwards], in: searchLower..<data.count)
+            ?? data.range(of: Self.metadataMarker, options: [.backwards])
+        guard let markerRange else { return nil }
+        let metadataStart = markerRange.upperBound
+        guard let (metadata, _) = Self.decodeValue(in: data, at: metadataStart, pointerBase: metadataStart, depth: 0),
+              case let .map(metaMap) = metadata,
+              case let .uint(nodeCountU64)? = metaMap["node_count"],
+              case let .uint(recordSizeU64)? = metaMap["record_size"],
+              case let .uint(ipVersionU64)? = metaMap["ip_version"] else {
+            return nil
+        }
+        guard nodeCountU64 > 0, nodeCountU64 <= UInt64(Int.max / 8),
+              recordSizeU64 == 24 || recordSizeU64 == 28 || recordSizeU64 == 32,
+              ipVersionU64 == 4 || ipVersionU64 == 6 else {
+            return nil
+        }
+        let nodeCount = Int(nodeCountU64)
+        let recordSize = Int(recordSizeU64)
+        let ipVersion = Int(ipVersionU64)
+        let nodeByteSize = (recordSize * 2) / 8
+        let searchTreeBytes = nodeCount * nodeByteSize
+        let dataSectionStart = searchTreeBytes + 16
+        guard dataSectionStart <= markerRange.lowerBound else { return nil }
+
+        self.data = data
+        self.nodeCount = nodeCount
+        self.recordSize = recordSize
+        self.ipVersion = ipVersion
+        self.dataSectionStart = dataSectionStart
+
+        var v4Start = 0
+        if ipVersion == 6 {
+            for _ in 0..<96 {
+                guard v4Start < nodeCount,
+                      let next = Self.readNodeRecord(
+                        in: data,
+                        node: v4Start,
+                        bit: 0,
+                        recordSize: recordSize,
+                        nodeCount: nodeCount
+                      ) else {
+                    v4Start = nodeCount
+                    break
+                }
+                v4Start = next
+            }
+        }
+        self.ipv4StartNode = v4Start
+    }
+
+    public func countryCode(for ip: String) -> String? {
+        guard let value = lookupValue(for: ip) else { return nil }
+        switch value {
+        case let .string(iso):
+            return iso
+        case let .map(dict):
+            if case let .map(country)? = dict["country"],
+               case let .string(iso)? = country["iso_code"] {
+                return iso
+            }
+            if case let .map(registered)? = dict["registered_country"],
+               case let .string(iso)? = registered["iso_code"] {
+                return iso
+            }
+            if case let .string(iso)? = dict["iso_code"] {
+                return iso
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    public func asn(for ip: String) -> String? {
+        guard let value = lookupValue(for: ip) else { return nil }
+        switch value {
+        case let .uint(number) where number > 0:
+            return String(number)
+        case let .string(raw):
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case let .map(dict):
+            if case let .uint(number)? = dict["autonomous_system_number"], number > 0 {
+                return String(number)
+            }
+            return nil
+        default:
+            return nil
+        }
+    }
+
+    private func lookupValue(for ip: String) -> Value? {
+        var addr4 = in_addr()
+        if ip.withCString({ inet_pton(AF_INET, $0, &addr4) }) == 1 {
+            let bytes = withUnsafeBytes(of: addr4) { Array($0) }
+            let startNode = ipVersion == 6 ? ipv4StartNode : 0
+            return traverse(bytes: bytes, startNode: startNode)
+        }
+        var addr6 = in6_addr()
+        if ip.withCString({ inet_pton(AF_INET6, $0, &addr6) }) == 1 {
+            guard ipVersion == 6 else { return nil }
+            let bytes = withUnsafeBytes(of: addr6) { Array($0) }
+            return traverse(bytes: bytes, startNode: 0)
+        }
+        return nil
+    }
+
+    private func traverse(bytes: [UInt8], startNode: Int) -> Value? {
+        var node = startNode
+        if node > nodeCount {
+            let dataOffset = dataSectionStart + (node - nodeCount - 16)
+            return Self.decodeValue(in: data, at: dataOffset, pointerBase: dataSectionStart, depth: 0)?.0
+        }
+        guard node < nodeCount else { return nil }
+        for byte in bytes {
+            for shift in stride(from: 7, through: 0, by: -1) {
+                let bit = Int((byte >> shift) & 1)
+                guard node < nodeCount,
+                      let next = Self.readNodeRecord(
+                        in: data,
+                        node: node,
+                        bit: bit,
+                        recordSize: recordSize,
+                        nodeCount: nodeCount
+                      ) else {
+                    return nil
+                }
+                if next == nodeCount { return nil }
+                if next > nodeCount {
+                    let dataOffset = dataSectionStart + (next - nodeCount - 16)
+                    return Self.decodeValue(in: data, at: dataOffset, pointerBase: dataSectionStart, depth: 0)?.0
+                }
+                node = next
+            }
+        }
+        return nil
+    }
+
+    private static func readNodeRecord(
+        in data: Data,
+        node: Int,
+        bit: Int,
+        recordSize: Int,
+        nodeCount: Int
+    ) -> Int? {
+        _ = nodeCount
+        let nodeBytes = (recordSize * 2) / 8
+        let offset = node * nodeBytes
+        guard offset >= 0, offset + nodeBytes <= data.count else { return nil }
+        switch recordSize {
+        case 24:
+            let base = offset + (bit == 0 ? 0 : 3)
+            return (Int(data[base]) << 16) | (Int(data[base + 1]) << 8) | Int(data[base + 2])
+        case 28:
+            let mid = Int(data[offset + 3])
+            if bit == 0 {
+                return ((mid & 0xf0) << 20) | (Int(data[offset]) << 16) | (Int(data[offset + 1]) << 8) | Int(data[offset + 2])
+            } else {
+                return ((mid & 0x0f) << 24) | (Int(data[offset + 4]) << 16) | (Int(data[offset + 5]) << 8) | Int(data[offset + 6])
+            }
+        case 32:
+            let base = offset + (bit == 0 ? 0 : 4)
+            return (Int(data[base]) << 24) | (Int(data[base + 1]) << 16) | (Int(data[base + 2]) << 8) | Int(data[base + 3])
+        default:
+            return nil
+        }
+    }
+
+    private static func decodeValue(
+        in data: Data,
+        at offset: Int,
+        pointerBase: Int,
+        depth: Int
+    ) -> (Value, Int)? {
+        guard depth < 16, offset >= 0, offset < data.count else { return nil }
+        var cursor = offset
+        let ctrl = data[cursor]
+        cursor += 1
+
+        var type = Int(ctrl >> 5)
+        if type == 1 {
+            let pointerSize = Int((ctrl >> 3) & 0x3) + 1
+            let vv = Int(ctrl & 0x7)
+            guard cursor + pointerSize <= data.count else { return nil }
+            let relativeOffset: Int
+            switch pointerSize {
+            case 1:
+                relativeOffset = (vv << 8) | Int(data[cursor])
+            case 2:
+                relativeOffset = ((vv << 16) | (Int(data[cursor]) << 8) | Int(data[cursor + 1])) + 2_048
+            case 3:
+                relativeOffset = ((vv << 24) | (Int(data[cursor]) << 16) | (Int(data[cursor + 1]) << 8) | Int(data[cursor + 2])) + 526_336
+            case 4:
+                relativeOffset = (Int(data[cursor]) << 24) | (Int(data[cursor + 1]) << 16) | (Int(data[cursor + 2]) << 8) | Int(data[cursor + 3])
+            default:
+                return nil
+            }
+            cursor += pointerSize
+            guard let (target, _) = decodeValue(
+                in: data,
+                at: pointerBase + relativeOffset,
+                pointerBase: pointerBase,
+                depth: depth + 1
+            ) else {
+                return nil
+            }
+            return (target, cursor)
+        }
+
+        if type == 0 {
+            guard cursor < data.count else { return nil }
+            type = 7 + Int(data[cursor])
+            cursor += 1
+        }
+
+        let sizeField = Int(ctrl & 0x1f)
+        let size: Int
+        if type == 14 {
+            size = 0
+        } else if sizeField < 29 {
+            size = sizeField
+        } else if sizeField == 29 {
+            guard cursor < data.count else { return nil }
+            size = 29 + Int(data[cursor])
+            cursor += 1
+        } else if sizeField == 30 {
+            guard cursor + 2 <= data.count else { return nil }
+            size = 285 + ((Int(data[cursor]) << 8) | Int(data[cursor + 1]))
+            cursor += 2
+        } else {
+            guard cursor + 3 <= data.count else { return nil }
+            size = 65_821 + ((Int(data[cursor]) << 16) | (Int(data[cursor + 1]) << 8) | Int(data[cursor + 2]))
+            cursor += 3
+        }
+
+        switch type {
+        case 2: // utf8 string
+            guard cursor + size <= data.count else { return nil }
+            let text = String(decoding: data[cursor..<(cursor + size)], as: UTF8.self)
+            return (.string(text), cursor + size)
+        case 5, 6, 9: // uint16 / uint32 / uint64
+            guard size <= 8, cursor + size <= data.count else { return nil }
+            var value: UInt64 = 0
+            for idx in 0..<size {
+                value = (value << 8) | UInt64(data[cursor + idx])
+            }
+            return (.uint(value), cursor + size)
+        case 7: // map
+            var dict: [String: Value] = [:]
+            for _ in 0..<size {
+                guard let (keyVal, nextAfterKey) = decodeValue(
+                    in: data,
+                    at: cursor,
+                    pointerBase: pointerBase,
+                    depth: depth + 1
+                ),
+                      case let .string(key) = keyVal,
+                      let (entryVal, nextAfterVal) = decodeValue(
+                        in: data,
+                        at: nextAfterKey,
+                        pointerBase: pointerBase,
+                        depth: depth + 1
+                      ) else {
+                    return nil
+                }
+                dict[key] = entryVal
+                cursor = nextAfterVal
+            }
+            return (.map(dict), cursor)
+        case 11: // array
+            var items: [Value] = []
+            items.reserveCapacity(min(size, 64))
+            for _ in 0..<size {
+                guard let (item, nextCursor) = decodeValue(
+                    in: data,
+                    at: cursor,
+                    pointerBase: pointerBase,
+                    depth: depth + 1
+                ) else {
+                    return nil
+                }
+                items.append(item)
+                cursor = nextCursor
+            }
+            return (.array(items), cursor)
+        case 3: // double
+            guard cursor + 8 <= data.count else { return nil }
+            return (.other, cursor + 8)
+        case 15: // float
+            guard cursor + 4 <= data.count else { return nil }
+            return (.other, cursor + 4)
+        case 4, 8, 10: // bytes, int32, uint128
+            guard cursor + size <= data.count else { return nil }
+            return (.other, cursor + size)
+        case 12, 13, 14: // container/end/bool
+            return (.other, cursor)
+        default:
+            return nil
+        }
     }
 }

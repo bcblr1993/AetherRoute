@@ -56,15 +56,19 @@ final class EngineLifecycleGate: @unchecked Sendable {
         for _ in 0..<4 {
             let stoppingGeneration: UInt64
             let pending: DispatchGroup?
+            let unsubmitted: Bool
             lock.lock()
             switch EngineLifecyclePolicy.startAdmission(
                 for: phase,
                 currentGeneration: generationCounter
             ) {
             case let .admit(generation):
+                let group = DispatchGroup()
+                group.enter()
                 generationCounter = generation
                 phase = .running(generation: generation)
-                engineCompletion = nil
+                engineCompletion = group
+                unsubmittedGeneration = generation
                 lock.unlock()
                 EngineLifecycleLog.logger.info(
                     "stage=engineLifecycle admitted generation=\(generation, privacy: .public)"
@@ -80,12 +84,26 @@ final class EngineLifecycleGate: @unchecked Sendable {
                 phase = .stopping(generation: live)
                 stoppingGeneration = live
                 pending = engineCompletion
+                unsubmitted = unsubmittedGeneration == live
+                if unsubmitted {
+                    unsubmittedGeneration = nil
+                }
                 lock.unlock()
                 _ = clash_shutdown()
             case let .awaitStop(generation):
                 stoppingGeneration = generation
                 pending = engineCompletion
+                unsubmitted = unsubmittedGeneration == generation
+                if unsubmitted {
+                    unsubmittedGeneration = nil
+                }
                 lock.unlock()
+            }
+
+            if unsubmitted {
+                pending?.leave()
+                finishStop(generation: stoppingGeneration)
+                continue
             }
 
             guard let pending else {
@@ -110,6 +128,24 @@ final class EngineLifecycleGate: @unchecked Sendable {
         return .rejected
     }
 
+    private var unsubmittedGeneration: UInt64?
+
+    /// Claims the pre-entered completion group created on `.admit(generation)`
+    /// right before submitting the engine worker. Returns `nil` if the
+    /// generation was already stopped or abandoned before submission.
+    func claimEngineCompletion(generation: UInt64) -> DispatchGroup? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard case let .running(live) = phase,
+              live == generation,
+              unsubmittedGeneration == generation,
+              let completion = engineCompletion else {
+            return nil
+        }
+        unsubmittedGeneration = nil
+        return completion
+    }
+
     /// Publishes the group that completes when the engine worker returns, so a
     /// later start can join it. Ignored if the generation is no longer live.
     func registerEngineCompletion(
@@ -119,6 +155,7 @@ final class EngineLifecycleGate: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard phase.generation == generation else { return }
+        unsubmittedGeneration = nil
         engineCompletion = group
     }
 
@@ -143,11 +180,18 @@ final class EngineLifecycleGate: @unchecked Sendable {
             )
             return nil
         case let .begin(live):
+            if unsubmittedGeneration == live {
+                let pending = engineCompletion
+                unsubmittedGeneration = nil
+                engineCompletion = nil
+                phase = .idle
+                pending?.leave()
+                EngineLifecycleLog.logger.info(
+                    "stage=engineLifecycle stopBeforeEngineStarted generation=\(live, privacy: .public)"
+                )
+                return nil
+            }
             guard let completion = engineCompletion else {
-                // Admitted, but the engine was never submitted — the window
-                // between installing the packet bridge and starting the worker.
-                // There is nothing to cancel and nothing to join, so release
-                // the slot outright rather than park it in `stopping`.
                 phase = .idle
                 EngineLifecycleLog.logger.info(
                     "stage=engineLifecycle stopBeforeEngineStarted generation=\(live, privacy: .public)"
@@ -165,7 +209,12 @@ final class EngineLifecycleGate: @unchecked Sendable {
         guard let generation else { return }
         lock.lock()
         let retired: Bool
+        var unsubmittedToLeave: DispatchGroup?
         if case let .stopping(live) = phase, live == generation {
+            if unsubmittedGeneration == generation {
+                unsubmittedToLeave = engineCompletion
+                unsubmittedGeneration = nil
+            }
             phase = .idle
             engineCompletion = nil
             retired = true
@@ -173,6 +222,7 @@ final class EngineLifecycleGate: @unchecked Sendable {
             retired = false
         }
         lock.unlock()
+        unsubmittedToLeave?.leave()
         guard retired else { return }
         let releasedBytes = malloc_zone_pressure_relief(nil, 0)
         EngineLifecycleLog.logger.info(
@@ -184,13 +234,20 @@ final class EngineLifecycleGate: @unchecked Sendable {
     /// so a failed start does not leave the slot permanently occupied.
     func abandonStart(generation: UInt64) {
         lock.lock()
-        defer { lock.unlock() }
-        guard phase.generation == generation else { return }
-        phase = .idle
-        engineCompletion = nil
-        EngineLifecycleLog.logger.info(
-            "stage=engineLifecycle abandoned generation=\(generation, privacy: .public)"
-        )
+        var unsubmittedToLeave: DispatchGroup?
+        if phase.generation == generation {
+            if unsubmittedGeneration == generation {
+                unsubmittedToLeave = engineCompletion
+                unsubmittedGeneration = nil
+            }
+            phase = .idle
+            engineCompletion = nil
+            EngineLifecycleLog.logger.info(
+                "stage=engineLifecycle abandoned generation=\(generation, privacy: .public)"
+            )
+        }
+        lock.unlock()
+        unsubmittedToLeave?.leave()
     }
 
     /// Retires an unexpectedly terminated engine generation, ensuring the gate returns to idle
@@ -198,7 +255,12 @@ final class EngineLifecycleGate: @unchecked Sendable {
     func retireUnexpectedlyTerminatedEngine(generation: UInt64) {
         lock.lock()
         let retired: Bool
+        var unsubmittedToLeave: DispatchGroup?
         if phase.generation == generation {
+            if unsubmittedGeneration == generation {
+                unsubmittedToLeave = engineCompletion
+                unsubmittedGeneration = nil
+            }
             phase = .idle
             engineCompletion = nil
             retired = true
@@ -206,6 +268,7 @@ final class EngineLifecycleGate: @unchecked Sendable {
             retired = false
         }
         lock.unlock()
+        unsubmittedToLeave?.leave()
         guard retired else { return }
         let releasedBytes = malloc_zone_pressure_relief(nil, 0)
         EngineLifecycleLog.logger.error(

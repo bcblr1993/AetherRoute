@@ -55,6 +55,23 @@ enum TransparentProxyFlowSessionConfigurationError:
     case maximumTCPReadBytesExceedsAdmissionProfile
 }
 
+private enum TransparentSessionLifecycleQueuePool {
+    private static let queues: [DispatchQueue] = (0..<32).map { index in
+        DispatchQueue(
+            label: "com.example.aetherroute.transparent-proxy.session.\(index)",
+            qos: .userInitiated
+        )
+    }
+
+    static func queue(for sessionID: UUID) -> DispatchQueue {
+        let slot = withUnsafeBytes(of: sessionID.uuid) { bytes in
+            bytes.reduce(0) { ($0 &* 31) &+ Int($1) }
+        }
+        let count = queues.count
+        return queues[((slot % count) + count) % count]
+    }
+}
+
 /// Owns one retained Apple TCP flow and one staged Rust handle. Startup order
 /// is fixed to retain -> Apple open -> Rust activate -> bidirectional pump.
 final class TransparentTCPProxySession:
@@ -77,6 +94,7 @@ final class TransparentTCPProxySession:
     private var appleDrainStarted = false
     private var appleDrainFinished = false
     private var machine: TCPFlowStateMachine?
+    private var machineStartTask: Task<Void, Never>?
 
     init(
         sessionID: UUID = UUID(),
@@ -106,9 +124,7 @@ final class TransparentTCPProxySession:
         self.opening = opening
         self.flow = flow
         self.rust = rust
-        self.lifecycleQueue = DispatchQueue(
-            label: "com.example.aetherroute.tcp-session.\(sessionID.uuidString)"
-        )
+        self.lifecycleQueue = TransparentSessionLifecycleQueuePool.queue(for: sessionID)
         self.resourceLease = resourceLease
         self.registry = registry
         self.machine = nil
@@ -197,7 +213,13 @@ final class TransparentTCPProxySession:
                 terminateDirectly()
                 return
             }
-            Task { await machine.cancel() }
+            let startTask = machineStartTask
+            machineStartTask = nil
+            startTask?.cancel()
+            Task {
+                _ = await startTask?.value
+                await machine.cancel()
+            }
         case .destroyDirectly:
             terminateDirectly()
         }
@@ -308,8 +330,9 @@ final class TransparentTCPProxySession:
                 cancel()
                 return
             }
-            Task { [weak self] in
+            let startTask = Task { [weak self] in
                 guard let self else { return }
+                if Task.isCancelled { return }
                 do {
                     try await machine.start()
                 } catch {
@@ -319,6 +342,7 @@ final class TransparentTCPProxySession:
                     self.cancel()
                 }
             }
+            machineStartTask = startTask
         case .destroy:
             terminateDirectly()
         }
@@ -479,6 +503,7 @@ final class TransparentUDPProxySession:
     private var appleDrainStarted = false
     private var appleDrainFinished = false
     private var machine: UDPFlowStateMachine?
+    private var machineStartTask: Task<Void, Never>?
     private var sourceLease: SyntheticSourceEndpointLease?
 
     init(
@@ -509,9 +534,7 @@ final class TransparentUDPProxySession:
         self.opening = opening
         self.flow = flow
         self.rust = rust
-        self.lifecycleQueue = DispatchQueue(
-            label: "com.example.aetherroute.udp-session.\(sessionID.uuidString)"
-        )
+        self.lifecycleQueue = TransparentSessionLifecycleQueuePool.queue(for: sessionID)
         self.resourceLease = resourceLease
         self.registry = registry
         self.sourceLease = sourceLease
@@ -595,7 +618,13 @@ final class TransparentUDPProxySession:
                 terminateDirectly()
                 return
             }
-            Task { await machine.cancel() }
+            let startTask = machineStartTask
+            machineStartTask = nil
+            startTask?.cancel()
+            Task {
+                _ = await startTask?.value
+                await machine.cancel()
+            }
         case .destroyDirectly:
             terminateDirectly()
         }
@@ -704,8 +733,9 @@ final class TransparentUDPProxySession:
                 cancel()
                 return
             }
-            Task { [weak self] in
+            let startTask = Task { [weak self] in
                 guard let self else { return }
+                if Task.isCancelled { return }
                 do {
                     try await machine.start()
                 } catch {
@@ -715,6 +745,7 @@ final class TransparentUDPProxySession:
                     self.cancel()
                 }
             }
+            machineStartTask = startTask
         case .destroy:
             terminateDirectly()
         }

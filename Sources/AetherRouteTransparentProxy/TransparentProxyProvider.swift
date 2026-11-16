@@ -64,6 +64,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     }
     private let recipeLock = NSLock()
     private var runtimeRecipe: RuntimeRecipe?
+    private var cachedSummary: (digest: String, summary: ProfileConfigurationSummary)?
 
     private var pathMonitor: NWPathMonitor?
     private var uplinkStore: SCDynamicStore?
@@ -194,7 +195,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         Self.runtimeLog.lifecycle("stage=startProxy requested")
         uplinkLock.withLock {
             providerStopping = false
+            lastPathSignature = nil
         }
+        resetLedger.invalidate()
         let completion = ProxyStartCompletion(completionHandler)
         let snapshot: ProviderLaunchSnapshot
         let bypassPlan: BypassNetworkSettingsPlan
@@ -377,7 +380,11 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         completionHandler: @escaping () -> Void
     ) {
         Self.runtimeLog.lifecycle("stage=stopProxy requested")
-        uplinkLock.withLock { providerStopping = true }
+        uplinkLock.withLock {
+            providerStopping = true
+            lastPathSignature = nil
+        }
+        resetLedger.invalidate()
         stopPathMonitoring()
         recovery.cancel(reason: "stopProxy")
         recipeLock.withLock { runtimeRecipe = nil }
@@ -630,8 +637,11 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             cachedPathInterfaces: cached
         )
         let signature = PhysicalUplinkDetector.pathSignature(store: store, uplink: uplink)
-        let previous = lastPathSignature
-        lastPathSignature = signature
+        let previous = uplinkLock.withLock { () -> String? in
+            let prev = lastPathSignature
+            lastPathSignature = signature
+            return prev
+        }
         guard let previous, previous != signature else { return }
         Self.osLogger.info(
             "stage=physicalUplinkChanged scheduling recovery reason=\(reason, privacy: .public) signature=\(signature, privacy: .public) previous=\(previous, privacy: .public)"
@@ -639,8 +649,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         recovery.trigger(reason: reason, supersedes: true)
     }
 
+    private static func transportLogLabel(for flow: NEAppProxyFlow) -> String {
+        if flow is NEAppProxyUDPFlow { return "udp" }
+        if flow is NEAppProxyTCPFlow { return "tcp" }
+        return "unknown"
+    }
+
     override func handleNewFlow(_ flow: NEAppProxyFlow) -> Bool {
-        Self.runtimeLog.verbose("stage=handleNewFlow transport=tcp begin")
+        let transport = Self.transportLogLabel(for: flow)
+        Self.runtimeLog.verbose("stage=handleNewFlow transport=\(transport) begin")
         return runtimeController.withFlowAdmission { [self] in
             handleAdmittedFlow(flow)
         } ?? NetworkExtensionStoppedProviderFlow
@@ -968,44 +985,41 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             completion(.failure(.unavailable))
             return
         }
+        let reloadPayload: ReloadProfilePayload
+        do {
+            reloadPayload = try TransparentProxyReloadPayloadPolicy.decode(payloadData)
+        } catch TransparentProxyReloadPayloadError.emptyPayload {
+            Self.runtimeLog.failure("stage=handleReloadProfile failed reason=emptyPayload")
+            completion(.failure(.invalidRequest))
+            return
+        } catch {
+            Self.runtimeLog.failure(
+                "stage=handleReloadProfile decodeFailed error=\(String(reflecting: error))"
+            )
+            completion(.failure(.invalidRequest))
+            return
+        }
         do {
             let previousRecipe = recipeLock.withLock { runtimeRecipe }
+            let fallbackDiagnosticLevel = previousRecipe?.snapshot.diagnosticLogLevel ?? DiagnosticLogCenter.current.level
+            let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? fallbackDiagnosticLevel
+            DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
             let store = try ActiveProfileStore.applicationGroup()
-            let snapshot: ProviderLaunchSnapshot
-            if !payloadData.isEmpty {
-                let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
-                let resourceStore = RoutingResourceStore(
-                    applicationSupportDirectory: store.directoryURL
-                )
-                let resources = try resourceStore.launchResourceSnapshot(
-                    for: reloadPayload.profileYAML
-                )
-                snapshot = try ProviderLaunchSnapshot(
-                    profileYAML: reloadPayload.profileYAML,
-                    routingMode: reloadPayload.routingMode,
-                    bypassPolicy: reloadPayload.bypassPolicy,
-                    dnsPolicy: reloadPayload.dnsPolicy,
-                    proxySelections: reloadPayload.proxySelections,
-                    routingResources: resources
-                )
-            } else {
-                let activeProfile = try store.loadValidated()
-                let routingMode: RoutingMode = previousRecipe?.routingMode ?? .rule
-                let persistedSelections = (try? ProxySelectionStore.applicationGroup()
-                    .selections(forProfileYAML: activeProfile.runtimeYAML))
-                    ?? previousRecipe?.selections
-                    ?? [:]
-                let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
-                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.runtimeYAML)) ?? [:]
-                snapshot = try ProviderLaunchSnapshot(
-                    profileYAML: activeProfile.runtimeYAML,
-                    routingMode: routingMode,
-                    bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
-                    dnsPolicy: .inherited,
-                    proxySelections: persistedSelections,
-                    routingResources: resources
-                )
-            }
+            let resourceStore = RoutingResourceStore(
+                applicationSupportDirectory: store.directoryURL
+            )
+            let resources = try resourceStore.launchResourceSnapshot(
+                for: reloadPayload.profileYAML
+            )
+            let snapshot = try ProviderLaunchSnapshot(
+                profileYAML: reloadPayload.profileYAML,
+                routingMode: reloadPayload.routingMode,
+                bypassPolicy: reloadPayload.bypassPolicy,
+                dnsPolicy: reloadPayload.dnsPolicy,
+                proxySelections: reloadPayload.proxySelections,
+                routingResources: resources,
+                diagnosticLogLevel: effectiveDiagnosticLevel
+            )
 
             let settings = try Self.makeNetworkSettings(for: snapshot)
             let newRecipe = RuntimeRecipe(
@@ -1029,6 +1043,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                         completion(.failure(.unavailable))
                         return
                     }
+                    guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                        completion(.failure(.unavailable))
+                        return
+                    }
                     guard swapped else {
                         Self.runtimeLog.failure("stage=handleReloadProfile rebuildFailed")
                         completion(.failure(.internalFailure))
@@ -1036,6 +1054,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     }
                     self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
                         guard let self else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        guard !self.uplinkLock.withLock({ self.providerStopping }) else {
                             completion(.failure(.unavailable))
                             return
                         }
@@ -1053,7 +1075,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                             return
                         }
                         self.recipeLock.withLock {
-                            self.runtimeRecipe = newRecipe
+                            if !self.uplinkLock.withLock({ self.providerStopping }) {
+                                self.runtimeRecipe = newRecipe
+                            }
                         }
                         completion(.profileReloaded)
                     }
@@ -1072,6 +1096,10 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         diagnostics: ProviderDiagnosticAccumulator,
         completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
     ) {
+        guard !uplinkLock.withLock({ providerStopping }) else {
+            completion(.failure(.unavailable))
+            return
+        }
         guard let previousRecipe else {
             Self.runtimeLog.failure("stage=handleReloadProfile rollbackFailed reason=missingPreviousRecipe")
             completion(.failure(.internalFailure))
@@ -1147,28 +1175,29 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     }
 
     private func handleAdmittedFlow(_ flow: NEAppProxyFlow) -> Bool {
+        let transport = Self.transportLogLabel(for: flow)
         let evaluation = runtimeController.identityEvaluation(for: flow)
         switch evaluation.disposition {
         case .bypass:
             Self.aggregator.record(.flowBypassed)
             Self.runtimeLog.verbose(
-                "stage=handleNewFlow transport=tcp disposition=bypass"
+                "stage=handleNewFlow transport=\(transport) disposition=bypass"
             )
             // This is the only false return in the provider: code-identity-
             // verified egress from this extension must escape recursion.
             return false
         case .reject:
             Self.runtimeLog.failure(
-                "stage=handleNewFlow transport=tcp disposition=reject"
+                "stage=handleNewFlow transport=\(transport) disposition=reject"
             )
             return failClosed(flow)
         case .proxy:
             Self.runtimeLog.verbose(
-                "stage=handleNewFlow transport=tcp disposition=proxy"
+                "stage=handleNewFlow transport=\(transport) disposition=proxy"
             )
             guard let tcpFlow = flow as? NEAppProxyTCPFlow else {
                 Self.runtimeLog.failure(
-                    "stage=handleNewFlow transport=tcp error=unexpectedFlowType"
+                    "stage=handleNewFlow transport=\(transport) error=unexpectedFlowType"
                 )
                 return failClosed(flow)
             }
@@ -1477,13 +1506,25 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         }
     }
 
+    private func cachedProfileSummary(for yaml: String) -> ProfileConfigurationSummary {
+        let digest = ProxySelectionStore.profileDigest(yaml: yaml)
+        if let existing = recipeLock.withLock({ cachedSummary }), existing.digest == digest {
+            return existing.summary
+        }
+        let inspected = ProfileConfigurationInspector.inspect(yaml: yaml)
+        recipeLock.withLock {
+            cachedSummary = (digest: digest, summary: inspected)
+        }
+        return inspected
+    }
+
     private func handleTraceRoute(
         _ request: RouteTraceRequest
     ) throws -> ProxySelectionProviderResponse {
         let recipe = recipeLock.withLock { runtimeRecipe }
         let mode = recipe?.routingMode ?? .rule
         let profileYAML = recipe?.snapshot.profileYAML
-        let summary = profileYAML.map { ProfileConfigurationInspector.inspect(yaml: $0) }
+        let summary = profileYAML.map { cachedProfileSummary(for: $0) }
         var liveSelections = recipe?.selections ?? recipe?.snapshot.proxySelections ?? [:]
         if let summary {
             for group in summary.proxyGroups {
@@ -1502,7 +1543,11 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
             summary: summary,
             proxySelections: liveSelections,
             customRules: customRules,
+            customHosts: request.customHosts,
             geoSiteData: recipe?.snapshot.routingResources[.geoSite],
+            countryMMDBData: recipe?.snapshot.routingResources[.countryMMDB],
+            asnMMDBData: recipe?.snapshot.routingResources[.asnMMDB],
+            resolvedAddresses: request.resolvedAddresses,
             source: .liveProvider
         )
         return .traceRoute(result)

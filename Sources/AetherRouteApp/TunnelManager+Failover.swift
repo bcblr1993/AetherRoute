@@ -128,9 +128,15 @@ extension TunnelManager {
 
         let previous = proxySelectionMode(for: groupName)
         guard previous != mode else { return }
+        proxySelectionModeTasks[groupName]?.cancel()
+        proxySelectionModeTasks.removeValue(forKey: groupName)
+        let modeToken = UUID()
+        proxySelectionModeTokens[groupName] = modeToken
+
         let isCustom = customProxyGroup(named: groupName) != nil
         if isCustom {
             guard await persistCustomGroupMode(mode, group: groupName) else { return }
+            guard !Task.isCancelled, proxySelectionModeTokens[groupName] == modeToken else { return }
         } else {
             persistProxySelectionMode(mode, group: groupName, profileYAML: yaml)
         }
@@ -171,34 +177,56 @@ extension TunnelManager {
             return
         }
         let previousSelectedMember = proxySelections[groupName]?.selectedMember
-        do {
-            let selected = try await selectFastestAvailableProxy(
-                group: group,
-                client: makeProxySelectionProviderClient(),
-                preferredMember: mode == .failover
-                    ? preferredProxyMembers[groupName]
-                    : nil
-            )
-            automaticReadinessGroupNames.insert(groupName)
-            if let newMember = selected.selectedMember {
-                await closeConnectionsAfterProxySwitch(
-                    group: groupName,
-                    previousMember: previousSelectedMember,
-                    newMember: newMember
+        let probeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.proxySelectionModeTokens[groupName] == modeToken {
+                    self.proxySelectionModeTasks.removeValue(forKey: groupName)
+                }
+            }
+            do {
+                let selected = try await self.selectFastestAvailableProxy(
+                    group: group,
+                    client: self.makeProxySelectionProviderClient(),
+                    preferredMember: mode == .failover
+                        ? self.preferredProxyMembers[groupName]
+                        : nil
+                )
+                guard !Task.isCancelled,
+                      self.proxySelectionModeTokens[groupName] == modeToken else { return }
+                self.automaticReadinessGroupNames.insert(groupName)
+                if let newMember = selected.selectedMember {
+                    await self.closeConnectionsAfterProxySwitch(
+                        group: groupName,
+                        previousMember: previousSelectedMember,
+                        newMember: newMember
+                    )
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled,
+                      self.proxySelectionModeTokens[groupName] == modeToken else { return }
+                if isCustom {
+                    _ = await self.persistCustomGroupMode(previous, group: groupName)
+                } else {
+                    self.persistProxySelectionMode(previous, group: groupName, profileYAML: yaml)
+                }
+                guard !Task.isCancelled,
+                      self.proxySelectionModeTokens[groupName] == modeToken else { return }
+                var reverted = self.proxySelectionModes
+                reverted[groupName] = previous == .manual ? nil : previous
+                self.applyProxySelectionModes(reverted)
+                self.proxySelectionMessages[groupName] = AppLocalization.string(
+                    "No proxy node in this group passed the automatic connection check."
                 )
             }
-        } catch {
-            if isCustom {
-                _ = await persistCustomGroupMode(previous, group: groupName)
-            } else {
-                persistProxySelectionMode(previous, group: groupName, profileYAML: yaml)
-            }
-            var reverted = proxySelectionModes
-            reverted[groupName] = previous == .manual ? nil : previous
-            applyProxySelectionModes(reverted)
-            proxySelectionMessages[groupName] = AppLocalization.string(
-                "No proxy node in this group passed the automatic connection check."
-            )
+        }
+        proxySelectionModeTasks[groupName] = probeTask
+        await withTaskCancellationHandler {
+            await probeTask.value
+        } onCancel: {
+            probeTask.cancel()
         }
     }
 

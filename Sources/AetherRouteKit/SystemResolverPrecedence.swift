@@ -39,10 +39,10 @@ public struct SystemResolverPrecedence: Codable, Equatable, Sendable {
     /// resolver first alongside others is working as intended. What matters is
     /// whether any tunnel resolver appears at all.
     public var isPreempted: Bool {
-        guard !tunnelServers.isEmpty, !primaryServers.isEmpty else {
+        guard !tunnelServers.isEmpty, let firstPrimary = primaryServers.first else {
             return false
         }
-        return !primaryServers.contains { tunnelServers.contains($0) }
+        return !tunnelServers.contains(firstPrimary)
     }
 
     /// The resolver the system reaches first, for the report's summary line.

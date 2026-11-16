@@ -179,10 +179,15 @@ public actor UDPFlowStateMachine {
     private let bridgeSink: any RustUDPSink
     private let bridgeSourceAndSinkShareIdentity: Bool
     private let policy: UDPBatchPolicy
+    private let idleTimeout: Duration?
     private let onTermination: FlowTerminationHandler
     private let sessionID = UUID()
 
+    public static let defaultIdleTimeout: Duration = .seconds(120)
+
     private var lifecycle: FlowLifecycle = .idle
+    private var lastActivityAt = ContinuousClock.now
+    private var idleWatchdogTask: Task<Void, Never>?
     private var sequence: UInt64 = 0
     private var flowReadToken: FlowOperationToken?
     private var flowWriteToken: FlowOperationToken?
@@ -197,6 +202,7 @@ public actor UDPFlowStateMachine {
         bridgeSource: any RustUDPSource,
         bridgeSink: any RustUDPSink,
         policy: UDPBatchPolicy = .strict,
+        idleTimeout: Duration? = UDPFlowStateMachine.defaultIdleTimeout,
         onTermination: @escaping FlowTerminationHandler = { _ in }
     ) throws {
         self.flow = flow
@@ -205,6 +211,7 @@ public actor UDPFlowStateMachine {
         self.bridgeSourceAndSinkShareIdentity =
             ObjectIdentifier(bridgeSource) == ObjectIdentifier(bridgeSink)
         self.policy = try policy.validated()
+        self.idleTimeout = idleTimeout
         self.onTermination = onTermination
     }
 
@@ -213,6 +220,8 @@ public actor UDPFlowStateMachine {
             throw FlowStateMachineStartError.alreadyStarted
         }
         lifecycle = .running
+        lastActivityAt = .now
+        armIdleWatchdogIfNeeded()
         issueFlowRead()
         issueBridgeRead()
     }
@@ -297,6 +306,7 @@ public actor UDPFlowStateMachine {
         case .success(.endOfStream):
             finish()
         case let .success(.datagrams(datagrams)):
+            lastActivityAt = .now
             guard validate(datagrams) else { return }
             issueBridgeWrite(datagrams)
         }
@@ -316,6 +326,7 @@ public actor UDPFlowStateMachine {
         case .success(.endOfStream):
             finish()
         case let .success(.datagrams(datagrams)):
+            lastActivityAt = .now
             guard validate(datagrams) else { return }
             issueFlowWrite(datagrams)
         }
@@ -359,6 +370,7 @@ public actor UDPFlowStateMachine {
         case let .failure(error):
             fail(error)
         case .success:
+            lastActivityAt = .now
             DiagnosticFlowOpenObserver.shared.record(.bytesUpstream(pendingBridgeWriteBytes))
             pendingBridgeWriteBytes = 0
             issueFlowRead()
@@ -393,6 +405,7 @@ public actor UDPFlowStateMachine {
         case let .failure(error):
             fail(error)
         case .success:
+            lastActivityAt = .now
             DiagnosticFlowOpenObserver.shared.record(.bytesClient(pendingFlowWriteBytes))
             pendingFlowWriteBytes = 0
             issueBridgeRead()
@@ -415,7 +428,34 @@ public actor UDPFlowStateMachine {
         reportTermination()
     }
 
+    private func armIdleWatchdogIfNeeded() {
+        guard let idleTimeout, idleWatchdogTask == nil else { return }
+        idleWatchdogTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                guard let remaining = await self.remainingIdleDuration(timeout: idleTimeout) else {
+                    return
+                }
+                if remaining <= .zero {
+                    await self.idleTimedOut()
+                    return
+                }
+                try? await Task.sleep(for: remaining)
+            }
+        }
+    }
+
+    private func remainingIdleDuration(timeout: Duration) -> Duration? {
+        guard lifecycle == .running else { return nil }
+        return (lastActivityAt + timeout) - ContinuousClock.now
+    }
+
+    private func idleTimedOut() {
+        finish()
+    }
+
     private func invalidateOperations() {
+        idleWatchdogTask?.cancel()
+        idleWatchdogTask = nil
         flowReadToken = nil
         flowWriteToken = nil
         bridgeReadToken = nil

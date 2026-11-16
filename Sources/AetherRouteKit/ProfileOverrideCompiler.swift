@@ -213,8 +213,17 @@ public enum ProfileOverrideCompiler {
         var rewritten: [Int: String] = [:]
         for (index, group) in document.groups.enumerated() {
             let members = plan.members(of: group.name, original: group.memberTokens)
-            guard members != group.memberTokens else { continue }
-            guard let line = group.flowLine(members: members) else {
+            let updatedExcludeFilter = group.includeAll
+                ? plan.mergedExcludeFilter(existing: group.excludeFilterPattern)
+                : nil
+            let excludeChanged = updatedExcludeFilter != nil
+                && updatedExcludeFilter != group.excludeFilterPattern
+            guard members != group.memberTokens || excludeChanged else { continue }
+            guard let line = group.flowLine(
+                members: members,
+                includeMembersList: !group.memberTokens.isEmpty || !members.isEmpty,
+                excludeFilterPattern: updatedExcludeFilter
+            ) else {
                 diagnostics.append(.groupNotEditable(group: group.name))
                 continue
             }
@@ -334,6 +343,7 @@ public enum ProfileOverrideCompiler {
         private(set) var customHosts: [(domain: String, ip: String)] = []
         let hiddenNodes: [String]
         private let hidden: Set<String>
+        private let hiddenKeywordRegexFragment: String?
         /// Parent group → custom groups / chained proxies to add (top, bottom).
         private var insertions: [String: (top: [String], bottom: [String])] = [:]
 
@@ -349,6 +359,17 @@ public enum ProfileOverrideCompiler {
             proxyItemIndent: Int = 2
         ) {
             let keywords = override.hiddenNodeKeywords.map { $0.lowercased() }
+            var escapedKeywords: [String] = []
+            var seenEscaped = Set<String>()
+            for rawKeyword in override.hiddenNodeKeywords {
+                let trimmed = rawKeyword.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                let escaped = NSRegularExpression.escapedPattern(for: trimmed)
+                if seenEscaped.insert(escaped.lowercased()).inserted {
+                    escapedKeywords.append(escaped)
+                }
+            }
+            self.hiddenKeywordRegexFragment = escapedKeywords.isEmpty ? nil : escapedKeywords.joined(separator: "|")
             let hiddenNodes = nodes.filter { node in
                 let lowered = node.lowercased()
                 return keywords.contains(where: { lowered.contains($0) })
@@ -568,6 +589,21 @@ public enum ProfileOverrideCompiler {
             guard let entry = insertions[group] else { return kept }
             return entry.top + kept + entry.bottom
         }
+
+        func mergedExcludeFilter(existing: String?) -> String? {
+            guard let fragment = hiddenKeywordRegexFragment, !fragment.isEmpty else {
+                return existing
+            }
+            let addition = "(?i:\(fragment))"
+            guard let existing = existing?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !existing.isEmpty else {
+                return addition
+            }
+            if existing == addition || existing.contains(addition) {
+                return existing
+            }
+            return "(?:\(existing))|\(addition)"
+        }
     }
 
     private static func renderCustomGroupFlowLine(
@@ -741,12 +777,22 @@ public enum ProfileOverrideCompiler {
         }
 
         for index in groups.indices {
-            guard let name = groups[index]["name"] as? String,
-                  let members = groups[index]["proxies"] as? [String] else { continue }
+            guard let name = groups[index]["name"] as? String else { continue }
+            let rawMembers = groups[index]["proxies"] as? [String]
+            let includeAll = (groups[index]["include-all"] as? Bool == true)
+                || (groups[index]["include-all-proxies"] as? Bool == true)
+                || (groups[index]["include-all-providers"] as? Bool == true)
+            guard rawMembers != nil || includeAll else { continue }
+            let members = rawMembers ?? []
             let quotedMembers = members.map(YAMLDocument.quote)
             let updated = plan.members(of: name, original: quotedMembers)
             if updated != quotedMembers {
                 groups[index]["proxies"] = updated.map(YAMLDocument.unquote)
+            }
+            if includeAll,
+               let updatedExclude = plan.mergedExcludeFilter(existing: groups[index]["exclude-filter"] as? String),
+               updatedExclude != (groups[index]["exclude-filter"] as? String) {
+                groups[index]["exclude-filter"] = updatedExclude
             }
         }
         if !plan.strippedBaseDialerProxies.isEmpty {
@@ -843,6 +889,8 @@ struct YAMLDocument {
         /// Fields in order; nil when the group cannot be rewritten safely.
         let fields: [(key: String, value: Value)]?
         let lineRange: Range<Int>
+        let includeAll: Bool
+        let excludeFilterPattern: String?
 
         enum Value {
             case scalar(String)
@@ -850,25 +898,41 @@ struct YAMLDocument {
         }
 
         /// The group as a one-line flow mapping with new members.
-        func flowLine(members: [String]) -> String? {
+        func flowLine(
+            members: [String],
+            includeMembersList: Bool = true,
+            excludeFilterPattern updatedExcludeFilter: String? = nil
+        ) -> String? {
             guard let fields else { return nil }
             var parts: [String] = []
             var wroteMembers = false
+            var wroteExcludeFilter = false
             for (key, value) in fields {
+                let lowerKey = key.lowercased()
                 switch value {
                 case let .scalar(raw):
-                    parts.append("\(key): \(raw)")
+                    if lowerKey == "exclude-filter", let updatedExcludeFilter {
+                        parts.append("\(key): \(YAMLDocument.quote(updatedExcludeFilter))")
+                        wroteExcludeFilter = true
+                    } else {
+                        parts.append("\(key): \(raw)")
+                    }
                 case let .list(items):
-                    if key == "proxies" {
-                        parts.append("proxies: [\(members.joined(separator: ", "))]")
+                    if lowerKey == "proxies" {
+                        if includeMembersList || !members.isEmpty {
+                            parts.append("proxies: [\(members.joined(separator: ", "))]")
+                        }
                         wroteMembers = true
                     } else {
                         parts.append("\(key): [\(items.joined(separator: ", "))]")
                     }
                 }
             }
-            if !wroteMembers {
+            if !wroteMembers, (includeMembersList || !members.isEmpty) {
                 parts.append("proxies: [\(members.joined(separator: ", "))]")
+            }
+            if let updatedExcludeFilter, !wroteExcludeFilter {
+                parts.append("exclude-filter: \(YAMLDocument.quote(updatedExcludeFilter))")
             }
             return "{" + parts.joined(separator: ", ") + "}"
         }
@@ -960,7 +1024,9 @@ struct YAMLDocument {
                         name: name,
                         memberTokens: item.members,
                         fields: item.fields,
-                        lineRange: range
+                        lineRange: range,
+                        includeAll: item.includeAll,
+                        excludeFilterPattern: item.excludeFilterPattern
                     )
                 }
             case "hosts":
@@ -1047,6 +1113,8 @@ struct YAMLDocument {
         var name: String?
         var nameToken: String?
         var dialerProxy: String?
+        var includeAll = false
+        var excludeFilterPattern: String?
         var members: [String] = []
         var fields: [(key: String, value: Group.Value)]?
     }
@@ -1098,6 +1166,13 @@ struct YAMLDocument {
                 } else if lowerKey == "dialer-proxy" || (lowerKey == "connect-via" && item.dialerProxy == nil) {
                     let value = Self.unquote(raw).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !value.isEmpty { item.dialerProxy = value }
+                } else if lowerKey == "include-all" || lowerKey == "include-all-proxies" || lowerKey == "include-all-providers" {
+                    if ["true", "1", "yes"].contains(Self.unquote(raw).lowercased()) {
+                        item.includeAll = true
+                    }
+                } else if lowerKey == "exclude-filter" {
+                    let value = Self.unquote(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !value.isEmpty { item.excludeFilterPattern = value }
                 }
             }
         }
@@ -1143,6 +1218,13 @@ struct YAMLDocument {
                 } else if lowerKey == "dialer-proxy" || (lowerKey == "connect-via" && item.dialerProxy == nil) {
                     let value = Self.unquote(raw).trimmingCharacters(in: .whitespacesAndNewlines)
                     if !value.isEmpty { item.dialerProxy = value }
+                } else if lowerKey == "include-all" || lowerKey == "include-all-proxies" || lowerKey == "include-all-providers" {
+                    if ["true", "1", "yes"].contains(Self.unquote(raw).lowercased()) {
+                        item.includeAll = true
+                    }
+                } else if lowerKey == "exclude-filter" {
+                    let value = Self.unquote(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !value.isEmpty { item.excludeFilterPattern = value }
                 }
             }
         }

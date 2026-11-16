@@ -5,14 +5,17 @@ import Foundation
 /// must call checkActive() before changing state after each suspension.
 @MainActor
 public final class NetworkEngineReconnectCoordinator {
-    public enum Outcome: Equatable { case switched, restoredPrevious }
-    public enum Failure: Error { case stopTimedOut, connectionTimedOut, rollbackFailed }
+    public enum Outcome: Equatable, Sendable { case switched, restoredPrevious }
+    public enum Failure: Error, Sendable { case stopTimedOut, connectionTimedOut, rollbackFailed }
     private var generation: UUID?
     private var isRunning = false
 
     public init() {}
 
-    public func cancel() { generation = nil }
+    public func cancel() {
+        generation = nil
+        isRunning = false
+    }
 
     public func checkActive() throws {
         guard generation != nil, !Task.isCancelled else { throw CancellationError() }
@@ -29,8 +32,10 @@ public final class NetworkEngineReconnectCoordinator {
         generation = id
         isRunning = true
         defer {
-            if generation == id { generation = nil }
-            isRunning = false
+            if generation == id {
+                generation = nil
+                isRunning = false
+            }
         }
         func checkpoint() throws {
             guard generation == id else { throw CancellationError() }

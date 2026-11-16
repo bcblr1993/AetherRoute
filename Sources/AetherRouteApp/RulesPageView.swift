@@ -61,15 +61,28 @@ struct RuleDistributionBar: View {
     let routingMode: RoutingMode
 
     var body: some View {
-        GeometryReader { proxy in
+        Canvas { context, size in
             let total = CGFloat(max(totalCount, 1))
-            HStack(spacing: AetherVisual.sMicro) {
-                segment(count: proxyCount, color: .indigo, width: proxy.size.width, total: total)
-                segment(count: directCount, color: .green, width: proxy.size.width, total: total)
-                segment(count: rejectCount, color: .red, width: proxy.size.width, total: total)
+            let gap = AetherVisual.sMicro
+            let counts: [(Int, Color)] = [
+                (proxyCount, .indigo),
+                (directCount, .green),
+                (rejectCount, .red),
+            ].filter { $0.0 > 0 }
+            var x: CGFloat = 0
+            for (index, item) in counts.enumerated() {
+                let isLast = index == counts.count - 1
+                let rawWidth = size.width * CGFloat(item.0) / total
+                let segWidth = isLast
+                    ? max(0, size.width - x)
+                    : min(max(rawWidth - gap, 4), max(0, size.width - x))
+                guard segWidth > 0 else { continue }
+                let rect = CGRect(x: x, y: 0, width: segWidth, height: size.height)
+                context.fill(Path(rect), with: .color(item.1))
+                x += segWidth + gap
             }
         }
-        .frame(height: 6)
+        .frame(height: AetherVisual.statusDotSize)
         .frame(minWidth: 80)
         .background(AetherVisual.neutralFill, in: Capsule())
         .clipShape(Capsule())
@@ -80,15 +93,6 @@ struct RuleDistributionBar: View {
         .accessibilityElement()
         .accessibilityLabel(summary)
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: [directCount, proxyCount, rejectCount])
-    }
-
-    @ViewBuilder
-    private func segment(count: Int, color: Color, width: CGFloat, total: CGFloat) -> some View {
-        if count > 0 {
-            Rectangle()
-                .fill(color)
-                .frame(width: max(width * CGFloat(count) / total - 1, 4))
-        }
     }
 
     private var summary: String {
@@ -163,17 +167,15 @@ struct RulesView: View {
                                 limitedOptions: []
                             ))
 
-                            Picker(
-                                AppLocalization.inline("Rule sections", chinese: "规则分组"),
-                                selection: $selectedSection
-                            ) {
-                                ForEach(RulesPageSectionFilter.allCases) { section in
-                                    Text(section.title).tag(section)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .accessibilityIdentifier("rules-section-filter")
+                            AetherSegmentedPicker(
+                                selection: $selectedSection,
+                                options: RulesPageSectionFilter.allCases.map {
+                                    .init(value: $0, title: $0.title)
+                                },
+                                accessibilityLabel: AppLocalization.inline("Rule sections", chinese: "规则分组"),
+                                accessibilityIdentifier: "rules-section-filter",
+                                fillsWidth: true
+                            )
 
                             if selectedSection == .all || selectedSection == .routeTester {
                                 routeTester(summary: summary, scrollProxy: scrollProxy)
@@ -478,7 +480,7 @@ struct RulesView: View {
                 if let msg = tunnel.customRuleMessage {
                     Label(msg, systemImage: tunnel.customRuleMessageIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(tunnel.customRuleMessageIsError ? AnyShapeStyle(Color.red) : AnyShapeStyle(AetherVisual.secondaryText))
+                        .foregroundStyle(tunnel.customRuleMessageIsError ? AnyShapeStyle(AetherReadableTint(color: .red)) : AnyShapeStyle(AetherVisual.secondaryText))
                         .padding(.horizontal, AetherVisual.s4)
                         .padding(.top, AetherVisual.s3)
                         .transition(AetherVisual.insertion)
@@ -502,6 +504,10 @@ struct RulesView: View {
                 } else {
                     let allRulesList = destinationRules
                     let visibleRules = filteredDestinationRules
+                    let indexByID = Dictionary(
+                        allRulesList.enumerated().map { ($1.id, $0) },
+                        uniquingKeysWith: { first, _ in first }
+                    )
                     if visibleRules.isEmpty {
                         Text(AppLocalization.string("No rules match. Try another filter or clear the search."))
                             .font(.subheadline)
@@ -511,7 +517,7 @@ struct RulesView: View {
                     } else {
                         LazyVStack(spacing: AetherVisual.sCompact) {
                             ForEach(visibleRules) { rule in
-                                let fullIndex = allRulesList.firstIndex(where: { $0.id == rule.id }) ?? 0
+                                let fullIndex = indexByID[rule.id] ?? 0
                                 CustomRuleRow(
                                     rule: rule,
                                     canMoveUp: fullIndex > 0,
@@ -679,7 +685,7 @@ struct RulesView: View {
                     .font(.caption)
                     .foregroundStyle(
                         tunnel.ruleProviderMessageIsError
-                            ? AnyShapeStyle(Color.red)
+                            ? AnyShapeStyle(AetherReadableTint(color: .red))
                             : AnyShapeStyle(AetherVisual.secondaryText)
                     )
                     .padding(.horizontal, AetherVisual.s4)
@@ -766,31 +772,16 @@ struct RulesView: View {
                     )
                     .padding(AetherVisual.s4)
                 } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: AetherVisual.s3) {
-                            actionFilter(summary: summary)
-                            RuleDistributionBar(
-                                directCount: directCount, proxyCount: proxyCount,
-                                rejectCount: rejectCount, totalCount: totalCount,
-                                routingMode: tunnel.routingMode
-                            )
-                            // Decorative: the filter's segments carry the counts.
-                            .accessibilityHidden(true)
-                            rulesSearchField
-                                .frame(width: AetherVisual.searchFieldWidth)
-                        }
-                        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                            HStack(spacing: AetherVisual.s3) {
-                                actionFilter(summary: summary)
-                                rulesSearchField
-                            }
-                            RuleDistributionBar(
-                                directCount: directCount, proxyCount: proxyCount,
-                                rejectCount: rejectCount, totalCount: totalCount,
-                                routingMode: tunnel.routingMode
-                            )
-                            .accessibilityHidden(true)
-                        }
+                    AetherRulesFilterBarLayout {
+                        actionFilter(summary: summary)
+                        RuleDistributionBar(
+                            directCount: directCount, proxyCount: proxyCount,
+                            rejectCount: rejectCount, totalCount: totalCount,
+                            routingMode: tunnel.routingMode
+                        )
+                        // Decorative: the filter's segments carry the counts.
+                        .accessibilityHidden(true)
+                        rulesSearchField
                     }
                     .padding(AetherVisual.s3)
 
@@ -851,7 +842,10 @@ struct RulesView: View {
                         .padding(.bottom, AetherVisual.s1)
                         .accessibilityElement(children: .contain)
                         .accessibilityLabel(AppLocalization.string("Ordered routing rules"))
-                        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: displayedRules.count)
+                        .animation(
+                            displayedRules.count <= 60 ? AetherVisual.animation(AetherVisual.gentleSpring) : nil,
+                            value: displayedRules.count
+                        )
 
                         if summary.allRules.count > summary.rules.count,
                            searchText.isEmpty,
@@ -1129,20 +1123,19 @@ private struct RuleRow: View {
 
             Spacer(minLength: AetherVisual.s3)
 
-            if isHovered {
-                // The shared copy button: it confirms with a check mark and
-                // respects Reduce Motion, unlike the hand-made one it replaced.
-                AetherCopyButton(title: Text(AppLocalization.string("Copy Criteria"))) {
-                    copyText(rule.criteria ?? rule.kind)
-                }
-                .labelStyle(.iconOnly)
-                .font(.caption)
-                .foregroundStyle(AetherVisual.secondaryText)
-                .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
-                .buttonStyle(.aetherPressable)
-                .help(AppLocalization.string("Copy Criteria"))
-                .transition(.opacity)
+            // Reserve the copy-button slot so hovering across rows never shifts criteria/target horizontally.
+            AetherCopyButton(title: Text(AppLocalization.string("Copy Criteria"))) {
+                copyText(rule.criteria ?? rule.kind)
             }
+            .labelStyle(.iconOnly)
+            .font(.caption)
+            .foregroundStyle(AetherVisual.secondaryText)
+            .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
+            .buttonStyle(.aetherPressable)
+            .help(AppLocalization.string("Copy Criteria"))
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
+            .accessibilityHidden(!isHovered)
 
             RuleTargetLabel(target: rule.target)
                 .frame(maxWidth: 190, alignment: .trailing)
@@ -1293,14 +1286,14 @@ struct CustomRuleRow: View {
 
             Spacer(minLength: AetherVisual.s2)
 
-            // RuleTargetLabel draws its own arrow; a second one stood here.
-            // At its natural width (a long proxy name capped at 160 pt), so
-            // "Direct" stays whole without reserving a 160-pt gap.
-            RuleTargetLabel(target: rule.target.rawString)
-                .frame(maxWidth: 160, alignment: .trailing)
-                .fixedSize(horizontal: true, vertical: false)
+            // Swap target label and hover actions in the same trailing slot so row content never shifts horizontally.
+            ZStack(alignment: .trailing) {
+                RuleTargetLabel(target: rule.target.rawString)
+                    .frame(maxWidth: 160, alignment: .trailing)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(isHovered ? 0 : 1)
+                    .accessibilityHidden(isHovered)
 
-            if isHovered {
                 HStack(spacing: AetherVisual.sMicro) {
                     if let onMoveUp {
                         Button {
@@ -1353,7 +1346,12 @@ struct CustomRuleRow: View {
                     .help(AppLocalization.string("Delete rule"))
                     .accessibilityLabel(AppLocalization.string("Delete rule"))
                 }
-                .transition(.opacity)
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(.regularMaterial, in: Capsule())
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+                .accessibilityHidden(!isHovered)
             }
         }
         .padding(.horizontal, AetherVisual.sRow)
@@ -1638,21 +1636,21 @@ struct CustomRuleEditorSheet: View {
                     ruleDivider
                     ruleRow(AppLocalization.string("Match")) {
                         if selectedKind == .network {
-                            Picker(
-                                AppLocalization.inline("Transport protocol", chinese: "传输层协议"),
+                            AetherSegmentedPicker(
                                 selection: Binding(
                                     get: {
                                         let upper = ruleValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
                                         return upper == "TCP" ? "TCP" : "UDP"
                                     },
                                     set: { ruleValue = $0 }
-                                )
-                            ) {
-                                Text(verbatim: "UDP").tag("UDP")
-                                Text(verbatim: "TCP").tag("TCP")
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
+                                ),
+                                options: [
+                                    .init(value: "UDP", title: "UDP"),
+                                    .init(value: "TCP", title: "TCP"),
+                                ],
+                                accessibilityLabel: AppLocalization.inline("Transport protocol", chinese: "传输层协议"),
+                                accessibilityIdentifier: "custom-rule-network-picker"
+                            )
                             .fixedSize()
                             .onAppear {
                                 let upper = ruleValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
@@ -1660,7 +1658,6 @@ struct CustomRuleEditorSheet: View {
                                     ruleValue = "UDP"
                                 }
                             }
-                            .accessibilityIdentifier("custom-rule-network-picker")
                         } else {
                             TextField(placeholderForKind(selectedKind), text: $ruleValue)
                                 .textFieldStyle(.roundedBorder)
@@ -1707,7 +1704,7 @@ struct CustomRuleEditorSheet: View {
                 } else {
                     ruleRow(AppLocalization.string("Rule")) {
                         TextField(
-                            AppLocalization.string("e.g. DOMAIN-SUFFIX,baizhiedu.xin,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"),
+                            AppLocalization.string("e.g. DOMAIN-SUFFIX,example.com,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve"),
                             text: $rawClashString,
                             axis: initialRule == nil ? .vertical : .horizontal
                         )
@@ -2352,7 +2349,7 @@ private struct RuleProviderPreviewSheet: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(items) { item in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             HStack(spacing: AetherVisual.s2) {
                                 RuleKindTag(kind: item.type)
                                 Text(verbatim: item.payload)
@@ -2373,7 +2370,9 @@ private struct RuleProviderPreviewSheet: View {
                             }
                             .padding(.horizontal, AetherVisual.s3)
                             .padding(.vertical, AetherVisual.s2)
-                            Divider().padding(.leading, AetherVisual.s3)
+                            if index < items.count - 1 {
+                                Divider().padding(.leading, AetherVisual.s3)
+                            }
                         }
                     }
                 }

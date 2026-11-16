@@ -192,7 +192,7 @@ struct ContentView: View {
             selectSection(section)
         }
         .onOpenURL { url in
-            tunnel.handleExternalURL(url)
+            tunnel.handleIncomingExternalURL(url)
         }
         .overlay(alignment: .top) {
             if isCommandPalettePresented && tunnel.hasAcceptedPrivacyDisclosure {
@@ -512,18 +512,9 @@ struct ContentView: View {
                 Divider()
                     .padding(.horizontal, AetherVisual.s3)
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: AetherVisual.s2) {
-                        sidebarSettingsButton
-                        Spacer(minLength: AetherVisual.s2)
-                        sidebarVersionLabel
-                    }
-                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        sidebarSettingsButton
-                        sidebarVersionLabel
-                            .padding(.leading, AetherVisual.sCompact)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                AetherWrapPairLayout {
+                    sidebarSettingsButton
+                    sidebarVersionLabel
                 }
                 .padding(.horizontal, AetherVisual.s3)
                 .padding(.vertical, AetherVisual.s1)
@@ -1176,7 +1167,7 @@ private struct ConnectionHero: View {
                     Text(nextStep)
                 } icon: {
                     Image(systemName: nextStepSymbol)
-                        .foregroundStyle(tunnel.isFailed ? Color.orange : Color.accentColor)
+                        .foregroundStyle(tunnel.isFailed ? AnyShapeStyle(AetherReadableTint(color: .orange)) : AnyShapeStyle(Color.accentColor))
                 }
                 .font(.subheadline)
                 .foregroundStyle(AetherVisual.secondaryText)
@@ -1422,7 +1413,11 @@ struct ConnectionMedallion: View {
             Image(systemName: phase.symbol)
                 .font(.system(size: size * 0.44, weight: .semibold))
                 .foregroundStyle(.white)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(
+                    (reduceMotion || uiReviewRequestsReducedMotion)
+                        ? .identity
+                        : .symbolEffect(.replace)
+                )
             if phase == .working {
                 TimelineView(.animation(paused: reduceMotion || uiReviewRequestsReducedMotion)) { context in
                     Circle()
@@ -1543,10 +1538,9 @@ private struct OverviewModeRow<Control: View>: View {
         OverviewAdaptiveRowLayout {
             OverviewRowLabel(symbol: symbol, tint: tint, title: title, help: help)
             // Proposed no width when it does not fit, it draws nothing
-            // rather than a lone ellipsis.
-            ViewThatFits(in: .horizontal) {
+            // rather than a lone ellipsis, without duplicating via ViewThatFits.
+            AetherSessionOptionalSlotLayout {
                 ModeHint(text: hint)
-                Color.clear.frame(width: 0, height: 0)
             }
             control
         }
@@ -1753,7 +1747,6 @@ private struct OverviewExitRow: View {
     @State private var selectedGroupName: String?
     @State private var searchText = ""
     @State private var pendingMember: String?
-    @State private var listContentHeight: CGFloat = 0
 
     private var effectiveRoutingMode: RoutingMode {
         tunnel.isConnected
@@ -1833,9 +1826,12 @@ private struct OverviewExitRow: View {
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                     .accessibilityIdentifier("overview-active-outlet-node")
-                                if outlet.latency != .untested || tunnel.isConnected {
-                                    ProxyLatencyText(status: outlet.latency)
-                                }
+                                HeaderLatencyLeaf(
+                                    groupName: outlet.groupName,
+                                    member: outlet.node,
+                                    latencyStore: tunnel.latencyStore,
+                                    tunnel: tunnel
+                                )
                             }
                         } else {
                             Text(AppLocalization.string("Choose a node"))
@@ -1883,7 +1879,6 @@ private struct OverviewExitRow: View {
         }
         .onChange(of: effectiveRoutingMode) { _, _ in
             searchText = ""
-            listContentHeight = 0
         }
     }
 
@@ -1904,7 +1899,6 @@ private struct OverviewExitRow: View {
             dialerByName: dialersByName
         )
         let groupNames = Set(allGroups.map(\.name))
-        let isTestingGroup = tunnel.proxyLatencyRequests.contains(group.name)
         let selectedMember = resolvedSelectedMember(for: group)
         let showsFastestNote = OverviewExitDrawerPolicy.shouldSwitchToManualBeforeSelecting(
             groupName: group.name,
@@ -1963,19 +1957,13 @@ private struct OverviewExitRow: View {
                         )
                         .frame(maxWidth: AetherVisual.searchFieldMinWidth)
                     }
-                    Button {
-                        Task { await tunnel.testProxyLatency(group: group.name) }
-                    } label: {
-                        AetherProgressButtonLabel(
-                            AppLocalization.string("Test latency"),
-                            systemImage: "bolt",
-                            isWorking: isTestingGroup
-                        )
-                    }
-                    .buttonStyle(.aetherGlassCapsule)
-                    .controlSize(.small)
-                    .disabled(isTestingGroup)
-                    .accessibilityIdentifier("overview-outlet-latency")
+                    DrawerTestLatencyButton(
+                        groupName: group.name,
+                        latencyStore: tunnel.latencyStore,
+                        action: {
+                            Task { await tunnel.testProxyLatency(group: group.name) }
+                        }
+                    )
 
                     Button {
                         NotificationCenter.default.post(
@@ -2022,6 +2010,11 @@ private struct OverviewExitRow: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, AetherVisual.s3)
             } else {
+                let deterministicHeight = min(
+                    CGFloat(filteredMembers.count) * AetherVisual.tableRowHeight
+                        + CGFloat(max(0, filteredMembers.count - 1)) * AetherVisual.sMicro,
+                    240
+                )
                 ScrollView {
                     LazyVStack(spacing: AetherVisual.sMicro) {
                         ForEach(filteredMembers, id: \.self) { member in
@@ -2038,15 +2031,8 @@ private struct OverviewExitRow: View {
                             )
                         }
                     }
-                    .onGeometryChange(for: CGFloat.self) { proxy in
-                        proxy.size.height
-                    } action: { newHeight in
-                        if newHeight > 0 {
-                            listContentHeight = newHeight
-                        }
-                    }
                 }
-                .frame(height: listContentHeight > 0 ? min(listContentHeight, 240) : nil)
+                .frame(height: deterministicHeight)
                 .frame(maxHeight: 240)
             }
         }
@@ -2078,7 +2064,6 @@ private struct OverviewExitRow: View {
                             withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
                                 selectedGroupName = candidate.name
                                 searchText = ""
-                                listContentHeight = 0
                             }
                             Task {
                                 await tunnel.refreshProxySelection(group: candidate.name)
@@ -2126,9 +2111,6 @@ private struct OverviewExitRow: View {
     ) -> some View {
         let isUnavailable = unsupportedNames.contains(member)
         let isSwitchingThis = pendingMember == member
-        let resolvedLatency: (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) = isUnavailable
-            ? (.timedOut, tunnel.latencyConfidence(group: group.name, member: member))
-            : tunnel.resolvedOutletLatencyStatus(groupName: group.name, selectedMember: member)
         let isSelectionDisabled = pendingMember != nil
             || tunnel.proxySelectionRequests.contains(group.name)
             || group.strategy.lowercased() != "select"
@@ -2185,9 +2167,12 @@ private struct OverviewExitRow: View {
                         transport: proxySummary?.transportName
                     )
                 }
-                ProxyLatencyText(
-                    status: resolvedLatency.status,
-                    confidence: resolvedLatency.confidence
+                DrawerNodeLatencyLeaf(
+                    groupName: group.name,
+                    member: member,
+                    isUnavailable: isUnavailable,
+                    latencyStore: tunnel.latencyStore,
+                    tunnel: tunnel
                 )
             }
             .padding(.horizontal, AetherVisual.s2)
@@ -2220,6 +2205,65 @@ private struct OverviewExitRow: View {
 
     private var primaryGroupName: String? {
         tunnel.resolvedPrimaryRoutingGroup()?.name
+    }
+
+    private struct HeaderLatencyLeaf: View {
+        let groupName: String
+        let member: String
+        @ObservedObject var latencyStore: ProxyLatencyStore
+        let tunnel: TunnelManager
+
+        var body: some View {
+            let _ = latencyStore.proxyLatencies[groupName]
+            let _ = latencyStore.proxyLatencyRequests.contains(groupName)
+            let _ = latencyStore.memberLatencyRequests
+            let resolved = tunnel.resolvedOutletLatencyStatus(groupName: groupName, selectedMember: member)
+            if resolved.status != .untested || tunnel.isConnected {
+                ProxyLatencyText(status: resolved.status)
+            }
+        }
+    }
+
+    private struct DrawerTestLatencyButton: View {
+        let groupName: String
+        @ObservedObject var latencyStore: ProxyLatencyStore
+        let action: () -> Void
+
+        var body: some View {
+            let isTestingGroup = latencyStore.proxyLatencyRequests.contains(groupName)
+            Button(action: action) {
+                AetherProgressButtonLabel(
+                    AppLocalization.string("Test latency"),
+                    systemImage: "bolt",
+                    isWorking: isTestingGroup
+                )
+            }
+            .buttonStyle(.aetherGlassCapsule)
+            .controlSize(.small)
+            .disabled(isTestingGroup)
+            .accessibilityIdentifier("overview-outlet-latency")
+        }
+    }
+
+    private struct DrawerNodeLatencyLeaf: View {
+        let groupName: String
+        let member: String
+        let isUnavailable: Bool
+        @ObservedObject var latencyStore: ProxyLatencyStore
+        let tunnel: TunnelManager
+
+        var body: some View {
+            let _ = latencyStore.proxyLatencies[groupName]
+            let _ = latencyStore.proxyLatencyRequests.contains(groupName)
+            let _ = latencyStore.memberLatencyRequests
+            let resolved: (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) = isUnavailable
+                ? (.timedOut, tunnel.latencyConfidence(group: groupName, member: member))
+                : tunnel.resolvedOutletLatencyStatus(groupName: groupName, selectedMember: member)
+            ProxyLatencyText(
+                status: resolved.status,
+                confidence: resolved.confidence
+            )
+        }
     }
 }
 
@@ -2301,6 +2345,7 @@ private struct OverviewModeRows: View {
 /// answers the second without implying the first is in doubt.
 private struct OverviewRouteCheckRow: View {
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var tunnel: TunnelManager
 
     var body: some View {
@@ -2314,8 +2359,8 @@ private struct OverviewRouteCheckRow: View {
                         Text(title(quality))
                     } icon: {
                         Image(systemName: symbol(quality))
-                            .foregroundStyle(tint(quality))
-                            .symbolEffect(.pulse, isActive: quality == .verifying)
+                            .foregroundStyle(tintStyle(quality))
+                            .symbolEffect(.pulse, isActive: !reduceMotion && quality == .verifying)
                     }
                     .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
@@ -2354,12 +2399,12 @@ private struct OverviewRouteCheckRow: View {
         }
     }
 
-    private func tint(_ quality: ConnectionQuality?) -> Color {
+    private func tintStyle(_ quality: ConnectionQuality?) -> AnyShapeStyle {
         switch quality {
-        case nil, .unknown: .secondary
-        case .verifying: Color.accentColor
-        case .verified: .green
-        case .degraded: .orange
+        case nil, .unknown: AnyShapeStyle(AetherVisual.secondaryText)
+        case .verifying: AnyShapeStyle(Color.accentColor)
+        case .verified: AnyShapeStyle(AetherReadableTint(color: .green))
+        case .degraded: AnyShapeStyle(AetherReadableTint(color: .orange))
         }
     }
 
@@ -2841,7 +2886,7 @@ private struct TrafficCard: View {
                 // sample and must not observe TunnelManager itself.
                 TrafficStatisticsButton()
             }
-            HStack(alignment: .bottom, spacing: AetherVisual.s6 * 2) {
+            HStack(alignment: .bottom, spacing: usesStackedLayout ? AetherVisual.s4 : AetherVisual.s6) {
                 LiveTelemetryMetric(
                     label: AppLocalization.string("Download"),
                     dot: .cyan,
@@ -2882,63 +2927,26 @@ private struct TrafficCard: View {
         }
     }
 
-    @ViewBuilder
     private var memoryStatusStrip: some View {
-        if usesStackedLayout {
-            stackedMemoryStrip
-        } else {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: AetherVisual.s4) {
-                    Text(AppLocalization.string("Live memory"))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(AetherVisual.secondaryText)
-                        .lineLimit(1)
-                    LiveMemoryWell(
-                        kind: .core,
-                        isConnected: isConnected,
-                        telemetry: telemetry
-                    )
-                    LiveMemoryWell(
-                        kind: .app,
-                        isConnected: isConnected,
-                        telemetry: telemetry
-                    )
-                    Spacer(minLength: AetherVisual.s2)
-                    LiveMemoryTotalFooter(
-                        isConnected: isConnected,
-                        model: telemetry
-                    )
-                }
-                stackedMemoryStrip
-            }
-        }
-    }
-
-    private var stackedMemoryStrip: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(alignment: .center, spacing: AetherVisual.s3) {
-                Text(AppLocalization.string("Live memory"))
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(AetherVisual.secondaryText)
-                Spacer(minLength: AetherVisual.s2)
-                LiveMemoryTotalFooter(
-                    isConnected: isConnected,
-                    model: telemetry
-                )
-            }
-            HStack(alignment: .center, spacing: AetherVisual.s4) {
-                LiveMemoryWell(
-                    kind: .core,
-                    isConnected: isConnected,
-                    telemetry: telemetry
-                )
-                LiveMemoryWell(
-                    kind: .app,
-                    isConnected: isConnected,
-                    telemetry: telemetry
-                )
-                Spacer(minLength: 0)
-            }
+        AetherMemoryStripLayout(forceStacked: usesStackedLayout) {
+            Text(AppLocalization.string("Live memory"))
+                .font(.caption.weight(.medium))
+                .foregroundStyle(AetherVisual.secondaryText)
+                .lineLimit(1)
+            LiveMemoryWell(
+                kind: .core,
+                isConnected: isConnected,
+                telemetry: telemetry
+            )
+            LiveMemoryWell(
+                kind: .app,
+                isConnected: isConnected,
+                telemetry: telemetry
+            )
+            LiveMemoryTotalFooter(
+                isConnected: isConnected,
+                model: telemetry
+            )
         }
     }
 }

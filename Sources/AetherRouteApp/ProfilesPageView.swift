@@ -552,7 +552,7 @@ struct ProfilesView: View {
         HStack(spacing: AetherVisual.s3) {
             Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .font(.title3.weight(.medium))
-                .foregroundStyle(isError ? Color.orange : Color.green)
+                .foregroundStyle(AetherReadableTint(color: isError ? .orange : .green))
 
             Text(message)
                 .font(.subheadline)
@@ -606,7 +606,7 @@ struct ProfilesView: View {
 
                 Text(AppLocalization.string("Add a subscription link or import a Clash-compatible configuration to get started."))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
             }
@@ -652,7 +652,7 @@ struct ProfilesView: View {
                 Label(AppLocalization.string("Multi-Protocol"), systemImage: "bolt.horizontal.fill")
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(AetherVisual.secondaryText)
             .padding(.bottom, AetherVisual.s2)
         }
         .padding(AetherVisual.heroCardPadding)
@@ -684,7 +684,7 @@ struct ProfilesView: View {
 
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(AetherVisual.s4)
@@ -772,7 +772,7 @@ struct ProfilesView: View {
 
                 Text(AppLocalization.string("Supports Clash-compatible YAML/JSON profiles, HTTPS subscriptions, and common node links."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(AetherVisual.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -838,7 +838,7 @@ struct RoutingResourcesCard: View {
             HStack(alignment: .center, spacing: AetherVisual.s3) {
                 Image(systemName: resourcesAreReady ? "checkmark.shield" : "map")
                     .font(.title3)
-                    .foregroundStyle(resourcesAreReady ? Color.green : Color.accentColor)
+                    .foregroundStyle(resourcesAreReady ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.accentColor))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: AetherVisual.s1) {
@@ -916,7 +916,8 @@ struct RoutingResourcesCard: View {
                         .font(.callout)
                         .foregroundStyle(
                             tunnel.routingResourceMessageIsError
-                                ? Color.red : Color.secondary
+                                ? AnyShapeStyle(AetherReadableTint(color: .red))
+                                : AnyShapeStyle(AetherVisual.secondaryText)
                         )
                         .fixedSize(horizontal: false, vertical: true)
                     }
@@ -1727,11 +1728,9 @@ struct SubscriptionUsageLine: View {
 private extension ProfilesView {
     var externalProvidersCard: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack {
-                AetherSectionHeader(
-                    title: AppLocalization.inline("External Providers", chinese: "外部规则与代理集合")
-                )
-                Spacer()
+            AetherSectionHeader(
+                title: AppLocalization.inline("External Providers", chinese: "外部规则与代理集合")
+            ) {
                 Button {
                     guard !isRefreshingProviders else { return }
                     isRefreshingProviders = true

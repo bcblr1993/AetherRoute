@@ -302,81 +302,6 @@ extension TunnelManager {
             return
         }
 
-        let scheme = url.scheme?.lowercased() ?? ""
-        let host = (url.host ?? "").lowercased()
-
-        if scheme == "aetherroute" {
-            switch host {
-            case "connect":
-                Task {
-                    if !hasAcceptedPrivacyDisclosure {
-                        await acceptPrivacyDisclosure()
-                    }
-                    await setEnabled(true)
-                }
-                return
-            case "disconnect":
-                Task {
-                    await setEnabled(false)
-                }
-                return
-            case "toggle":
-                Task {
-                    if !hasAcceptedPrivacyDisclosure {
-                        await acceptPrivacyDisclosure()
-                    }
-                    await setEnabled(!isEnabled)
-                }
-                return
-            case "check-updates":
-                SparkleUpdaterController.shared.checkForUpdates()
-                return
-            case "navigate":
-                if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                   let sectionItem = components.queryItems?.first(where: { $0.name.lowercased() == "section" }),
-                   let section = sectionItem.value?.lowercased() {
-                    NotificationCenter.default.post(
-                        name: .aetherRouteNavigateToSection,
-                        object: section
-                    )
-                }
-                return
-            case "mode":
-                if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                   let modeItem = components.queryItems?.first(where: { $0.name.lowercased() == "mode" })?.value?.lowercased() {
-                    let targetMode: RoutingMode? = switch modeItem {
-                    case "rule": .rule
-                    case "global": .global
-                    case "direct": .direct
-                    default: nil
-                    }
-                    if let targetMode {
-                        Task { await setRoutingMode(targetMode) }
-                    }
-                }
-                return
-            case "profile":
-                if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-                    if let idString = components.queryItems?.first(where: { $0.name.lowercased() == "id" })?.value,
-                       let id = UUID(uuidString: idString) {
-                        Self.runtimeLogger.info("stage=handleExternalURL targetID=\(id)")
-                        Task { await activateProfile(id: id) }
-                    } else if let name = components.queryItems?.first(where: { $0.name.lowercased() == "name" })?.value {
-                        let availableNames = profiles.map { "\($0.profile.name)[\($0.id)]" }.joined(separator: ", ")
-                        Self.runtimeLogger.info("stage=handleExternalURL targetName=\(name, privacy: .public) activeID=\(String(describing: self.activeProfileID)) profiles=[\(availableNames, privacy: .public)]")
-                        if let target = profiles.first(where: { $0.profile.name == name }) {
-                            Task { await activateProfile(id: target.id) }
-                        } else {
-                            Self.runtimeLogger.error("stage=handleExternalURL targetName=\(name, privacy: .public) notFound")
-                        }
-                    }
-                }
-                return
-            default:
-                break
-            }
-        }
-
         do {
             pendingExternalSubscription = try ExternalSubscriptionLinkParser
                 .parse(url)
@@ -603,6 +528,7 @@ extension TunnelManager {
         }
         let previousProfileID = activeProfileID
         let shouldReconnect = isEnabled || managerConnectionIsActive
+        let intentEpoch = userIntentEpoch
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
 
@@ -622,8 +548,7 @@ extension TunnelManager {
                 clearProxySelectionRuntimeState()
                 cancelConnectionReadiness()
                 readinessVerifiedConnectionID = nil
-                await syncGlobalSelector(client: client)
-                startTelemetryPollingIfNeeded()
+                await finalizeLiveProfileReload(client: client, resetReadiness: false)
                 let readinessGroups = activeProfileSummary.map {
                     ProxyConnectionReadinessPolicy.groupsToVerify(summary: $0)
                 } ?? []
@@ -649,13 +574,16 @@ extension TunnelManager {
             if shouldReconnect {
                 profileMessage = AppLocalization.string("Switching profile…")
                 profileMessageIsError = false
-                await setEnabled(false)
+                await setEnabled(false, isAutomaticReconnect: false, clearsUserIntent: false)
                 guard await waitForProviderToBecomeInactive() else {
                     throw LocalizedConnectionError(
                         message: AppLocalization.string(
                             "The current connection did not stop in time."
                         )
                     )
+                }
+                guard !isApplicationTerminating, userIntentEpoch == intentEpoch else {
+                    return
                 }
             }
 
@@ -666,8 +594,15 @@ extension TunnelManager {
                 return
             }
 
+            guard !isApplicationTerminating, userIntentEpoch == intentEpoch else {
+                return
+            }
             await setEnabled(true)
-            guard await waitForConnectionToSettle() else {
+            let settled = await waitForConnectionToSettle()
+            guard !isApplicationTerminating, userIntentEpoch == intentEpoch else {
+                return
+            }
+            guard settled else {
                 throw LocalizedConnectionError(
                     message: AppLocalization.string(
                         "The selected profile could not establish a working connection."
@@ -679,14 +614,22 @@ extension TunnelManager {
             )
             profileMessageIsError = false
         } catch {
-            if shouldReconnect, let previousProfileID {
+            if shouldReconnect,
+               let previousProfileID,
+               !isApplicationTerminating,
+               !isSwitchingNetworkEngine,
+               userIntentEpoch == intentEpoch,
+               userIntendsToConnect {
                 if managerConnectionIsActive {
                     if state == .connected || state == .connecting || state == .recovering {
-                        await setEnabled(false)
+                        await setEnabled(false, isAutomaticReconnect: false, clearsUserIntent: false)
                     } else {
                         manager?.connection.stopVPNTunnel()
                     }
                     _ = await waitForProviderToBecomeInactive()
+                }
+                guard !isApplicationTerminating, userIntentEpoch == intentEpoch, userIntendsToConnect else {
+                    return
                 }
                 do {
                     if previousProfileID != activeProfileID {
@@ -706,10 +649,42 @@ extension TunnelManager {
                         "The selected profile and automatic rollback both failed."
                     )
                 }
+            } else if isApplicationTerminating || userIntentEpoch != intentEpoch {
+                return
             } else {
                 profileMessage = error.localizedDescription
             }
             profileMessageIsError = true
+        }
+    }
+
+    func finalizeLiveProfileReload(
+        client: ProxySelectionProviderClient,
+        resetReadiness: Bool = true
+    ) async {
+        if resetReadiness {
+            clearProxySelectionRuntimeState()
+            cancelConnectionReadiness()
+            readinessVerifiedConnectionID = nil
+        }
+        await syncGlobalSelector(client: client)
+        proxySelectionRefreshedAt.removeAll()
+        for group in activeProfileSummary?.proxyGroups ?? [] where group.strategy.caseInsensitiveCompare("select") == .orderedSame {
+            if let snapshot = try? await client.snapshot(group: group.name) {
+                proxySelections[group.name] = snapshot
+            }
+        }
+        startTelemetryPollingIfNeeded()
+        if resetReadiness {
+            let readinessGroups = activeProfileSummary.map {
+                ProxyConnectionReadinessPolicy.groupsToVerify(summary: $0)
+            } ?? []
+            if let connectionID = providerConnectionID, !readinessGroups.isEmpty {
+                startConnectionReadinessCheck(
+                    groups: readinessGroups,
+                    connectionID: connectionID
+                )
+            }
         }
     }
 
@@ -809,7 +784,9 @@ extension TunnelManager {
                 routingMode: requestedMode,
                 bypassPolicy: requestedBypassPolicy,
                 dnsPolicy: requestedDNSPolicy,
-                proxySelections: initialSelections
+                proxySelections: initialSelections,
+                diagnosticLogLevel: (try? DiagnosticLogLevelStore
+                    .applicationGroup())?.load() ?? .off
             )
             return (
                 try ReloadProfilePayloadCodec.encode(payload),
@@ -1156,7 +1133,11 @@ extension TunnelManager {
             } else {
                 update = try await subscriptionClient.fetch(subscription)
             }
-            let profile = managed.profile
+            guard !isApplicationTerminating else { return }
+            guard let currentManaged = profiles.first(where: { $0.id == id }) else {
+                return
+            }
+            let profile = currentManaged.profile
             let keepRuntime = state == .connected
             // UserDefaults is documented thread-safe; it is only read and
             // written here, off the main actor.
@@ -1216,13 +1197,7 @@ extension TunnelManager {
                     "stage=subscriptionRefresh liveReload sending payload bytes=\(reloadPayloadData.count)"
                 )
                 try await client.reloadActiveProfile(payload: reloadPayloadData)
-                await syncGlobalSelector(client: client)
-                proxySelectionRefreshedAt.removeAll()
-                for group in activeProfileSummary?.proxyGroups ?? [] where group.strategy.lowercased() == "select" {
-                    if let snapshot = try? await client.snapshot(group: group.name) {
-                        proxySelections[group.name] = snapshot
-                    }
-                }
+                await finalizeLiveProfileReload(client: client)
                 Self.runtimeLogger.info("stage=subscriptionRefresh liveReload succeeded")
             }
 
@@ -1566,8 +1541,15 @@ extension TunnelManager {
         name: String,
         spec: MergedProfileSpec
     ) async -> Bool {
-        guard ensurePrivacyConsent() else { return false }
+        guard ensurePrivacyConsent(), !isUpdatingProfiles, canActivateProfile else {
+            return false
+        }
+        isUpdatingProfiles = true
+        defer { isUpdatingProfiles = false }
+
+        let previousActiveProfileID = activeProfileID
         let keepRuntime = state == .connected
+        var catalogUpdated = false
         do {
             if isUIReviewMode {
                 profileMessage = AppLocalization.inline(
@@ -1586,6 +1568,7 @@ extension TunnelManager {
                         makeActive: true
                     )
                 }
+                catalogUpdated = true
             }
             if state == .connected, !isUIReviewMode {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
@@ -1594,6 +1577,7 @@ extension TunnelManager {
                 )
                 let client = makeProxySelectionProviderClient()
                 try await client.reloadActiveProfile(payload: reloadPayloadData)
+                await finalizeLiveProfileReload(client: client)
             }
             profileMessage = AppLocalization.inline(
                 "Created and activated merged profile.",
@@ -1602,6 +1586,10 @@ extension TunnelManager {
             profileMessageIsError = false
             return true
         } catch {
+            if catalogUpdated, state == .connected, !isUIReviewMode,
+               let previousActiveProfileID, previousActiveProfileID != activeProfileID {
+                try? await applyProfileActivation(id: previousActiveProfileID)
+            }
             profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return false
@@ -1610,7 +1598,13 @@ extension TunnelManager {
 
     @discardableResult
     func rebuildMergedProfile(id: UUID) async -> Bool {
-        guard ensurePrivacyConsent() else { return false }
+        guard ensurePrivacyConsent(), !isUpdatingProfiles, canActivateProfile else {
+            return false
+        }
+        isUpdatingProfiles = true
+        defer { isUpdatingProfiles = false }
+
+        let previousManagedProfile = profiles.first(where: { $0.id == id })?.profile
         let remoteSources: [(id: UUID, subscription: ProfileSubscription)]
         if let targetManaged = profiles.first(where: { $0.id == id }),
            let spec = targetManaged.mergedSpec,
@@ -1676,12 +1670,14 @@ extension TunnelManager {
         }
 
         let keepRuntime = state == .connected
+        var rebuiltCatalog = false
         do {
             try await performProductionProfileCatalogOperation(
                 preserveConnectedRuntimeState: keepRuntime
             ) {
                 try ProfileCatalogStore.applicationGroup().rebuildMergedProfile(id: id)
             }
+            rebuiltCatalog = true
             if id == activeProfileID, state == .connected, !isUIReviewMode {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
                 let reloadPayloadData = try await prepareReloadProfilePayload(
@@ -1689,6 +1685,7 @@ extension TunnelManager {
                 )
                 let client = makeProxySelectionProviderClient()
                 try await client.reloadActiveProfile(payload: reloadPayloadData)
+                await finalizeLiveProfileReload(client: client)
             }
             profileMessage = AppLocalization.inline(
                 "Rebuilt merged profile from source subscriptions.",
@@ -1697,6 +1694,31 @@ extension TunnelManager {
             profileMessageIsError = false
             return true
         } catch {
+            if rebuiltCatalog, id == activeProfileID, state == .connected, !isUIReviewMode {
+                await setEnabled(false, isAutomaticReconnect: false, clearsUserIntent: false)
+                _ = await waitForProviderToBecomeInactive()
+                await setEnabled(true)
+                if await waitForConnectionToSettle() {
+                    profileMessage = AppLocalization.inline(
+                        "Rebuilt merged profile from source subscriptions.",
+                        chinese: "已根据源订阅重新合并节点。"
+                    )
+                    profileMessageIsError = false
+                    return true
+                }
+                if let previousManagedProfile,
+                   let currentProfile = profiles.first(where: { $0.id == id })?.profile {
+                    nonisolated(unsafe) let defaults = userDefaults
+                    try? await performProductionProfileCatalogOperation(preserveConnectedRuntimeState: false) {
+                        try Self.replaceProfileContents(
+                            id: id,
+                            previous: currentProfile,
+                            with: previousManagedProfile,
+                            defaults: defaults
+                        )
+                    }
+                }
+            }
             profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return false

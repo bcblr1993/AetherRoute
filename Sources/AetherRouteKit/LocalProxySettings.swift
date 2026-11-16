@@ -328,6 +328,7 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
         defer { lock.unlock() }
 
         let services = try listActiveNetworkServices()
+        let hadPriorBackup = defaults.data(forKey: backupKey) != nil
         var backup = loadBackupLocked() ?? BackupState(services: [:])
         var didUpdateBackup = false
 
@@ -335,7 +336,7 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
             backup.services[service] = try snapshotService(service)
             didUpdateBackup = true
         }
-        if didUpdateBackup || defaults.data(forKey: backupKey) == nil {
+        if didUpdateBackup || !hadPriorBackup {
             try saveBackupLocked(backup)
         }
 
@@ -345,14 +346,32 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
             ? ["Empty"]
             : validated.systemProxyBypassDomains
 
-        for service in services {
-            _ = try runChecked(["-setwebproxy", service, "127.0.0.1", httpPortString])
-            _ = try runChecked(["-setwebproxystate", service, "on"])
-            _ = try runChecked(["-setsecurewebproxy", service, "127.0.0.1", httpPortString])
-            _ = try runChecked(["-setsecurewebproxystate", service, "on"])
-            _ = try runChecked(["-setsocksfirewallproxy", service, "127.0.0.1", socksPortString])
-            _ = try runChecked(["-setsocksfirewallproxystate", service, "on"])
-            _ = try runChecked(["-setproxybypassdomains", service] + bypassArgs)
+        var touchedServices: [String] = []
+        do {
+            for service in services {
+                touchedServices.append(service)
+                _ = try runChecked(["-setwebproxy", service, "127.0.0.1", httpPortString])
+                _ = try runChecked(["-setwebproxystate", service, "on"])
+                _ = try runChecked(["-setsecurewebproxy", service, "127.0.0.1", httpPortString])
+                _ = try runChecked(["-setsecurewebproxystate", service, "on"])
+                _ = try runChecked(["-setsocksfirewallproxy", service, "127.0.0.1", socksPortString])
+                _ = try runChecked(["-setsocksfirewallproxystate", service, "on"])
+                _ = try runChecked(["-setproxybypassdomains", service] + bypassArgs)
+            }
+        } catch {
+            var allRolledBack = true
+            for service in touchedServices {
+                guard let snapshot = backup.services[service] else { continue }
+                do {
+                    try restoreServiceSnapshot(snapshot, service: service)
+                } catch {
+                    allRolledBack = false
+                }
+            }
+            if allRolledBack && !hadPriorBackup {
+                defaults.removeObject(forKey: backupKey)
+            }
+            throw error
         }
     }
 
@@ -364,35 +383,61 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        guard let backup = loadBackupLocked() else {
+        guard var backup = loadBackupLocked() else {
             return
         }
 
+        let activeServices: Set<String>? = (try? listActiveNetworkServices()).map(Set.init)
+        var firstError: Error?
+        var remainingServices: [String: ServiceBackup] = [:]
+
         for service in backup.services.keys.sorted() {
             guard let snapshot = backup.services[service] else { continue }
-            try restoreEndpoint(
-                snapshot.web,
-                service: service,
-                setCommand: "-setwebproxy",
-                stateCommand: "-setwebproxystate"
-            )
-            try restoreEndpoint(
-                snapshot.secure,
-                service: service,
-                setCommand: "-setsecurewebproxy",
-                stateCommand: "-setsecurewebproxystate"
-            )
-            try restoreEndpoint(
-                snapshot.socks,
-                service: service,
-                setCommand: "-setsocksfirewallproxy",
-                stateCommand: "-setsocksfirewallproxystate"
-            )
-            let bypassArgs = snapshot.bypassDomains.isEmpty ? ["Empty"] : snapshot.bypassDomains
-            _ = try runChecked(["-setproxybypassdomains", service] + bypassArgs)
+            if let activeServices, !activeServices.contains(service) {
+                continue
+            }
+            do {
+                try restoreServiceSnapshot(snapshot, service: service)
+            } catch {
+                if firstError == nil {
+                    firstError = error
+                }
+                remainingServices[service] = snapshot
+            }
         }
 
-        defaults.removeObject(forKey: backupKey)
+        if remainingServices.isEmpty {
+            defaults.removeObject(forKey: backupKey)
+        } else {
+            backup.services = remainingServices
+            try? saveBackupLocked(backup)
+        }
+        if let firstError {
+            throw firstError
+        }
+    }
+
+    private func restoreServiceSnapshot(_ snapshot: ServiceBackup, service: String) throws {
+        try restoreEndpoint(
+            snapshot.web,
+            service: service,
+            setCommand: "-setwebproxy",
+            stateCommand: "-setwebproxystate"
+        )
+        try restoreEndpoint(
+            snapshot.secure,
+            service: service,
+            setCommand: "-setsecurewebproxy",
+            stateCommand: "-setsecurewebproxystate"
+        )
+        try restoreEndpoint(
+            snapshot.socks,
+            service: service,
+            setCommand: "-setsocksfirewallproxy",
+            stateCommand: "-setsocksfirewallproxystate"
+        )
+        let bypassArgs = snapshot.bypassDomains.isEmpty ? ["Empty"] : snapshot.bypassDomains
+        _ = try runChecked(["-setproxybypassdomains", service] + bypassArgs)
     }
 
     private func restoreEndpoint(

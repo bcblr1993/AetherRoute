@@ -39,13 +39,14 @@ public struct PortableProfileArchiveCodec: Sendable {
 
     public init() {
         iterationCount = Self.productionIterationCount
-        randomBytes = Self.secureRandomBytes
+        randomBytes = { try Self.secureRandomBytes(count: $0) }
     }
 
     init(
         iterationCount: Int,
-        randomBytes: @escaping @Sendable (Int) throws -> Data =
-            Self.secureRandomBytes
+        randomBytes: @escaping @Sendable (Int) throws -> Data = {
+            try Self.secureRandomBytes(count: $0)
+        }
     ) {
         self.iterationCount = iterationCount
         self.randomBytes = randomBytes
@@ -293,6 +294,7 @@ public struct PortableProfileArchiveCodec: Sendable {
         )
     }
 
+    @Sendable
     private static func secureRandomBytes(count: Int) throws -> Data {
         var data = Data(count: count)
         let status = data.withUnsafeMutableBytes { buffer in

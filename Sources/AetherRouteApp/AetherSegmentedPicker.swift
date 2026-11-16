@@ -105,6 +105,17 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         }
     }
 
+    /// Total width needed across equal segments for a given title set and size.
+    @MainActor
+    static func measureTotalWidth(
+        for titles: [String],
+        controlSize: NSControl.ControlSize = .regular
+    ) -> CGFloat {
+        guard !titles.isEmpty else { return 0 }
+        let widest = titles.map(segmentTitleWithWidestDigits)
+        return measureSegmentWidth(for: widest, controlSize: controlSize) * CGFloat(titles.count)
+    }
+
     /// The width AppKit itself gives the widest label, measured on a
     /// one-segment control of the same size.
     @MainActor

@@ -22,6 +22,9 @@ struct ProxiesView: View {
     @State private var sort: ProxyNodeSort = .default
     @State private var searchText = ""
     @State private var hidesTimedOutNodes = false
+    @State private var pageWidth: CGFloat? = nil
+    @State private var cachedSummary: ProfileConfigurationSummary? = nil
+    @State private var cachedInventory: ProxyInventoryIndex = .empty
     @AppStorage("aetherroute.proxies.gridLayout") private var usesGridLayout = false
     @AppStorage("aetherroute.proxies.showsSubscriptionNotices") private var showsSubscriptionNotices = false
 
@@ -60,17 +63,34 @@ struct ProxiesView: View {
     }
 
     private func content(summary: ProfileConfigurationSummary) -> some View {
-        // Wide enough for the groups to sit in a column beside their
-        // members, read from the page's size in the first layout pass. (A
-        // state set by onGeometryChange drew the narrow layout first and
-        // then switched, moving every glass panel on the page.)
-        GeometryReader { page in
-            let isWideGroupLayout = page.size.width >= Self.wideGroupLayoutWidth
-            groupsAndCard(
-                summary: summary,
-                isWideGroupLayout: isWideGroupLayout,
-                pageWidth: page.size.width
-            )
+        let measuredWidth = pageWidth ?? 700
+        let isWideGroupLayout = measuredWidth >= Self.wideGroupLayoutWidth
+        return groupsAndCard(
+            summary: summary,
+            isWideGroupLayout: isWideGroupLayout,
+            pageWidth: measuredWidth
+        )
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            guard newWidth > 0 else { return }
+            if let existing = pageWidth {
+                let wasWide = existing >= Self.wideGroupLayoutWidth
+                let isWide = newWidth >= Self.wideGroupLayoutWidth
+                if isWide != wasWide {
+                    withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                        pageWidth = newWidth
+                    }
+                } else if abs(existing - newWidth) >= 2 {
+                    pageWidth = newWidth
+                }
+            } else {
+                pageWidth = newWidth
+            }
+        }
+        .onAppear { refreshInventoryIfNeeded(for: summary) }
+        .onChange(of: summary) { _, updated in
+            refreshInventoryIfNeeded(for: updated)
         }
         .sheet(isPresented: $showsNewGroup) {
             CustomProxyGroupSheet(defaultParent: catchAllGroup(in: summary))
@@ -84,6 +104,12 @@ struct ProxiesView: View {
         .sheet(isPresented: $showsHiddenNodes) {
             HiddenNodesSheet()
         }
+    }
+
+    private func refreshInventoryIfNeeded(for summary: ProfileConfigurationSummary) {
+        guard cachedSummary != summary else { return }
+        cachedSummary = summary
+        cachedInventory = ProxyInventoryIndex.build(from: summary)
     }
 
     private func groupsAndCard(
@@ -145,7 +171,6 @@ struct ProxiesView: View {
         // switches, a new group card), and those swallowed clicks on the
         // groups, so often only one group could be chosen.
         .aetherPageContent(.wide, sharesGlassContainer: false)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isWideGroupLayout)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Proxy configuration"))
         .accessibilityIdentifier("proxies-page-content")
@@ -273,25 +298,14 @@ struct ProxiesView: View {
         groups: [ProxyGroupConfigurationSummary]
     ) -> some View {
         if let activeGroup = currentGroup(from: groups, summary: summary) {
+            let inventory = (cachedSummary == summary)
+                ? cachedInventory
+                : ProxyInventoryIndex.build(from: summary)
             ActiveProxyGroupView(
                 group: activeGroup,
-                // A repeated node name must not trap while the page renders.
-                protocols: Dictionary(
-                    summary.proxies.map { ($0.name, $0.protocolName) },
-                    uniquingKeysWith: { first, _ in first }
-                ),
-                transports: Dictionary(
-                    summary.proxies.compactMap { proxy in
-                        proxy.transportName.map { (proxy.name, $0) }
-                    },
-                    uniquingKeysWith: { first, _ in first }
-                ),
-                dialers: Dictionary(
-                    summary.proxies.compactMap { proxy in
-                        proxy.dialerProxy.map { (proxy.name, $0) }
-                    },
-                    uniquingKeysWith: { first, _ in first }
-                ),
+                protocols: inventory.protocols,
+                transports: inventory.transports,
+                dialers: inventory.dialers,
                 sort: $sort,
                 searchText: $searchText,
                 hidesTimedOutNodes: $hidesTimedOutNodes,
@@ -600,12 +614,40 @@ private struct ProxyGroupTabButton: View {
     }
 }
 
+private struct ProxyInventoryIndex: Equatable {
+    let protocols: [String: String]
+    let transports: [String: String]
+    let dialers: [String: String]
+
+    static let empty = ProxyInventoryIndex(protocols: [:], transports: [:], dialers: [:])
+
+    static func build(from summary: ProfileConfigurationSummary) -> ProxyInventoryIndex {
+        var protocols: [String: String] = [:]
+        var transports: [String: String] = [:]
+        var dialers: [String: String] = [:]
+        protocols.reserveCapacity(summary.proxies.count)
+        for proxy in summary.proxies {
+            if protocols[proxy.name] == nil {
+                protocols[proxy.name] = proxy.protocolName
+            }
+            if transports[proxy.name] == nil, let transportName = proxy.transportName {
+                transports[proxy.name] = transportName
+            }
+            if dialers[proxy.name] == nil, let dialerProxy = proxy.dialerProxy {
+                dialers[proxy.name] = dialerProxy
+            }
+        }
+        return ProxyInventoryIndex(protocols: protocols, transports: transports, dialers: dialers)
+    }
+}
+
 // MARK: - The chosen group
 
 /// One card: the group and its current node with its controls pinned on
 /// top, then the nodes, which scroll on their own.
 private struct ActiveProxyGroupView: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A choice made while disconnected takes effect later; say so for a
     /// moment instead of keeping a permanent caption on the card.
     @State private var showsNextConnectionNote = false
@@ -629,7 +671,7 @@ private struct ActiveProxyGroupView: View {
 
     var body: some View {
         let allMembers = members
-        let rows = computeMemberRows(from: allMembers)
+        let selected = currentRowMember(in: allMembers)
         return ScrollViewReader { scroller in
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -637,7 +679,7 @@ private struct ActiveProxyGroupView: View {
                     .padding(.top, AetherVisual.s3)
                     .padding(.bottom, AetherVisual.s2)
                 if !allMembers.isEmpty {
-                    toolbar(memberCount: allMembers.count, rows: rows, scroller: scroller)
+                    toolbar(memberCount: allMembers.count, selectedMember: selected, scroller: scroller)
                         .padding(.horizontal, AetherVisual.s4)
                         .padding(.bottom, AetherVisual.s3)
                 }
@@ -671,15 +713,25 @@ private struct ActiveProxyGroupView: View {
                             .foregroundStyle(AetherVisual.secondaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(AetherVisual.s4)
-                    } else if rows.isEmpty {
-                        Text(AppLocalization.string("No matching nodes"))
-                            .font(.subheadline)
-                            .foregroundStyle(AetherVisual.secondaryText)
-                            .frame(maxWidth: .infinity)
-                            .padding(AetherVisual.s4)
+                    } else if sort == .latency || hidesTimedOutNodes {
+                        ActiveProxyGroupLatencySortedList(
+                            latencyStore: tunnel.latencyStore,
+                            computeRows: { computeMemberRows(from: allMembers, includeLatency: true) },
+                            nodeRow: { row in nodeRow(row, isCompact: usesGridLayout) },
+                            usesGridLayout: usesGridLayout
+                        )
                     } else {
-                        nodeList(rows: rows)
-                            .padding(AetherVisual.listCardInset)
+                        let rows = computeMemberRows(from: allMembers, includeLatency: false)
+                        if rows.isEmpty {
+                            Text(AppLocalization.string("No matching nodes"))
+                                .font(.subheadline)
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .frame(maxWidth: .infinity)
+                                .padding(AetherVisual.s4)
+                        } else {
+                            nodeList(rows: rows)
+                                .padding(AetherVisual.listCardInset)
+                        }
                     }
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -770,25 +822,20 @@ private struct ActiveProxyGroupView: View {
             if isManuallySelectable, !isGlobalGroup {
                 selectionModeMenu
             }
-            Button {
-                Task { await tunnel.testProxyLatency(group: group.name) }
-            } label: {
-                AetherProgressButtonLabel(AppLocalization.string("Test latency"), systemImage: "bolt", isWorking: isTesting)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(minWidth: 72)
-            }
-            .aetherButton()
-            .controlSize(.small)
-            .disabled(isTesting)
-            .help(lastTestedHelp)
-            .accessibilityIdentifier("proxy-test-latency-\(group.name)")
+            ProxyGroupTestLatencyButton(
+                groupName: group.name,
+                latencyStore: tunnel.latencyStore,
+                action: {
+                    Task { await tunnel.testProxyLatency(group: group.name) }
+                }
+            )
         }
     }
 
     /// Search, count and the view controls, pinned above the nodes.
     private func toolbar(
         memberCount: Int,
-        rows: [ProxyMemberTableItem],
+        selectedMember: String?,
         scroller: ScrollViewProxy
     ) -> some View {
         HStack(spacing: AetherVisual.s2) {
@@ -811,7 +858,7 @@ private struct ActiveProxyGroupView: View {
             Spacer(minLength: AetherVisual.s2)
             sortMenu
             layoutToggle
-            locateButton(rows: rows, scroller: scroller)
+            locateButton(selectedMember: selectedMember, scroller: scroller)
         }
     }
 
@@ -822,7 +869,7 @@ private struct ActiveProxyGroupView: View {
             }
         } label: {
             Image(systemName: usesGridLayout ? "list.bullet" : "square.grid.2x2")
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
         }
         .aetherButton()
         .controlSize(.small)
@@ -837,20 +884,19 @@ private struct ActiveProxyGroupView: View {
             : AppLocalization.inline("Show as grid", chinese: "双列网格")
     }
 
-    private func locateButton(rows: [ProxyMemberTableItem], scroller: ScrollViewProxy) -> some View {
-        let target = rows.first(where: \.isSelected)?.member
+    private func locateButton(selectedMember: String?, scroller: ScrollViewProxy) -> some View {
         let title = AppLocalization.inline("Locate current node", chinese: "定位当前节点")
         return Button {
-            guard let target else { return }
+            guard let selectedMember else { return }
             withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                scroller.scrollTo(target, anchor: .center)
+                scroller.scrollTo(selectedMember, anchor: .center)
             }
         } label: {
             Image(systemName: "scope")
         }
         .aetherButton()
         .controlSize(.small)
-        .disabled(target == nil)
+        .disabled(selectedMember == nil)
         .help(title)
         .accessibilityLabel(title)
         .accessibilityIdentifier("proxy-locate-current-node")
@@ -914,12 +960,12 @@ private struct ActiveProxyGroupView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                if !isBuiltInOutlet(selectedMember), status(for: selectedMember).isMeasured {
-                    Text(verbatim: "·")
-                        .foregroundStyle(AetherVisual.secondaryText)
-                    ProxyLatencyText(
-                        status: status(for: selectedMember),
-                        confidence: tunnel.latencyConfidence(group: group.name, member: selectedMember)
+                if !isBuiltInOutlet(selectedMember) {
+                    ProxyCurrentNodeLatencyLeaf(
+                        groupName: group.name,
+                        member: selectedMember,
+                        latencyStore: tunnel.latencyStore,
+                        tunnel: tunnel
                     )
                 }
             }
@@ -1032,7 +1078,10 @@ private struct ActiveProxyGroupView: View {
                 }
             }
         }
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: rows.map(\.id))
+        .animation(
+            rows.count <= 60 ? AetherVisual.animation(AetherVisual.gentleSpring) : nil,
+            value: rows.map(\.id)
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Proxy group members"))
         .accessibilityIdentifier("proxy-group-members-table")
@@ -1040,11 +1089,13 @@ private struct ActiveProxyGroupView: View {
 
     private func nodeRow(_ row: ProxyMemberTableItem, isCompact: Bool) -> some View {
         ProxyNodeRow(
+            groupName: group.name,
             row: row,
             canSelect: isManuallySelectable && !isAutomaticSelectionMode,
             showsSelectionControl: isManuallySelectable,
             isCompact: isCompact,
-            measuredAt: tunnel.latencyMeasuredAt[group.name]?[row.member],
+            latencyStore: tunnel.latencyStore,
+            tunnel: tunnel,
             onSelect: {
                 pendingSelections[group.name] = row.member
                 Task {
@@ -1080,29 +1131,36 @@ private struct ActiveProxyGroupView: View {
         }
     }
 
-    private func computeMemberRows(from uniqueMembers: [String]) -> [ProxyMemberTableItem] {
+    private func computeMemberRows(
+        from uniqueMembers: [String],
+        includeLatency: Bool
+    ) -> [ProxyMemberTableItem] {
         guard !uniqueMembers.isEmpty else { return [] }
 
         let groupNameSet = Set(tunnel.activeProfileSummary?.proxyGroups.map(\.name) ?? [])
-        let groupIsTesting = tunnel.proxyLatencyRequests.contains(group.name)
-        let resultByMember: [String: UInt32?] = Dictionary(
-            (tunnel.proxyLatencies[group.name]?.results ?? []).map { ($0.member, $0.delayMilliseconds) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let statusByMember: [String: ProxyLatencyStatus] = Dictionary(
-            uniqueMembers.map { member in
-                let isMemberTesting = groupIsTesting
-                    || tunnel.isTestingLatency(group: group.name, member: member)
-                let resolvedStatus: ProxyLatencyStatus
-                if let measured = resultByMember[member] {
-                    resolvedStatus = measured.map(ProxyLatencyStatus.responded) ?? .timedOut
-                } else {
-                    resolvedStatus = isMemberTesting ? .testing : .untested
-                }
-                return (member, resolvedStatus)
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
+        let groupIsTesting = includeLatency && tunnel.latencyStore.proxyLatencyRequests.contains(group.name)
+        let resultByMember: [String: UInt32?] = includeLatency
+            ? Dictionary(
+                (tunnel.latencyStore.proxyLatencies[group.name]?.results ?? []).map { ($0.member, $0.delayMilliseconds) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            : [:]
+        let statusByMember: [String: ProxyLatencyStatus] = includeLatency
+            ? Dictionary(
+                uniqueMembers.map { member in
+                    let isMemberTesting = groupIsTesting
+                        || tunnel.isTestingLatency(group: group.name, member: member)
+                    let resolvedStatus: ProxyLatencyStatus
+                    if let measured = resultByMember[member] {
+                        resolvedStatus = measured.map(ProxyLatencyStatus.responded) ?? .timedOut
+                    } else {
+                        resolvedStatus = isMemberTesting ? .testing : .untested
+                    }
+                    return (member, resolvedStatus)
+                },
+                uniquingKeysWith: { first, _ in first }
+            )
+            : [:]
         let typeByMember: [String: String] = Dictionary(
             uniqueMembers.map { ($0, memberType($0, groupNames: groupNameSet)) },
             uniquingKeysWith: { first, _ in first }
@@ -1131,27 +1189,19 @@ private struct ActiveProxyGroupView: View {
         let currentPreferred = preferredMember
         let currentBackup = backupMember
         return ordered.map { member in
-            let status = statusByMember[member] ?? .untested
-            return ProxyMemberTableItem(
+            ProxyMemberTableItem(
                 member: member,
                 protocolName: typeByMember[member],
                 transportName: transports[member],
                 dialerProxy: dialers[member],
                 chainedOverride: chainedByName[member],
-                status: status,
-                confidence: status.isMeasured
-                    ? tunnel.latencyConfidence(group: group.name, member: member)
-                    : nil,
                 isSelected: member == currentSelected,
                 isBusy: isBusy,
                 isPending: member == pending,
                 showsLatency: !isBuiltInOutlet(member),
                 badge: member == currentPreferred
                     ? .preferred
-                    : (member == currentBackup ? .backupInUse : nil),
-                latencyStats: isBuiltInOutlet(member)
-                    ? ProxyLatencyStats(samples: [])
-                    : tunnel.latencyStats(for: member)
+                    : (member == currentBackup ? .backupInUse : nil)
             )
         }
     }
@@ -1232,20 +1282,109 @@ private struct ActiveProxyGroupView: View {
         return selected
     }
 
-    private var isTesting: Bool {
-        tunnel.proxyLatencyRequests.contains(group.name)
-    }
-
     private var isManuallySelectable: Bool {
         group.strategy.lowercased() == "select"
     }
+}
 
-    private func status(for member: String) -> ProxyLatencyStatus {
-        ProxyLatencyStatus.status(
-            member: member,
-            results: tunnel.proxyLatencies[group.name]?.results,
-            isTesting: tunnel.isTestingLatency(group: group.name, member: member)
+/// Observes `ProxyLatencyStore` only when the user sorts by latency or hides timed-out nodes.
+private struct ActiveProxyGroupLatencySortedList<RowContent: View>: View {
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let computeRows: () -> [ProxyMemberTableItem]
+    let nodeRow: (ProxyMemberTableItem) -> RowContent
+    let usesGridLayout: Bool
+
+    var body: some View {
+        let _ = latencyStore.proxyLatencies
+        let _ = latencyStore.proxyLatencyRequests
+        let _ = latencyStore.memberLatencyRequests
+        let rows = computeRows()
+        if rows.isEmpty {
+            Text(AppLocalization.string("No matching nodes"))
+                .font(.subheadline)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .frame(maxWidth: .infinity)
+                .padding(AetherVisual.s4)
+        } else {
+            Group {
+                if usesGridLayout {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: AetherVisual.s2),
+                            GridItem(.flexible(), spacing: AetherVisual.s2),
+                        ],
+                        spacing: AetherVisual.s2
+                    ) {
+                        ForEach(rows, content: nodeRow)
+                    }
+                } else {
+                    LazyVStack(spacing: AetherVisual.sMicro) {
+                        ForEach(rows, content: nodeRow)
+                    }
+                }
+            }
+            .padding(AetherVisual.listCardInset)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(AppLocalization.string("Proxy group members"))
+            .accessibilityIdentifier("proxy-group-members-table")
+        }
+    }
+}
+
+private struct ProxyGroupTestLatencyButton: View {
+    let groupName: String
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let action: () -> Void
+
+    var body: some View {
+        let isTesting = latencyStore.proxyLatencyRequests.contains(groupName)
+        Button(action: action) {
+            AetherProgressButtonLabel(AppLocalization.string("Test latency"), systemImage: "bolt", isWorking: isTesting)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 72)
+        }
+        .aetherButton()
+        .controlSize(.small)
+        .disabled(isTesting)
+        .help(lastTestedHelp)
+        .accessibilityIdentifier("proxy-test-latency-\(groupName)")
+    }
+
+    private var lastTestedHelp: String {
+        guard let latest = latencyStore.latencyMeasuredAt[groupName]?.values.max() else {
+            return AppLocalization.string("Test latency for current group nodes")
+        }
+        return String.localizedStringWithFormat(
+            AppLocalization.string("Last tested at %@"),
+            AppLocalization.date(latest, date: .omitted, time: .standard)
         )
+    }
+}
+
+private struct ProxyCurrentNodeLatencyLeaf: View {
+    let groupName: String
+    let member: String
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let tunnel: TunnelManager
+
+    var body: some View {
+        let isTestingMember = latencyStore.proxyLatencyRequests.contains(groupName)
+            || latencyStore.memberLatencyRequests.contains("\(groupName):\(member)")
+        let status = ProxyLatencyStatus.status(
+            member: member,
+            results: latencyStore.proxyLatencies[groupName]?.results,
+            isTesting: isTestingMember
+        )
+        if status.isMeasured {
+            HStack(spacing: AetherVisual.s1) {
+                Text(verbatim: "·")
+                    .foregroundStyle(AetherVisual.secondaryText)
+                ProxyLatencyText(
+                    status: status,
+                    confidence: tunnel.latencyConfidence(group: groupName, member: member)
+                )
+            }
+        }
     }
 }
 // MARK: - Node row
@@ -1255,16 +1394,17 @@ private struct ActiveProxyGroupView: View {
 /// rely on subtle card fills and selection highlights rather than empty radio
 /// rings.
 private struct ProxyNodeRow: View {
+    let groupName: String
     let row: ProxyMemberTableItem
     let canSelect: Bool
     let showsSelectionControl: Bool
     var isCompact = false
-    let measuredAt: Date?
+    let latencyStore: ProxyLatencyStore
+    let tunnel: TunnelManager
     let onSelect: () -> Void
     let onTest: () -> Void
     var onEditChained: (() -> Void)? = nil
     @State private var isHovered = false
-    @State private var showsHistoryPopover = false
 
     var body: some View {
         Group {
@@ -1330,15 +1470,20 @@ private struct ProxyNodeRow: View {
                     Spacer(minLength: 0)
                 }
 
-                if let onEditChained, isHovered {
+                if let onEditChained {
                     editChainedButton(onEditChained)
-                        .transition(.opacity)
+                        .opacity(isHovered ? 1 : 0)
+                        .allowsHitTesting(isHovered)
+                        .accessibilityHidden(!isHovered)
                 }
                 if row.showsLatency {
-                    if !row.latencyStats.samples.isEmpty {
-                        historySparklineButton
-                    }
-                    latencyButton
+                    ProxyNodeLatencyAccessory(
+                        groupName: groupName,
+                        member: row.member,
+                        latencyStore: latencyStore,
+                        tunnel: tunnel,
+                        onTest: onTest
+                    )
                 }
             }
         }
@@ -1412,10 +1557,13 @@ private struct ProxyNodeRow: View {
             }
 
             if row.showsLatency {
-                if !row.latencyStats.samples.isEmpty {
-                    historySparklineButton
-                }
-                latencyButton
+                ProxyNodeLatencyAccessory(
+                    groupName: groupName,
+                    member: row.member,
+                    latencyStore: latencyStore,
+                    tunnel: tunnel,
+                    onTest: onTest
+                )
             }
         }
         .padding(.horizontal, AetherVisual.s3)
@@ -1519,34 +1667,94 @@ private struct ProxyNodeRow: View {
         .accessibilityIdentifier("proxy-edit-chained-\(row.member)")
     }
 
-    private var historySparklineButton: some View {
+    private var cardFill: Color {
+        if row.isSelected {
+            return AetherVisual.selectionFill
+        }
+        return isHovered ? AetherVisual.hoverFill : AetherVisual.subtleFill
+    }
+
+    private var listRowFill: Color {
+        if row.isSelected {
+            return AetherVisual.selectionFill
+        }
+        return isHovered ? AetherVisual.hoverFill : Color.clear
+    }
+}
+
+/// Leaf observer so 10Hz latency flushes only redraw visible node badges and
+/// sparklines rather than rebuilding the full 500-node group view.
+private struct ProxyNodeLatencyAccessory: View {
+    let groupName: String
+    let member: String
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let tunnel: TunnelManager
+    let onTest: () -> Void
+    @State private var showsHistoryPopover = false
+
+    var body: some View {
+        let isTestingMember = latencyStore.proxyLatencyRequests.contains(groupName)
+            || latencyStore.memberLatencyRequests.contains("\(groupName):\(member)")
+        let status = ProxyLatencyStatus.status(
+            member: member,
+            results: latencyStore.proxyLatencies[groupName]?.results,
+            isTesting: isTestingMember
+        )
+        let confidence: ProxyLatencyConfidence? = status.isMeasured
+            ? tunnel.latencyConfidence(group: groupName, member: member)
+            : nil
+        let stats = tunnel.latencyStats(for: member)
+        let measuredAt = latencyStore.latencyMeasuredAt[groupName]?[member]
+
+        HStack(spacing: AetherVisual.s1) {
+            if !stats.samples.isEmpty {
+                historySparklineButton(stats: stats)
+            }
+            Button(action: onTest) {
+                ProxyLatencyPill(status: status, confidence: confidence)
+            }
+            .buttonStyle(.aetherPressable)
+            .disabled(status == .testing)
+            .fixedSize()
+            .help(latencyHelp(measuredAt: measuredAt, stats: stats, confidence: confidence))
+            .accessibilityLabel(
+                String.localizedStringWithFormat(
+                    AppLocalization.string("Latency: %@"),
+                    status.localizedTitle
+                )
+            )
+            .accessibilityHint(AppLocalization.string("Tests this node again"))
+        }
+    }
+
+    private func historySparklineButton(stats: ProxyLatencyStats) -> some View {
         Button {
             showsHistoryPopover.toggle()
         } label: {
             HStack(spacing: AetherVisual.s1) {
-                ProxyLatencySparkline(stats: row.latencyStats)
+                ProxyLatencySparkline(stats: stats)
                     .frame(
                         width: AetherVisual.s6 + AetherVisual.s3,
                         height: AetherVisual.s3
                     )
-                if let jitter = row.latencyStats.jitterMilliseconds {
+                if let jitter = stats.jitterMilliseconds {
                     Text(verbatim: "±\(jitter)ms")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(AetherVisual.secondaryText)
                 }
-                if row.latencyStats.lossRate > 0 {
-                    let lossPercent = Int((row.latencyStats.lossRate * 100.0).rounded())
+                if stats.lossRate > 0 {
+                    let lossPercent = Int((stats.lossRate * 100.0).rounded())
                     Text(verbatim: "\(lossPercent)%")
                         .font(.caption2.weight(.semibold).monospacedDigit())
                         .foregroundStyle(
                             AetherReadableTint(
-                                color: row.latencyStats.lossRate >= 0.25 ? .red : .orange
+                                color: stats.lossRate >= 0.25 ? .red : .orange
                             )
                         )
                         .padding(.horizontal, AetherVisual.sMicro)
                         .background(
                             AetherVisual.tintWash(
-                                row.latencyStats.lossRate >= 0.25 ? .red : .orange
+                                stats.lossRate >= 0.25 ? .red : .orange
                             ),
                             in: RoundedRectangle(
                                 cornerRadius: AetherVisual.badgeRadius,
@@ -1567,44 +1775,17 @@ private struct ProxyNodeRow: View {
         }
         .buttonStyle(.plain)
         .help(AppLocalization.inline("Latency history, jitter & packet loss", chinese: "延迟趋势、抖动与丢包率"))
-        .accessibilityIdentifier("proxy-latency-sparkline-\(row.member)")
+        .accessibilityIdentifier("proxy-latency-sparkline-\(member)")
         .popover(isPresented: $showsHistoryPopover, arrowEdge: .bottom) {
-            ProxyLatencyHistoryPopover(member: row.member, stats: row.latencyStats)
+            ProxyLatencyHistoryPopover(member: member, stats: stats)
         }
     }
 
-    private var latencyButton: some View {
-        Button(action: onTest) {
-            ProxyLatencyPill(status: row.status, confidence: row.confidence)
-        }
-        .buttonStyle(.aetherPressable)
-        .disabled(row.status == .testing)
-        .fixedSize()
-        .help(latencyHelp)
-        .accessibilityLabel(
-            String.localizedStringWithFormat(
-                AppLocalization.string("Latency: %@"),
-                row.status.localizedTitle
-            )
-        )
-        .accessibilityHint(AppLocalization.string("Tests this node again"))
-    }
-
-    private var cardFill: Color {
-        if row.isSelected {
-            return AetherVisual.selectionFill
-        }
-        return isHovered ? AetherVisual.hoverFill : AetherVisual.subtleFill
-    }
-
-    private var listRowFill: Color {
-        if row.isSelected {
-            return AetherVisual.selectionFill
-        }
-        return isHovered ? AetherVisual.hoverFill : Color.clear
-    }
-
-    private var latencyHelp: String {
+    private func latencyHelp(
+        measuredAt: Date?,
+        stats: ProxyLatencyStats,
+        confidence: ProxyLatencyConfidence?
+    ) -> String {
         var lines: [String] = []
         if let measuredAt {
             lines.append(String.localizedStringWithFormat(
@@ -1614,18 +1795,18 @@ private struct ProxyNodeRow: View {
         } else {
             lines.append(AppLocalization.string("Test latency"))
         }
-        if let jitter = row.latencyStats.jitterMilliseconds {
+        if let jitter = stats.jitterMilliseconds {
             lines.append(
                 AppLocalization.inline("Jitter: ±\(jitter) ms", chinese: "抖动: ±\(jitter) ms")
             )
         }
-        if !row.latencyStats.samples.isEmpty {
-            let lossPercent = Int((row.latencyStats.lossRate * 100.0).rounded())
+        if !stats.samples.isEmpty {
+            let lossPercent = Int((stats.lossRate * 100.0).rounded())
             lines.append(
                 AppLocalization.inline("Loss: \(lossPercent)%", chinese: "丢包率: \(lossPercent)%")
             )
         }
-        if let confidence = row.confidence {
+        if let confidence {
             lines.append(confidence.localizedHint)
         }
         return lines.joined(separator: "\n")
@@ -1645,14 +1826,11 @@ private struct ProxyMemberTableItem: Identifiable {
     var transportName: String? = nil
     var dialerProxy: String? = nil
     var chainedOverride: ChainedProxyOverride? = nil
-    let status: ProxyLatencyStatus
-    var confidence: ProxyLatencyConfidence? = nil
     let isSelected: Bool
     let isBusy: Bool
     var isPending = false
     let showsLatency: Bool
     var badge: Badge?
-    var latencyStats = ProxyLatencyStats(samples: [])
 
     var id: String { member }
 }
@@ -2192,13 +2370,7 @@ private struct ProxyNodeInventory: View {
                         style: .continuous
                     )
                 )
-                .overlay {
-                    RoundedRectangle(
-                        cornerRadius: AetherVisual.panelRadius,
-                        style: .continuous
-                    )
-                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                }
+                .aetherPanel()
             }
         }
     }

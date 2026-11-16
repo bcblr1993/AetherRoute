@@ -556,23 +556,25 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw FlowCoreEngineError.selectorUnavailable }
-        let engineHandle = try withReadLease { $0 }
         let abiTimeoutMilliseconds = ProxySelectionProviderMessageCodec
             .packLatencyTimeoutMilliseconds(
                 timeoutMilliseconds,
                 unifiedDelay: unifiedDelay
             )
-        let result = backend.selectorLatency(
-            engine: engineHandle,
-            group: group,
-            url: url,
-            timeoutMilliseconds: abiTimeoutMilliseconds
-        )
-        guard
-            result.status == FlowCoreABIStatus.success,
-            let latencies = result.latencies
-        else {
-            throw Self.selectorError(result.status, selecting: false)
+        let latencies: Data = try withReadLease { engineHandle in
+            let result = backend.selectorLatency(
+                engine: engineHandle,
+                group: group,
+                url: url,
+                timeoutMilliseconds: abiTimeoutMilliseconds
+            )
+            guard
+                result.status == FlowCoreABIStatus.success,
+                let latencies = result.latencies
+            else {
+                throw Self.selectorError(result.status, selecting: false)
+            }
+            return latencies
         }
         return try ProxyLatencyResultCodec.decode(latencies)
     }
@@ -591,23 +593,25 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             timeoutMilliseconds <= ProxySelectionProviderMessageCodec
                 .maximumLatencyTimeoutMilliseconds
         else { throw FlowCoreEngineError.selectorUnavailable }
-        let engineHandle = try withReadLease { $0 }
         let abiTimeoutMilliseconds = ProxySelectionProviderMessageCodec
             .packLatencyTimeoutMilliseconds(
                 timeoutMilliseconds,
                 unifiedDelay: unifiedDelay
             )
-        let result = backend.selectorActiveLatency(
-            engine: engineHandle,
-            group: group,
-            url: url,
-            timeoutMilliseconds: abiTimeoutMilliseconds
-        )
-        guard
-            result.status == FlowCoreABIStatus.success,
-            let latencies = result.latencies
-        else {
-            throw Self.selectorError(result.status, selecting: false)
+        let latencies: Data = try withReadLease { engineHandle in
+            let result = backend.selectorActiveLatency(
+                engine: engineHandle,
+                group: group,
+                url: url,
+                timeoutMilliseconds: abiTimeoutMilliseconds
+            )
+            guard
+                result.status == FlowCoreABIStatus.success,
+                let latencies = result.latencies
+            else {
+                throw Self.selectorError(result.status, selecting: false)
+            }
+            return latencies
         }
         return try ProxyLatencyResultCodec.decode(latencies)
     }
@@ -1111,6 +1115,13 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
     private var nextABIToken: UInt64 = 0
     private var operations: [UInt64: FlowOperationToken] = [:]
 
+    private static let sharedFlowQueues: [DispatchQueue] = (0..<32).map { index in
+        DispatchQueue(
+            label: "com.example.aetherroute.flow-core.flow.\(index)",
+            qos: .userInitiated
+        )
+    }
+
     init(
         kind: Kind,
         backend: any FlowCoreABIBackend,
@@ -1121,10 +1132,9 @@ private final class FlowCoreFlowStorage: @unchecked Sendable {
         self.backend = backend
         self.handle = handle
         self.owner = owner
-        queue = DispatchQueue(
-            label: "com.example.aetherroute.flow-core.flow.\(id.uuidString)",
-            qos: .userInitiated
-        )
+        let slot = Int(bitPattern: handle.rawValue)
+        let count = Self.sharedFlowQueues.count
+        queue = Self.sharedFlowQueues[((slot % count) + count) % count]
     }
 
     func activate(

@@ -247,8 +247,8 @@ struct ManualNodeEditorSheet: View {
                     )
                     .foregroundStyle(
                         node.privateKey.isEmpty
-                            ? Color.secondary
-                            : Color.green
+                            ? AnyShapeStyle(AetherVisual.secondaryText)
+                            : AnyShapeStyle(AetherReadableTint(color: .green))
                     )
                     Spacer()
                     Button(
@@ -369,7 +369,7 @@ struct ManualNodeEditorSheet: View {
                         .foregroundStyle(
                             certificateFingerprintMessage == nil
                                 ? AnyShapeStyle(AetherVisual.secondaryText)
-                                : AnyShapeStyle(Color.orange)
+                                : AnyShapeStyle(AetherReadableTint(color: .orange))
                         )
                         .fixedSize(horizontal: false, vertical: true)
                 }

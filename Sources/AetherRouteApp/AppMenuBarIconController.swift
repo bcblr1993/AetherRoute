@@ -240,7 +240,46 @@ enum MenuBarBadgedIcon {
     /// Canvas with notification badge dot (width: 22, height: 18).
     static let badgedCanvasSize = NSSize(width: 22, height: 18)
 
+    private struct BadgedIconKey: Hashable {
+        let symbol: String
+        let hasUpdate: Bool
+    }
+
+    private final class BoundedIconCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private let capacity = 8
+        private var entries: [BadgedIconKey: NSImage] = [:]
+        private var order: [BadgedIconKey] = []
+
+        func get(_ key: BadgedIconKey) -> NSImage? {
+            lock.lock()
+            defer { lock.unlock() }
+            return entries[key]
+        }
+
+        func set(_ image: NSImage, for key: BadgedIconKey) {
+            lock.lock()
+            defer { lock.unlock() }
+            entries[key] = image
+            if let index = order.firstIndex(of: key) {
+                order.remove(at: index)
+            }
+            order.append(key)
+            while order.count > capacity {
+                let evicted = order.removeFirst()
+                entries.removeValue(forKey: evicted)
+            }
+        }
+    }
+
+    private static let cache = BoundedIconCache()
+
     static func image(symbol: String, hasUpdate: Bool = true) -> NSImage {
+        let key = BadgedIconKey(symbol: symbol, hasUpdate: hasUpdate)
+        if let cached = cache.get(key) {
+            return cached
+        }
+
         let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(configuration)
@@ -294,6 +333,7 @@ enum MenuBarBadgedIcon {
         }
 
         image.isTemplate = !hasUpdate
+        cache.set(image, for: key)
         return image
     }
 }

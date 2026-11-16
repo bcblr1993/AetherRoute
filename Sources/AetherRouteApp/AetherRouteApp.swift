@@ -44,12 +44,17 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
+        let identifier = response.notification.request.identifier
         defer { completionHandler() }
         DispatchQueue.main.async {
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            #if !AETHERROUTE_APP_STORE
-            SparkleUpdaterController.shared.checkForUpdates()
-            #endif
+            if identifier.hasPrefix("com.aetherroute.update.") {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                #if !AETHERROUTE_APP_STORE
+                SparkleUpdaterController.shared.checkForUpdates()
+                #endif
+            } else {
+                AppWindowManager.shared.showMainWindow()
+            }
         }
     }
 
@@ -93,6 +98,10 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
             let disconnected = await tunnel
                 .disconnectForApplicationTermination()
             self.terminationReplyPending = false
+            if !disconnected {
+                tunnel.isApplicationTerminating = false
+                AppWindowManager.shared.isTerminating = false
+            }
             (sender ?? NSApplication.shared).reply(toApplicationShouldTerminate: disconnected)
         }
         return .terminateLater
@@ -199,6 +208,8 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
         }
         guard disconnected else {
             signalTerminationPending = false
+            tunnel?.isApplicationTerminating = false
+            AppWindowManager.shared.isTerminating = false
             Self.lifecycleLogger.fault(
                 "stage=applicationTermination signal=SIGTERM cancelled reason=networkRecoveryFailed"
             )
@@ -259,7 +270,8 @@ final class WindowChromeView: NSView {
     private var isMainWindow = false
     private var usesNativeToolbar = false
     private var chromeUpdateScheduled = false
-    private weak var observedWindow: NSWindow?
+    nonisolated(unsafe) private weak var observedWindow: NSWindow?
+    nonisolated(unsafe) private var titleObservation: NSKeyValueObservation?
     private let visibilityCoordinator = WindowVisibilityCoordinator()
 
     func update(title: String, showsTitle: Bool, isMainWindow: Bool = false, usesNativeToolbar: Bool = false) {
@@ -276,17 +288,17 @@ final class WindowChromeView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         stopObservingWindow()
+        visibilityCoordinator.stopObserving()
         observedWindow = window
         visibilityCoordinator.observe(window)
         if isMainWindow, let window {
             AppWindowManager.shared.registerMainWindow(window)
         }
-        window?.addObserver(
-            self,
-            forKeyPath: "title",
-            options: [.new],
-            context: nil
-        )
+        titleObservation = window?.observe(\.title, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.applyWindowChrome()
+            }
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(toolbarWillAddItem(_:)),
@@ -309,26 +321,6 @@ final class WindowChromeView: NSView {
             self.chromeUpdateScheduled = false
             self.applyWindowChrome()
         }
-    }
-
-    override func observeValue(
-        forKeyPath keyPath: String?,
-        of object: Any?,
-        change: [NSKeyValueChangeKey: Any]?,
-        context: UnsafeMutableRawPointer?
-    ) {
-        if keyPath == "title" {
-            Task { @MainActor [weak self] in
-                self?.applyWindowChrome()
-            }
-            return
-        }
-        super.observeValue(
-            forKeyPath: keyPath,
-            of: object,
-            change: change,
-            context: context
-        )
     }
 
     @objc
@@ -369,14 +361,15 @@ final class WindowChromeView: NSView {
         }
     }
 
-    private func stopObservingWindow() {
-        visibilityCoordinator.stopObserving()
+    nonisolated private func stopObservingWindow() {
         NotificationCenter.default.removeObserver(self)
-        observedWindow?.removeObserver(
-            self,
-            forKeyPath: "title"
-        )
+        titleObservation?.invalidate()
+        titleObservation = nil
         observedWindow = nil
+    }
+
+    deinit {
+        stopObservingWindow()
     }
 }
 
@@ -496,6 +489,7 @@ struct AetherRouteApp: App {
                 isConnected: tunnel.isConnected,
                 hasUpdate: updater.availability.availableVersion != nil
             )
+            .equatable()
             .accessibilityLabel(menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
@@ -527,25 +521,27 @@ struct AetherRouteApp: App {
 
     private var mainWindow: some Scene {
         Window(productDisplayName, id: "main") {
-            Group {
+            MainWindowRootHost {
+                Group {
 #if DEBUG
-                if isMenuPanelReview {
-                    // Render the actual popover in an isolated review window so
-                    // UI tools can exercise it without touching the host tunnel.
-                    MenuBarContent(telemetry: tunnel.telemetryViewModel)
-                        .preferredColorScheme(ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_APPEARANCE"] == "dark" ? .dark : .light)
-                        .fixedSize(horizontal: true, vertical: true)
-                } else {
-                    ContentView()
-                }
+                    if isMenuPanelReview {
+                        // Render the actual popover in an isolated review window so
+                        // UI tools can exercise it without touching the host tunnel.
+                        MenuBarContent(telemetry: tunnel.telemetryViewModel)
+                            .preferredColorScheme(ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_APPEARANCE"] == "dark" ? .dark : .light)
+                            .fixedSize(horizontal: true, vertical: true)
+                    } else {
+                        ContentView()
+                    }
 #else
-                ContentView()
+                    ContentView()
 #endif
+                }
             }
-                .environmentObject(tunnel)
-                .environmentObject(runtimeEnvironment)
-                .environmentObject(language)
-                .environment(\.locale, language.locale)
+            .environmentObject(tunnel)
+            .environmentObject(runtimeEnvironment)
+            .environmentObject(language)
+            .environment(\.locale, language.locale)
         }
         .defaultSize(
             width: isMenuPanelReview ? AetherVisual.popoverWidth : AetherVisual.windowWidth,
@@ -896,7 +892,7 @@ private struct MenuBarContent: View {
                     MenuMemoryFooter(telemetry: telemetry, isLive: isMenuVisible)
                 }
                 .padding(AetherVisual.s3)
-                .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
+                .menuPopoverCard(cornerRadius: Self.groupRadius)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
@@ -997,7 +993,7 @@ private struct MenuBarContent: View {
             .buttonStyle(.aetherGlassCapsule)
         }
         .padding(AetherVisual.s3)
-        .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
+        .menuPopoverCard(cornerRadius: Self.groupRadius)
         .accessibilityElement(children: .contain)
     }
 
@@ -1008,7 +1004,7 @@ private struct MenuBarContent: View {
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(tunnel.compactStatusTitle)
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(isFailed ? Color.red : Color.primary)
+                    .foregroundStyle(isFailed ? AnyShapeStyle(AetherReadableTint(color: .red)) : AnyShapeStyle(Color.primary))
                     .contentTransition(.opacity)
                     .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
                 headerSubtitle
@@ -1133,7 +1129,7 @@ private struct MenuBarContent: View {
             }
 #endif
         }
-        .aetherGlass(in: RoundedRectangle(cornerRadius: Self.groupRadius, style: .continuous))
+        .menuPopoverCard(cornerRadius: Self.groupRadius)
         .animation(AetherVisual.animation(AetherVisual.disclosure), value: tunnel.localProxySettings.allowLAN)
         .onChange(of: effectiveMenuRoutingMode) { _, mode in
             if mode == .direct {
@@ -1208,13 +1204,11 @@ private struct MenuBarContent: View {
                     leaf: leaf
                 )
                 if let member {
-                    let resolvedLatency = tunnel.resolvedOutletLatencyStatus(
+                    MenuExitRowLatencyLeaf(
                         groupName: group.name,
-                        selectedMember: member
-                    )
-                    MenuNodeLatency(
-                        status: resolvedLatency.status,
-                        confidence: resolvedLatency.confidence
+                        member: member,
+                        latencyStore: tunnel.latencyStore,
+                        tunnel: tunnel
                     )
                 }
                 AetherDisclosureChevron(isExpanded: showingNodes)
@@ -1264,27 +1258,15 @@ private struct MenuBarContent: View {
             }
             .buttonStyle(.aetherGlassCapsule)
             if effectiveMenuRoutingMode != .direct, let group = primaryGroup {
-                let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
-                Button {
-                    Task { await tunnel.testProxyLatency(group: group.name) }
-                } label: {
-                    // Text beside the icon: a bare bolt was easy to miss.
-                    HStack(spacing: AetherVisual.s1) {
-                        if isTesting {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "bolt.fill")
-                        }
-                        Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
-                            .lineLimit(1)
+                MenuGroupSpeedTestButton(
+                    groupName: group.name,
+                    latencyStore: tunnel.latencyStore,
+                    fillsWidth: true,
+                    accessibilityIdentifier: "menu-proxy-speedtest-button",
+                    action: {
+                        Task { await tunnel.testProxyLatency(group: group.name) }
                     }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.aetherGlassCapsule)
-                .disabled(isTesting)
-                .help(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
-                .accessibilityLabel(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
-                .accessibilityIdentifier("menu-proxy-speedtest-button")
+                )
             }
             Menu {
                 Text(verbatim: "AetherRoute \(SparkleUpdaterController.currentVersion)")
@@ -1627,7 +1609,6 @@ private struct MenuNodeSelectorPane: View {
 
     var body: some View {
         let group = activeGroup
-        let isTesting = tunnel.proxyLatencyRequests.contains(group.name)
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack(spacing: AetherVisual.s2) {
                 Button(action: onClose) {
@@ -1646,22 +1627,15 @@ private struct MenuNodeSelectorPane: View {
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Button {
-                    Task { await tunnel.testProxyLatency(group: group.name) }
-                } label: {
-                    HStack(spacing: AetherVisual.s1) {
-                        if isTesting {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "bolt.fill")
-                        }
-                        Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
-                            .lineLimit(1)
+                MenuGroupSpeedTestButton(
+                    groupName: group.name,
+                    latencyStore: tunnel.latencyStore,
+                    fillsWidth: false,
+                    accessibilityIdentifier: "menu-node-speedtest-button",
+                    action: {
+                        Task { await tunnel.testProxyLatency(group: group.name) }
                     }
-                }
-                .buttonStyle(.aetherGlassCapsule)
-                .disabled(isTesting)
-                .accessibilityIdentifier("menu-node-speedtest-button")
+                )
             }
 
             if groups.count > 1 {
@@ -1744,15 +1718,16 @@ private struct MenuNodeSelectorPane: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredMembers, id: \.self) { member in
-                                let resolved = memberLatency(for: member, groupName: group.name)
                                 let proxy = proxySummaryByName[member]
                                 MenuNodeRow(
+                                    groupName: group.name,
                                     member: member,
                                     protocolName: proxy?.protocolName,
                                     transportName: proxy?.transportName,
                                     isSelected: member == selectedMember,
-                                    status: resolved.status,
-                                    confidence: resolved.confidence
+                                    isUnsupported: unsupported.contains(member),
+                                    latencyStore: tunnel.latencyStore,
+                                    tunnel: tunnel
                                 ) {
                                     if member == selectedMember {
                                         onClose()
@@ -1779,7 +1754,7 @@ private struct MenuNodeSelectorPane: View {
             }
             .padding(AetherVisual.s2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.compactPanelRadius, style: .continuous))
+            .menuPopoverCard(cornerRadius: AetherVisual.compactPanelRadius)
 
             if group.strategy.lowercased() != "select" {
                 Text(AppLocalization.string("This group is automatically managed by latency tests."))
@@ -1812,13 +1787,6 @@ private struct MenuNodeSelectorPane: View {
     }
 
     private static let searchThreshold = 6
-
-    private func memberLatency(for member: String, groupName: String) -> (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) {
-        if unsupported.contains(member) {
-            return (.timedOut, tunnel.latencyConfidence(group: groupName, member: member))
-        }
-        return tunnel.resolvedOutletLatencyStatus(groupName: groupName, selectedMember: member)
-    }
 
     private func updateOrder(for group: ProxyGroupConfigurationSummary) {
         let baseMembers = group.name == "GLOBAL"
@@ -1874,6 +1842,9 @@ private struct MenuUpdateStatus: View {
                         isPulsing = true
                     }
                 }
+                .onDisappear {
+                    isPulsing = false
+                }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             case .checking, .unknown, .upToDate:
                 // The version is in the overflow menu; nothing to say here.
@@ -1918,12 +1889,14 @@ private struct MenuSelectedNodeTitle: View {
 private struct MenuNodeRow: View {
     static let height: CGFloat = 32
 
+    let groupName: String
     let member: String
     var protocolName: String? = nil
     var transportName: String? = nil
     let isSelected: Bool
-    let status: ProxyLatencyStatus
-    let confidence: ProxyLatencyConfidence
+    let isUnsupported: Bool
+    let latencyStore: ProxyLatencyStore
+    let tunnel: TunnelManager
     let action: () -> Void
     @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
@@ -1946,7 +1919,13 @@ private struct MenuNodeRow: View {
                 if let protocolName {
                     AetherProtocolBadge(type: protocolName, transport: transportName)
                 }
-                MenuNodeLatency(status: status, confidence: confidence)
+                MenuNodeRowLatencyLeaf(
+                    groupName: groupName,
+                    member: member,
+                    isUnsupported: isUnsupported,
+                    latencyStore: latencyStore,
+                    tunnel: tunnel
+                )
             }
             .padding(.horizontal, AetherVisual.s2)
             .frame(height: Self.height)
@@ -1962,6 +1941,89 @@ private struct MenuNodeRow: View {
         .help(member)
         .accessibilityIdentifier("menu-node-\(member)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct MenuExitRowLatencyLeaf: View {
+    let groupName: String
+    let member: String
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let tunnel: TunnelManager
+
+    var body: some View {
+        let _ = latencyStore.proxyLatencies[groupName]
+        let _ = latencyStore.proxyLatencyRequests.contains(groupName)
+        let _ = latencyStore.memberLatencyRequests
+        let resolvedLatency = tunnel.resolvedOutletLatencyStatus(
+            groupName: groupName,
+            selectedMember: member
+        )
+        MenuNodeLatency(
+            status: resolvedLatency.status,
+            confidence: resolvedLatency.confidence
+        )
+    }
+}
+
+private struct MenuNodeRowLatencyLeaf: View {
+    let groupName: String
+    let member: String
+    let isUnsupported: Bool
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let tunnel: TunnelManager
+
+    var body: some View {
+        let _ = latencyStore.proxyLatencies[groupName]
+        let _ = latencyStore.proxyLatencyRequests.contains(groupName)
+        let _ = latencyStore.memberLatencyRequests
+        let resolved: (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) = isUnsupported
+            ? (.timedOut, tunnel.latencyConfidence(group: groupName, member: member))
+            : tunnel.resolvedOutletLatencyStatus(groupName: groupName, selectedMember: member)
+        MenuNodeLatency(
+            status: resolved.status,
+            confidence: resolved.confidence
+        )
+    }
+}
+
+private struct MenuGroupSpeedTestButton: View {
+    let groupName: String
+    @ObservedObject var latencyStore: ProxyLatencyStore
+    let fillsWidth: Bool
+    let accessibilityIdentifier: String
+    let action: () -> Void
+
+    var body: some View {
+        let isTesting = latencyStore.proxyLatencyRequests.contains(groupName)
+        Button(action: action) {
+            HStack(spacing: AetherVisual.s1) {
+                if isTesting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "bolt.fill")
+                }
+                Text(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
+        }
+        .buttonStyle(.aetherGlassCapsule)
+        .disabled(isTesting)
+        .help(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+        .accessibilityLabel(isTesting ? AppLocalization.string("Testing") : AppLocalization.string("Test all"))
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+}
+
+private extension View {
+    /// Nested cards inside `MenuBarExtra` sit directly on the system glass
+    /// popover; using `cardFill` + a hairline border avoids glass-on-glass blur.
+    func menuPopoverCard(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return background(AetherVisual.cardFill, in: shape)
+            .overlay {
+                shape.strokeBorder(AetherVisual.panelStroke, lineWidth: 0.5)
+            }
     }
 }
 
@@ -2124,44 +2186,85 @@ private struct MenuMemoryFooter: View {
     var isLive: Bool = true
 
     var body: some View {
-        HStack(spacing: AetherVisual.s2) {
-            HStack(spacing: AetherVisual.s1) {
-                Circle()
-                    .fill(Color.mint)
-                    .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
-                Text(AppLocalization.string("Core memory"))
-                if isLive {
-                    MenuLiveTrafficValue(metric: .coreMemory, telemetry: telemetry)
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            MenuMemoryProportionBar(model: telemetry, isLive: isLive)
+            HStack(spacing: AetherVisual.s2) {
+                HStack(spacing: AetherVisual.s1) {
+                    Circle()
+                        .fill(Color.mint)
+                        .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+                    Text(AppLocalization.string("Core memory"))
+                    if isLive {
+                        MenuLiveTrafficValue(metric: .coreMemory, telemetry: telemetry)
+                            .foregroundStyle(.primary)
+                    } else {
+                        MenuStaticTrafficValue(metric: .coreMemory, snapshot: telemetry.snapshot)
+                            .foregroundStyle(.primary)
+                    }
+                }
+                Spacer(minLength: AetherVisual.s2)
+                HStack(spacing: AetherVisual.s1) {
+                    Circle()
+                        .fill(Color.indigo)
+                        .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+                    Text(AppLocalization.string("App memory"))
+                    if isLive {
+                        MenuLiveTrafficValue(metric: .appMemory, telemetry: telemetry)
+                            .foregroundStyle(.primary)
+                    } else {
+                        MenuStaticTrafficValue(
+                            metric: .appMemory,
+                            snapshot: telemetry.snapshot,
+                            appMemoryBytes: telemetry.appMemoryBytes
+                        )
                         .foregroundStyle(.primary)
-                } else {
-                    MenuStaticTrafficValue(metric: .coreMemory, snapshot: telemetry.snapshot)
-                        .foregroundStyle(.primary)
+                    }
                 }
             }
-            Spacer(minLength: AetherVisual.s2)
-            HStack(spacing: AetherVisual.s1) {
-                Circle()
-                    .fill(Color.indigo)
-                    .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
-                Text(AppLocalization.string("App memory"))
-                if isLive {
-                    MenuLiveTrafficValue(metric: .appMemory, telemetry: telemetry)
-                        .foregroundStyle(.primary)
-                } else {
-                    MenuStaticTrafficValue(
-                        metric: .appMemory,
-                        snapshot: telemetry.snapshot,
-                        appMemoryBytes: telemetry.appMemoryBytes
-                    )
-                    .foregroundStyle(.primary)
-                }
-            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(AetherVisual.secondaryText)
+            .lineLimit(1)
         }
-        .font(.caption2.monospacedDigit())
-        .foregroundStyle(AetherVisual.secondaryText)
-        .lineLimit(1)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("menu-memory-summary")
+    }
+}
+
+private struct MenuMemoryProportionBar: View {
+    @ObservedObject var model: NetworkTelemetryViewModel
+    let isLive: Bool
+
+    var body: some View {
+        let coreBytes = model.snapshot.memoryBytes
+        let appBytes = model.appMemoryBytes
+        let total = coreBytes + appBytes
+        let coreShare: CGFloat = total > 0 ? CGFloat(Double(coreBytes) / Double(total)) : 0
+        let appShare: CGFloat = total > 0 ? CGFloat(Double(appBytes) / Double(total)) : 0
+
+        Canvas { context, size in
+            guard total > 0, isLive else { return }
+            let coreWidth = max(coreBytes > 0 ? 4 : 0, size.width * coreShare)
+            let gap = coreWidth > 0 && appBytes > 0 ? AetherVisual.sMicro : 0
+            if coreWidth > 0 {
+                context.fill(
+                    Path(CGRect(x: 0, y: 0, width: min(size.width, coreWidth), height: size.height)),
+                    with: .color(.mint)
+                )
+            }
+            let appStart = min(size.width, coreWidth + gap)
+            let remaining = max(0, size.width - appStart)
+            let appWidth = min(remaining, max(appBytes > 0 ? 4 : 0, size.width * appShare))
+            if appWidth > 0 {
+                context.fill(
+                    Path(CGRect(x: appStart, y: 0, width: appWidth, height: size.height)),
+                    with: .color(.indigo)
+                )
+            }
+        }
+        .frame(height: AetherVisual.s1)
+        .background(AetherVisual.neutralFill, in: Capsule())
+        .clipShape(Capsule())
+        .accessibilityHidden(true)
     }
 }
 
@@ -2725,7 +2828,7 @@ private struct SettingsView: View {
                             )
                     )
                     .font(.callout.monospacedDigit())
-                    .foregroundStyle(tunnel.isSystemProxyActive ? AnyShapeStyle(Color.green) : AnyShapeStyle(AetherVisual.secondaryText))
+                    .foregroundStyle(tunnel.isSystemProxyActive ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(AetherVisual.secondaryText))
                 }
 
                 SystemProxyBypassEditor(
@@ -2955,7 +3058,7 @@ private struct SettingsView: View {
                         .foregroundStyle(AetherVisual.secondaryText)
                 } icon: {
                     Image(systemName: shortcutStatusSymbol)
-                        .foregroundStyle(shortcutStatusColor)
+                        .foregroundStyle(shortcutStatusStyle)
                 }
                 .font(.caption)
                 .accessibilityIdentifier("global-shortcut-status")
@@ -3084,11 +3187,11 @@ private struct SettingsView: View {
         }
     }
 
-    private var shortcutStatusColor: Color {
+    private var shortcutStatusStyle: AnyShapeStyle {
         switch automation.shortcutState {
-        case .disabled: .secondary
-        case .active: Color.green
-        case .conflict: .orange
+        case .disabled: AnyShapeStyle(AetherVisual.secondaryText)
+        case .active: AnyShapeStyle(AetherReadableTint(color: .green))
+        case .conflict: AnyShapeStyle(AetherReadableTint(color: .orange))
         }
     }
 
@@ -3493,7 +3596,44 @@ private struct InitialFocusAnchor: NSViewRepresentable {
     func updateNSView(_ view: AnchorView, context: Context) {}
 }
 
-private struct MenuBarStatusItemView: View {
+private struct MainWindowRootHost<Content: View>: View {
+    @Environment(\.openWindow) private var openWindow
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .onAppear {
+                AppWindowManager.shared.openWindowAction = { [openWindow] in
+                    openWindow(id: "main")
+                }
+            }
+    }
+}
+
+private struct MenuBarStatusItemView: View, Equatable {
+    let iconController: AppMenuBarIconController
+    let trafficController: MenuBarTrafficController
+    let isConnected: Bool
+    let hasUpdate: Bool
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.isConnected == rhs.isConnected
+            && lhs.hasUpdate == rhs.hasUpdate
+            && lhs.iconController === rhs.iconController
+            && lhs.trafficController === rhs.trafficController
+    }
+
+    var body: some View {
+        MenuBarStatusItemImage(
+            iconController: iconController,
+            trafficController: trafficController,
+            isConnected: isConnected,
+            hasUpdate: hasUpdate
+        )
+    }
+}
+
+private struct MenuBarStatusItemImage: View {
     @ObservedObject var iconController: AppMenuBarIconController
     @ObservedObject var trafficController: MenuBarTrafficController
     let isConnected: Bool

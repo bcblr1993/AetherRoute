@@ -150,6 +150,21 @@ public enum TransparentProxyProviderLifecycleError:
     }
 }
 
+public enum TransparentProxyReloadPayloadError: Error, Sendable, Equatable {
+    case emptyPayload
+}
+
+/// Validates reload profile payloads received by the root-owned Transparent
+/// Proxy extension before any App Group fallback is consulted.
+public enum TransparentProxyReloadPayloadPolicy: Sendable {
+    public static func decode(_ payloadData: Data) throws -> ReloadProfilePayload {
+        guard !payloadData.isEmpty else {
+            throw TransparentProxyReloadPayloadError.emptyPayload
+        }
+        return try ReloadProfilePayloadCodec.decode(payloadData)
+    }
+}
+
 public struct TransparentProxyRuntimeSnapshot: Sendable, Equatable {
     public let isAcceptingFlows: Bool
     public let registry: TransparentProxySessionRegistrySnapshot
@@ -180,6 +195,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     /// to a latency test outside its own lock, so it must not shut down while
     /// one runs; stop defers the drain until this reaches zero.
     private var activeControlCalls = 0
+    private var activeAdmissions = 0
     private var stopAwaitingControlCalls = false
     private var stopStarted = false
     private var stopFinished = false
@@ -253,20 +269,22 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         destination: FlowEndpoint,
         sourceApp: FlowSourceApp? = nil
     ) -> TransparentProxyIngressClaimResult {
-        admissionLock.lock()
-        guard acceptingFlows else {
-            admissionLock.unlock()
+        let admitted = admissionLock.withLock { () -> Bool in
+            guard acceptingFlows else { return false }
+            activeAdmissions += 1
+            return true
+        }
+        guard admitted else {
             return coordinator.rejectTCP(components: components)
         }
-        let result = coordinator.claimTCP(components: components) { [engine] in
+        defer { admissionFinished() }
+        return coordinator.claimTCP(components: components) { [engine] in
             try engine.makeTCPFlow(
                 source: source,
                 destination: destination,
                 sourceApp: sourceApp
             )
         }
-        admissionLock.unlock()
-        return result
     }
 
     /// UDP source identity is validated and, when absent, leased by the
@@ -277,19 +295,21 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         localSource: FlowEndpoint?,
         sourceApp: FlowSourceApp? = nil
     ) -> TransparentProxyIngressClaimResult {
-        admissionLock.lock()
-        guard acceptingFlows else {
-            admissionLock.unlock()
+        let admitted = admissionLock.withLock { () -> Bool in
+            guard acceptingFlows else { return false }
+            activeAdmissions += 1
+            return true
+        }
+        guard admitted else {
             return coordinator.rejectUDP(components: components)
         }
-        let result = coordinator.claimUDP(
+        defer { admissionFinished() }
+        return coordinator.claimUDP(
             components: components,
             localSource: localSource
         ) { [engine] source in
             try engine.makeUDPFlow(source: source, sourceApp: sourceApp)
         }
-        admissionLock.unlock()
-        return result
     }
 
     public func stop(completion: @escaping @Sendable () -> Void) {
@@ -302,7 +322,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
             guard !stopStarted else { return .wait }
             acceptingFlows = false
             stopStarted = true
-            guard activeControlCalls == 0 else {
+            guard activeControlCalls == 0, activeAdmissions == 0 else {
                 stopAwaitingControlCalls = true
                 return .awaitControlCalls
             }
@@ -379,10 +399,22 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
         return try operation()
     }
 
+    private func admissionFinished() {
+        let drain = admissionLock.withLock { () -> Bool in
+            activeAdmissions -= 1
+            guard activeAdmissions == 0, activeControlCalls == 0, stopAwaitingControlCalls else {
+                return false
+            }
+            stopAwaitingControlCalls = false
+            return true
+        }
+        if drain { beginDrain() }
+    }
+
     private func controlCallFinished() {
         let drain = admissionLock.withLock { () -> Bool in
             activeControlCalls -= 1
-            guard activeControlCalls == 0, stopAwaitingControlCalls else {
+            guard activeControlCalls == 0, activeAdmissions == 0, stopAwaitingControlCalls else {
                 return false
             }
             stopAwaitingControlCalls = false
@@ -417,8 +449,7 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
                 "stage=flowRuntimeResetNetwork engineFailed error=\(String(reflecting: error), privacy: .public)"
             )
         }
-        admissionLock.withLock {
-            guard acceptingFlows else { return }
+        if admissionLock.withLock({ acceptingFlows }) {
             registry.cancelActiveSessions()
         }
         TransparentLifecycleLog.logger.info(

@@ -117,23 +117,30 @@ public enum ExternalSubscriptionLinkParser {
               supportedSchemes.contains(scheme) else {
             throw ExternalSubscriptionLinkError.invalidScheme
         }
-        guard components.user == nil,
-              components.password == nil,
-              components.fragment == nil,
-              let host = components.host?.lowercased(),
-              components.path.isEmpty || components.path == "/" else {
-            throw ExternalSubscriptionLinkError.invalidAction
-        }
+        let host = components.host?.lowercased()
+        let hasValidBaseShape = components.user == nil
+            && components.password == nil
+            && components.fragment == nil
+            && host != nil
+            && (components.path.isEmpty || components.path == "/")
 
-        if supportedActions.contains(host) {
+        if let host, supportedActions.contains(host), hasValidBaseShape {
             return .importSubscription(try parse(incomingURL))
         }
 
-        guard scheme == "aetherroute", supportedControlActions.contains(host) else {
+        guard scheme == "aetherroute" else {
+            throw ExternalSubscriptionLinkError.invalidAction
+        }
+        if let host, supportedActions.contains(host) {
             throw ExternalSubscriptionLinkError.invalidAction
         }
         guard allowControlActions else {
             throw ExternalSubscriptionLinkError.controlActionsDisabled
+        }
+        guard hasValidBaseShape,
+              let host,
+              supportedControlActions.contains(host) else {
+            throw ExternalSubscriptionLinkError.invalidAction
         }
 
         let items = components.queryItems ?? []
@@ -161,7 +168,12 @@ public enum ExternalSubscriptionLinkParser {
             }
             throw ExternalSubscriptionLinkError.invalidParameters
         case "switch-profile":
-            let rawID = items.first(where: { $0.name.lowercased() == "id" })?.value?
+            let idItems = items.filter { $0.name.lowercased() == "id" }
+            let nameItems = items.filter { $0.name.lowercased() == "name" }
+            guard idItems.count <= 1, nameItems.count <= 1 else {
+                throw ExternalSubscriptionLinkError.invalidParameters
+            }
+            let rawID = idItems.first?.value?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nilIfEmpty
             var parsedID: UUID?
@@ -171,7 +183,7 @@ public enum ExternalSubscriptionLinkParser {
                 }
                 parsedID = uuid
             }
-            let parsedName = items.first(where: { $0.name.lowercased() == "name" })?.value?
+            let parsedName = nameItems.first?.value?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nilIfEmpty
             guard parsedID != nil || parsedName != nil else {

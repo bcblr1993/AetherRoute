@@ -95,6 +95,8 @@ extension TunnelManager {
         guard connectionReadinessTask == nil,
               !groups.isEmpty,
               providerConnectionID == connectionID else { return }
+        let attemptID = UUID()
+        connectionReadinessAttemptID = attemptID
         isVerifyingProxyReadiness = true
         connectionQuality = .verifying
         connectionStage = .readinessCheck
@@ -104,18 +106,21 @@ extension TunnelManager {
         connectionReadinessTask = Task { [weak self] in
             await self?.verifyConnectionReadiness(
                 groups: groups,
-                connectionID: connectionID
+                connectionID: connectionID,
+                attemptID: attemptID
             )
         }
     }
 
     func verifyConnectionReadiness(
         groups: [ProxyGroupConfigurationSummary],
-        connectionID: UUID
+        connectionID: UUID,
+        attemptID: UUID = UUID()
     ) async {
         defer {
-            if providerConnectionID == connectionID {
+            if connectionReadinessAttemptID == attemptID {
                 connectionReadinessTask = nil
+                connectionReadinessAttemptID = nil
             }
         }
         do {
@@ -288,7 +293,9 @@ extension TunnelManager {
             Self.runtimeLogger.info(
                 "stage=connectionReadiness dataPlane success"
             )
-            guard providerConnectionID == connectionID else { return }
+            guard !Task.isCancelled,
+                  providerConnectionID == connectionID,
+                  connectionReadinessAttemptID == attemptID else { return }
             automaticReadinessGroupNames = Set(
                 selectedRoutes.compactMap { selection in
                     selection.behavior == .automatic
@@ -320,7 +327,9 @@ extension TunnelManager {
         } catch is CancellationError {
             Self.runtimeLogger.info("stage=connectionReadiness cancelled")
         } catch {
-            guard providerConnectionID == connectionID else { return }
+            guard !Task.isCancelled,
+                  providerConnectionID == connectionID,
+                  connectionReadinessAttemptID == attemptID else { return }
             // A failed probe means the selected route looks slow or blocked —
             // not necessarily that the tunnel is broken. Tearing it down here
             // used to kill sessions that were already carrying traffic, and on
@@ -347,7 +356,9 @@ extension TunnelManager {
                 trafficReachesInternet:
                     await routeCarriesTrafficAfterDegradation()
             )
-            guard providerConnectionID == connectionID else { return }
+            guard !Task.isCancelled,
+                  providerConnectionID == connectionID,
+                  connectionReadinessAttemptID == attemptID else { return }
             connectionQuality = outcome.quality
             if outcome.marksConnectionUsable {
                 readinessVerifiedConnectionID = connectionID
@@ -378,6 +389,7 @@ extension TunnelManager {
     }
 
     func cancelConnectionReadiness() {
+        connectionReadinessAttemptID = nil
         connectionReadinessTask?.cancel()
         connectionReadinessTask = nil
         Self.probeSessionLock.withLock {
@@ -698,6 +710,12 @@ extension TunnelManager {
             "stage=automaticReconnect attempting attempt=\(attempt, privacy: .public)"
         )
         await setEnabled(true, isAutomaticReconnect: true)
+        if case .failed = state {
+            return
+        }
+        guard !isApplicationTerminating, userIntendsToConnect else {
+            return
+        }
         // `setEnabled` can bail out before reaching the provider — the host may
         // still be transitioning, or licensing may refuse a new connection — and
         // nothing calls back in that case. A start that *was* submitted leaves
@@ -802,8 +820,15 @@ extension TunnelManager {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while clock.now < deadline {
-            if state == .connected { return true }
-            if case .failed = state { return false }
+            if isApplicationTerminating { return false }
+            switch state {
+            case .connected:
+                return true
+            case .failed, .disconnected, .disconnecting, .privacyConsentRequired:
+                return false
+            case .loading, .connecting, .recovering:
+                break
+            }
             do {
                 try await Task.sleep(for: .milliseconds(100))
             } catch {
@@ -1013,7 +1038,9 @@ extension TunnelManager {
 
     func recoveryWatchdogFired(_ attemptID: UUID) {
         guard recoveryAttemptID == attemptID,
-              case .recovering = state else {
+              case .recovering = state,
+              !isApplicationTerminating,
+              userIntendsToConnect else {
             Self.runtimeLogger.info("stage=recoveryWatchdog ignored reason=stale")
             return
         }
@@ -1021,12 +1048,30 @@ extension TunnelManager {
             "stage=recoveryWatchdog fired tunnelStuckInRecovery attempting restart"
         )
         cancelRecoveryWatchdog()
-        Task { [weak self] in
+        cancelRecoveryRestart()
+        let generation = connectionGenerationToken
+        let intentEpoch = userIntentEpoch
+        let restartToken = UUID()
+        recoveryRestartToken = restartToken
+        recoveryRestartTask = Task { [weak self] in
             guard let self else { return }
-            await self.setEnabled(false)
+            defer {
+                if self.recoveryRestartToken == restartToken {
+                    self.recoveryRestartTask = nil
+                    self.recoveryRestartToken = nil
+                }
+            }
+            await self.setEnabled(false, isAutomaticReconnect: false, clearsUserIntent: false)
             _ = await self.waitForProviderToBecomeInactive()
-            guard self.state != .connected, self.state != .connecting else { return }
-            await self.setEnabled(true)
+            guard !Task.isCancelled,
+                  self.recoveryRestartToken == restartToken,
+                  !self.isApplicationTerminating,
+                  self.userIntendsToConnect,
+                  self.connectionGenerationToken == generation,
+                  self.userIntentEpoch == intentEpoch,
+                  self.state != .connected,
+                  self.state != .connecting else { return }
+            await self.setEnabled(true, isAutomaticReconnect: true)
         }
     }
 

@@ -111,9 +111,17 @@ enum ProfileCatalogProjectionBuilder {
         _ catalog: ProfileCatalog,
         customRules: [CustomRule] = [],
         remoteRules: [String] = [],
-        enableDomesticDirect: Bool = DomesticRoutingOptimizer.isEnabled
+        enableDomesticDirect: Bool = DomesticRoutingOptimizer.isEnabled,
+        loadSavedDNSPolicy: ((String) throws -> DNSRuntimePolicy?)? = nil
     ) -> ProfileCatalogProjection {
         let active = catalog.activeProfile?.profile
+        let rawSummary = active.map { profile in
+            ProfileConfigurationInspector.inspect(
+                yaml: profile.runtimeYAML,
+                customRules: customRules,
+                remoteRules: remoteRules
+            )
+        }
         let summary = active.map { profile in
             let optimizedYAML = DomesticRoutingOptimizer.optimizedProfile(
                 for: profile.runtimeYAML,
@@ -136,17 +144,21 @@ enum ProfileCatalogProjectionBuilder {
             )
         }
         do {
-            let compatibilityDefault = summary.map {
+            let compatibilityDefault = rawSummary.map {
                 DNSRuntimePolicy.packetTunnelCompatibilityDefault(
                     for: $0.dns
                 )
             } ?? .inherited
+            let savedPolicy = if let loadSavedDNSPolicy {
+                try loadSavedDNSPolicy(active.yaml)
+            } else {
+                try DNSRuntimePolicyStore.applicationGroup()
+                    .loadIfPresent(forProfileYAML: active.yaml)
+            }
             return ProfileCatalogProjection(
                 catalog: catalog,
                 summary: summary,
-                dnsPolicy: try DNSRuntimePolicyStore.applicationGroup()
-                    .loadIfPresent(forProfileYAML: active.yaml)
-                    ?? compatibilityDefault,
+                dnsPolicy: savedPolicy ?? compatibilityDefault,
                 dnsErrorDescription: nil
             )
         } catch {
@@ -584,9 +596,31 @@ final class TunnelManager: ObservableObject {
     let proxySwitchEvents = PassthroughSubject<ProxySwitchEvent, Never>()
     var failoverRecoveryTracker = ProxyFailoverRecoveryTracker()
     var failoverRecoveryScannedAt: [String: Date] = [:]
-    @Published var proxyLatencies: [String: ProxyLatencyState] = [:]
-    @Published var proxyLatencyRequests: Set<String> = []
-    @Published var memberLatencyRequests: Set<String> = []
+    let latencyStore = ProxyLatencyStore()
+    var proxyLatencies: [String: ProxyLatencyState] {
+        get { latencyStore.proxyLatencies }
+        set {
+            if latencyStore.proxyLatencies != newValue {
+                latencyStore.proxyLatencies = newValue
+            }
+        }
+    }
+    var proxyLatencyRequests: Set<String> {
+        get { latencyStore.proxyLatencyRequests }
+        set {
+            if latencyStore.proxyLatencyRequests != newValue {
+                latencyStore.proxyLatencyRequests = newValue
+            }
+        }
+    }
+    var memberLatencyRequests: Set<String> {
+        get { latencyStore.memberLatencyRequests }
+        set {
+            if latencyStore.memberLatencyRequests != newValue {
+                latencyStore.memberLatencyRequests = newValue
+            }
+        }
+    }
 
     /// Staging area behind `proxyLatencies`. Merging one result is O(1) here;
     /// the published arrays are rebuilt once per flush window instead of once
@@ -596,6 +630,10 @@ final class TunnelManager: ObservableObject {
     /// so a member name reused by the new profile never inherits an old
     /// number.
     var latencyIndexToken: LatencyRunToken?
+    var latencyRuntimeEpoch: UInt64 = 0
+    var activeLatencyRunTasks: [UUID: Task<Void, Never>] = [:]
+    var proxySelectionModeTokens: [String: UUID] = [:]
+    var proxySelectionModeTasks: [String: Task<Void, Never>] = [:]
     var pendingLatencyFlush: Set<String> = []
     var lastLatencyFlushAt: ContinuousClock.Instant?
     var latencyFlushTask: Task<Void, Never>?
@@ -614,7 +652,14 @@ final class TunnelManager: ObservableObject {
             }
         }
     }
-    @Published var latencyMeasuredAt: [String: [String: Date]] = [:]
+    var latencyMeasuredAt: [String: [String: Date]] {
+        get { latencyStore.latencyMeasuredAt }
+        set {
+            if latencyStore.latencyMeasuredAt != newValue {
+                latencyStore.latencyMeasuredAt = newValue
+            }
+        }
+    }
     @Published var connectionStage: ConnectionStage = .systemAuthorization
     let telemetryViewModel = NetworkTelemetryViewModel()
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
@@ -691,10 +736,19 @@ final class TunnelManager: ObservableObject {
     var disconnectionWatchdogTask: Task<Void, Never>?
     var recoveryWatchdogTask: Task<Void, Never>?
     var connectionReadinessTask: Task<Void, Never>?
+    var connectionReadinessAttemptID: UUID?
     var connectionRequestID: UUID?
     var connectionAttemptID: UUID?
     var disconnectionAttemptID: UUID?
     var recoveryAttemptID: UUID?
+    var connectionGenerationToken: UInt64 = 0
+    var userIntentEpoch: UInt64 = 0
+    var prepareTask: Task<Void, Never>?
+    var reconnectToken: UUID?
+    var recoveryRestartTask: Task<Void, Never>?
+    var recoveryRestartToken: UUID?
+    let systemProxyCoordinator = SystemProxyWorkCoordinator()
+    var systemProxyGeneration: UInt64 = 0
     /// Whether the disconnection the watchdog is guarding is one *we* asked
     /// for.
     ///
@@ -751,6 +805,7 @@ final class TunnelManager: ObservableObject {
         routingModePreferenceStore: RoutingModePreferenceStore =
             RoutingModePreferenceStore(),
         connectionIntentStore: ConnectionIntentStore? = nil,
+        systemProxyConfigurator: SystemProxyConfigurator? = nil,
         userDefaults: UserDefaults = .standard,
         subscriptionClient: ProfileSubscriptionClient = .live(),
         routingResourceDownloadClient: RoutingResourceDownloadClient = .live(),
@@ -774,7 +829,7 @@ final class TunnelManager: ObservableObject {
         localProxySettings = localProxySettingsStore.load()
         controlURLSchemePreferenceStore = ControlURLSchemePreferenceStore(defaults: userDefaults)
         controlURLSchemePreferences = controlURLSchemePreferenceStore.load()
-        systemProxyConfigurator = SystemProxyConfigurator(defaults: userDefaults)
+        self.systemProxyConfigurator = systemProxyConfigurator ?? SystemProxyConfigurator(defaults: userDefaults)
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
         self.isAutomaticRoutingResourceUpdateEnabled = userDefaults.object(
             forKey: Self.automaticRoutingResourceUpdatePreferenceKey
@@ -1115,7 +1170,7 @@ final class TunnelManager: ObservableObject {
             }
         }
         if !isUIReviewMode {
-            try? systemProxyConfigurator.restorePendingIfNeeded()
+            restoreSystemProxyIfNeeded()
             LANProxyServerController.shared.updateConfiguration(
                 settings: localProxySettings,
                 allowStandaloneLoopback: true
@@ -1171,9 +1226,25 @@ final class TunnelManager: ObservableObject {
         guard !isUIReviewMode else { return }
         guard !rejectDevelopmentPreviewStart() else { return }
         startSubscriptionUpdateScheduleIfNeeded()
+        if let existingPrepare = prepareTask {
+            await existingPrepare.value
+            return
+        }
         guard manager == nil, !isPreparing else { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performPrepare()
+        }
+        prepareTask = task
+        await task.value
+    }
+
+    private func performPrepare() async {
         isPreparing = true
-        defer { isPreparing = false }
+        defer {
+            isPreparing = false
+            prepareTask = nil
+        }
 
         do {
             let shouldLoadBypassPolicy = !hasLoadedBypassPolicy
@@ -1215,10 +1286,13 @@ final class TunnelManager: ObservableObject {
             installManager(try await loadOrCreateManager())
             observeConfigurationChanges()
             updateState()
-            if shouldRunAutomaticSubscriptionCheck {
-                await refreshSubscriptionIfDue()
-            }
             isPreparing = false
+            if shouldRunAutomaticSubscriptionCheck, !isApplicationTerminating {
+                Task { @MainActor [weak self] in
+                    guard let self, !self.isApplicationTerminating else { return }
+                    await self.refreshSubscriptionIfDue()
+                }
+            }
             await restorePreviousConnectionIfRequested()
             await connectForQAAutomationIfRequested()
         } catch {
@@ -1512,7 +1586,13 @@ final class TunnelManager: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) async {
-        await setEnabled(enabled, isAutomaticReconnect: false)
+        await setEnabled(enabled, isAutomaticReconnect: false, clearsUserIntent: true)
+    }
+
+    func cancelRecoveryRestart() {
+        recoveryRestartTask?.cancel()
+        recoveryRestartTask = nil
+        recoveryRestartToken = nil
     }
 
     /// - Parameter isAutomaticReconnect: distinguishes a reconnect this manager
@@ -1523,25 +1603,32 @@ final class TunnelManager: ObservableObject {
     ///   interleaved with this one.
     func setEnabled(
         _ enabled: Bool,
-        isAutomaticReconnect: Bool
+        isAutomaticReconnect: Bool,
+        clearsUserIntent: Bool = true
     ) async {
         Self.runtimeLogger.info(
             "stage=setEnabled request=\(enabled ? "connect" : "disconnect", privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public) engine=\(self.networkEngineMode.rawValue, privacy: .public) routing=\(self.routingMode.rawValue, privacy: .public)"
         )
         if !enabled {
-            cancelStartupRestore(reason: "userDisconnected")
+            cancelStartupRestore(reason: clearsUserIntent ? "userDisconnected" : "internalRestart")
             engineReconnect.cancel()
             // Invalidate before any guard or await. A connect request may still
             // be preparing resources even though NetworkExtension has not
             // received startVPNTunnel yet.
             invalidateConnectionRequest()
-            // The user is taking over. No scheduled reconnect may outlive this,
-            // or the tunnel would come back up after they asked for it down.
-            userIntendsToConnect = false
-            cancelAutomaticReconnect(reason: "userDisconnected")
-            if !isApplicationTerminating && !isUIReviewMode {
-                connectionIntentStore.save(intendedConnected: false)
+            if clearsUserIntent {
+                userIntentEpoch &+= 1
+                connectionGenerationToken &+= 1
+                reconnectToken = nil
+                cancelRecoveryRestart()
+                // The user is taking over. No scheduled reconnect may outlive this,
+                // or the tunnel would come back up after they asked for it down.
+                userIntendsToConnect = false
+                if !isApplicationTerminating && !isUIReviewMode {
+                    connectionIntentStore.save(intendedConnected: false)
+                }
             }
+            cancelAutomaticReconnect(reason: clearsUserIntent ? "userDisconnected" : "internalRestart")
         }
         guard ensurePrivacyConsent() else { return }
         guard !enabled || distributionConnectionAccess.permitsNewConnection
@@ -1585,6 +1672,7 @@ final class TunnelManager: ObservableObject {
                 connectionIntentStore.save(intendedConnected: true)
             }
             if !isAutomaticReconnect {
+                connectionGenerationToken &+= 1
                 cancelAutomaticReconnect(reason: "userConnected")
                 automaticReconnectAttempt = 0
             }
@@ -1632,8 +1720,21 @@ final class TunnelManager: ObservableObject {
             cancelDisconnectionWatchdog()
             cancelRecoveryWatchdog()
             cancelConnectionReadiness()
-            guard state == .connected || state == .connecting || state == .recovering else {
+            guard state == .connected
+                || state == .connecting
+                || state == .recovering
+                || (state == .loading && manager == nil) else {
                 Self.runtimeLogger.info("stage=setEnabled ignored reason=notActive")
+                return
+            }
+            if self.manager == nil {
+                resetConnectionReadiness()
+                connectedSince = nil
+                sessionRoutingMode = nil
+                sessionNetworkEngineMode = nil
+                clearProxySelectionRuntimeState()
+                reconcileDisconnectionStatus()
+                Self.runtimeLogger.info("stage=setEnabled stoppedWithoutManager")
                 return
             }
             let sampleBeforeStop = state == .connected
@@ -1664,6 +1765,15 @@ final class TunnelManager: ObservableObject {
                 }
                 launchSnapshot = snapshot
                 launchPayload = payload
+            } else if self.manager == nil {
+                cancelDisconnectionWatchdog()
+                resetConnectionReadiness()
+                connectedSince = nil
+                sessionRoutingMode = nil
+                sessionNetworkEngineMode = nil
+                clearProxySelectionRuntimeState()
+                reconcileDisconnectionStatus()
+                return
             }
             Self.runtimeLogger.info("stage=requireManager begin")
             let manager = try await requireManager()
@@ -1870,14 +1980,50 @@ final class TunnelManager: ObservableObject {
         return (launchInput.0, launchInput.1)
     }
 
-    func reconnect() async {
-        guard isConnected else {
-            await setEnabled(true)
+    func reconnect(isAutomatic: Bool = false) async {
+        guard !isApplicationTerminating,
+              !isSwitchingNetworkEngine,
+              !isUpdatingProfiles else {
             return
         }
-        await setEnabled(false)
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        await setEnabled(true)
+        if isAutomatic, !userIntendsToConnect {
+            return
+        }
+        guard reconnectToken == nil else { return }
+        let token = UUID()
+        reconnectToken = token
+        defer {
+            if reconnectToken == token {
+                reconnectToken = nil
+            }
+        }
+        let intentEpoch = userIntentEpoch
+
+        if !isConnected && !managerConnectionIsActive {
+            guard !Task.isCancelled,
+                  !isApplicationTerminating,
+                  reconnectToken == token,
+                  userIntentEpoch == intentEpoch else {
+                return
+            }
+            if isAutomatic, !userIntendsToConnect { return }
+            await setEnabled(true, isAutomaticReconnect: isAutomatic)
+            return
+        }
+
+        await setEnabled(false, isAutomaticReconnect: false, clearsUserIntent: false)
+        let settled = await waitForProviderToBecomeInactive()
+        guard settled || managerConnectionPermitsStart,
+              !Task.isCancelled,
+              !isApplicationTerminating,
+              reconnectToken == token,
+              userIntentEpoch == intentEpoch,
+              !isSwitchingNetworkEngine,
+              !isUpdatingProfiles else {
+            return
+        }
+        if isAutomatic, !userIntendsToConnect { return }
+        await setEnabled(true, isAutomaticReconnect: isAutomatic)
     }
 
     var requiredRoutingResources: [RoutingResourceKind] {
@@ -1909,8 +2055,12 @@ final class TunnelManager: ObservableObject {
     }
 
     var requiresDisconnectBeforeApplicationTermination: Bool {
-        managerConnectionIsActive || hasUnsavedTrafficSamples
+        managerConnectionIsActive
+            || hasUnsavedTrafficSamples
             || trafficStatisticsWriter.hasPendingOperations
+            || isSystemProxyActive
+            || systemProxyConfigurator.hasPendingBackup
+            || systemProxyCoordinator.hasPendingOperations
     }
 
     func prepareForApplicationTermination() {
@@ -1922,6 +2072,10 @@ final class TunnelManager: ObservableObject {
             )
         }
         isApplicationTerminating = true
+        userIntentEpoch &+= 1
+        connectionGenerationToken &+= 1
+        reconnectToken = nil
+        cancelRecoveryRestart()
         cancelStartupRestore(reason: "applicationTermination")
         engineReconnect.cancel()
         userIntendsToConnect = false
@@ -1947,7 +2101,10 @@ final class TunnelManager: ObservableObject {
     func disconnectForApplicationTermination() async -> Bool {
         prepareForApplicationTermination()
         await trafficStatisticsWriter.flush()
-        guard managerConnectionIsActive else { return true }
+        guard managerConnectionIsActive else {
+            await restoreSystemProxyAndWait()
+            return true
+        }
         let wasActive = managerConnectionIsActive || userIntendsToConnect
         Self.runtimeLogger.info(
             "stage=applicationTermination disconnect begin wasActive=\(wasActive, privacy: .public)"
@@ -1960,6 +2117,7 @@ final class TunnelManager: ObservableObject {
         // the process exits.
         saveTrafficLedgerIfNeeded(force: true)
         await trafficStatisticsWriter.flush()
+        await restoreSystemProxyAndWait()
         Self.runtimeLogger.info(
             "stage=applicationTermination disconnect complete stopped=\(stopped, privacy: .public)"
         )
@@ -1971,6 +2129,10 @@ final class TunnelManager: ObservableObject {
     /// ensuring subsequent configuration removal and process exit cannot stall.
     func tearDownForUninstall() async {
         isApplicationTerminating = true
+        userIntentEpoch &+= 1
+        connectionGenerationToken &+= 1
+        reconnectToken = nil
+        cancelRecoveryRestart()
         hasUnsavedTrafficSamples = false
         if let configurationObserver {
             NotificationCenter.default.removeObserver(configurationObserver)
@@ -1990,7 +2152,7 @@ final class TunnelManager: ObservableObject {
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
         LANProxyServerController.shared.stop()
-        restoreSystemProxyIfNeeded()
+        await restoreSystemProxyAndWait()
 
         if managerConnectionIsActive || isEnabled {
             manager?.connection.stopVPNTunnel()
@@ -2097,27 +2259,78 @@ final class TunnelManager: ObservableObject {
             } else {
                 nil
             }
-            guard let matchedProfile, activeProfileID != matchedProfile.id, canModifyProfiles else {
+            guard let matchedProfile, activeProfileID != matchedProfile.id, canActivateProfile else {
                 return
             }
             Task { await activateProfile(id: matchedProfile.id) }
         }
     }
 
+    private static func resolveNonFakeAddressesWithTimeout(
+        for host: String,
+        timeout: Duration = .milliseconds(1_500)
+    ) async -> (addresses: [String], latencyMilliseconds: Int) {
+        let resolved: (addresses: [String], latencyMilliseconds: Int) = await withTaskGroup(
+            of: (addresses: [String], latencyMilliseconds: Int)?.self
+        ) { group in
+            group.addTask {
+                await DNSLookupInspector.resolveSystemAddresses(for: host)
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return ([], 0)
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? ([], 0)
+        }
+        let filtered = resolved.addresses.filter { !DNSLookupInspector.isFakeIPAddress($0) }
+        return (filtered, filtered.isEmpty ? 0 : resolved.latencyMilliseconds)
+    }
+
     func traceRoute(_ request: RouteTraceRequest) async -> RouteTraceResult {
+        let trimmedIP = request.ip?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedHost = DNSLookupInspector.normalizeHost(request.host)
             ?? request.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedDNS: (addresses: [String], latencyMilliseconds: Int) = if isUIReviewMode || normalizedHost.isEmpty {
-            ([], 0)
+        let customHosts = activeProfileOverrides.customHosts
+        let requestProfileID = activeProfileID
+        let requestConnectionID = providerConnectionID
+
+        let preResolvedAddresses = request.resolvedAddresses.filter {
+            !DNSLookupInspector.isFakeIPAddress($0)
+        }
+        let resolvedDNS: (addresses: [String], latencyMilliseconds: Int)
+        if !preResolvedAddresses.isEmpty {
+            resolvedDNS = (preResolvedAddresses, 0)
+        } else if isUIReviewMode || normalizedHost.isEmpty || !(trimmedIP?.isEmpty ?? true) {
+            resolvedDNS = ([], 0)
         } else {
-            await DNSLookupInspector.resolveSystemAddresses(for: normalizedHost)
+            resolvedDNS = await Self.resolveNonFakeAddressesWithTimeout(for: normalizedHost)
         }
 
-        if state == .connected, !isUIReviewMode {
+        let mergedCustomHosts = customHosts.isEmpty ? request.customHosts : customHosts
+        let forwardedRequest = RouteTraceRequest(
+            host: request.host,
+            ip: trimmedIP?.isEmpty == true ? nil : trimmedIP,
+            port: request.port,
+            network: request.network,
+            processPath: request.processPath,
+            resolvedAddresses: resolvedDNS.addresses,
+            customHosts: mergedCustomHosts
+        )
+
+        if state == .connected,
+           !isUIReviewMode,
+           providerConnectionID == requestConnectionID,
+           activeProfileID == requestProfileID {
             let client = makeProxySelectionProviderClient()
-            if var liveResult = try? await client.traceRoute(request) {
-                if liveResult.dnsAddresses.isEmpty && !resolvedDNS.addresses.isEmpty {
-                    let isFake = resolvedDNS.addresses.contains(where: DNSLookupInspector.isFakeIPAddress)
+            if var liveResult = try? await client.traceRoute(forwardedRequest),
+               state == .connected,
+               providerConnectionID == requestConnectionID,
+               activeProfileID == requestProfileID {
+                let liveNonFake = liveResult.dnsAddresses.filter { !DNSLookupInspector.isFakeIPAddress($0) }
+                let mergedDNS = liveNonFake.isEmpty ? resolvedDNS.addresses : liveNonFake
+                if mergedDNS != liveResult.dnsAddresses || liveResult.isFakeIP {
                     liveResult = RouteTraceResult(
                         routingMode: liveResult.routingMode,
                         matchedRuleKind: liveResult.matchedRuleKind,
@@ -2126,9 +2339,12 @@ final class TunnelManager: ObservableObject {
                         targetOutbound: liveResult.targetOutbound,
                         outboundChain: liveResult.outboundChain,
                         resolvedHostAlias: liveResult.resolvedHostAlias,
-                        dnsAddresses: resolvedDNS.addresses,
-                        dnsLatencyMilliseconds: resolvedDNS.latencyMilliseconds,
-                        isFakeIP: isFake,
+                        dnsAddresses: mergedDNS,
+                        dnsLatencyMilliseconds: liveResult.dnsLatencyMilliseconds
+                            ?? (mergedDNS.isEmpty || resolvedDNS.latencyMilliseconds == 0
+                                ? nil
+                                : resolvedDNS.latencyMilliseconds),
+                        isFakeIP: false,
                         source: .liveProvider
                     )
                 }
@@ -2139,16 +2355,18 @@ final class TunnelManager: ObservableObject {
         let currentSelections = proxySelections.compactMapValues(\.selectedMember)
         let effectiveMode = state == .connected ? (sessionRoutingMode ?? routingMode) : routingMode
         return RouteSimulationInspector.evaluate(
-            request: request,
+            request: forwardedRequest,
             routingMode: effectiveMode,
             profileYAML: activeProfile?.runtimeYAML,
             summary: activeProfileSummary,
             proxySelections: currentSelections,
             customRules: customRules,
-            customHosts: activeProfileOverrides.customHosts,
+            customHosts: mergedCustomHosts,
             geoSiteData: bundledGeoSiteData,
             resolvedAddresses: resolvedDNS.addresses,
-            dnsLatencyMilliseconds: resolvedDNS.addresses.isEmpty ? nil : resolvedDNS.latencyMilliseconds,
+            dnsLatencyMilliseconds: resolvedDNS.addresses.isEmpty || resolvedDNS.latencyMilliseconds == 0
+                ? nil
+                : resolvedDNS.latencyMilliseconds,
             source: .staticFallback
         )
     }
@@ -2157,6 +2375,13 @@ final class TunnelManager: ObservableObject {
         guard !isUIReviewMode else { return }
         switch newState {
         case .connected:
+            if networkEngineMode == .transparent,
+               localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
+                LANProxyServerController.shared.updateConfiguration(
+                    settings: localProxySettings,
+                    allowStandaloneLoopback: true
+                )
+            }
             if localProxySettings.setAsSystemProxy {
                 applySystemProxyIfNeeded()
             }
@@ -2179,19 +2404,27 @@ final class TunnelManager: ObservableObject {
         }
     }
 
-    func applySystemProxyIfNeeded() {
-        guard !isUIReviewMode, !isApplicationTerminating, localProxySettings.setAsSystemProxy else {
+    func applySystemProxyIfNeeded(settings overrideSettings: LocalProxySettings? = nil) {
+        let settings = overrideSettings ?? localProxySettings
+        guard !isUIReviewMode, !isApplicationTerminating, settings.setAsSystemProxy else {
             return
         }
-        do {
-            try systemProxyConfigurator.apply(settings: localProxySettings)
-            isSystemProxyActive = true
-        } catch {
-            isSystemProxyActive = false
-            localProxySettingsMessage = error.localizedDescription
-            Self.runtimeLogger.error(
-                "stage=systemProxy apply failed error=\(error.localizedDescription, privacy: .public)"
-            )
+        systemProxyGeneration &+= 1
+        let generation = systemProxyGeneration
+        let configurator = systemProxyConfigurator
+        systemProxyCoordinator.enqueueApply(settings: settings, configurator: configurator) { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self, self.systemProxyGeneration == generation else { return }
+                if let error {
+                    self.isSystemProxyActive = false
+                    self.localProxySettingsMessage = error.localizedDescription
+                    Self.runtimeLogger.error(
+                        "stage=systemProxy apply failed error=\(error.localizedDescription, privacy: .public)"
+                    )
+                } else {
+                    self.isSystemProxyActive = true
+                }
+            }
         }
     }
 
@@ -2200,13 +2433,39 @@ final class TunnelManager: ObservableObject {
             isSystemProxyActive = false
             return
         }
-        do {
-            try systemProxyConfigurator.restorePendingIfNeeded()
+        systemProxyGeneration &+= 1
+        let generation = systemProxyGeneration
+        let configurator = systemProxyConfigurator
+        systemProxyCoordinator.enqueueRestore(configurator: configurator) { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self, self.systemProxyGeneration == generation else { return }
+                if let error {
+                    Self.runtimeLogger.error(
+                        "stage=systemProxy restore failed error=\(error.localizedDescription, privacy: .public)"
+                    )
+                } else {
+                    self.isSystemProxyActive = false
+                }
+            }
+        }
+    }
+
+    func restoreSystemProxyAndWait() async {
+        guard !isUIReviewMode else {
             isSystemProxyActive = false
-        } catch {
+            return
+        }
+        systemProxyGeneration &+= 1
+        let generation = systemProxyGeneration
+        let configurator = systemProxyConfigurator
+        let error = await systemProxyCoordinator.restoreAndWait(configurator: configurator)
+        guard systemProxyGeneration == generation else { return }
+        if let error {
             Self.runtimeLogger.error(
                 "stage=systemProxy restore failed error=\(error.localizedDescription, privacy: .public)"
             )
+        } else {
+            isSystemProxyActive = false
         }
     }
 
@@ -2458,6 +2717,7 @@ final class TunnelManager: ObservableObject {
         }
         return hasAcceptedPrivacyDisclosure
             && statePermitsChange
+            && !isPreparing
             && !isSwitchingNetworkEngine
             && !isImportingProfile
             && !isUpdatingProfiles
@@ -2472,6 +2732,7 @@ final class TunnelManager: ObservableObject {
         }
         return hasAcceptedPrivacyDisclosure
             && statePermitsChange
+            && !isPreparing
             && !isSwitchingNetworkEngine
             && !isRefreshingSubscription
             && !isImportingProfile
@@ -3359,3 +3620,102 @@ extension TunnelManager {
     func installReviewFailover() {}
 }
 #endif
+
+/// Runs blocking `/usr/sbin/networksetup` mutations on an ordered background
+/// queue off `@MainActor`, coalescing stale queued applies while preserving
+/// exact FIFO guarantees for terminal/uninstall restores.
+final class SystemProxyWorkCoordinator: @unchecked Sendable {
+    private let queue = DispatchQueue(
+        label: "com.aetherroute.desktop.system-proxy",
+        qos: .userInitiated
+    )
+    private let lock = NSLock()
+    private var latestSequence: UInt64 = 0
+    private var activeOperations = 0
+
+    var hasPendingOperations: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeOperations > 0
+    }
+
+    func enqueueApply(
+        settings: LocalProxySettings,
+        configurator: SystemProxyConfigurator,
+        completion: @escaping @Sendable ((any Error)?) -> Void
+    ) {
+        let sequence = registerOperation()
+        queue.async { [self] in
+            defer { self.finishOperation() }
+            if self.isSuperseded(sequence) {
+                completion(nil)
+                return
+            }
+            do {
+                try configurator.apply(settings: settings)
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
+    }
+
+    func enqueueRestore(
+        configurator: SystemProxyConfigurator,
+        completion: @escaping @Sendable ((any Error)?) -> Void
+    ) {
+        _ = registerOperation()
+        queue.async { [self] in
+            defer { self.finishOperation() }
+            do {
+                try configurator.restorePendingIfNeeded()
+                completion(nil)
+            } catch {
+                completion(error)
+            }
+        }
+    }
+
+    func restoreAndWait(configurator: SystemProxyConfigurator) async -> (any Error)? {
+        _ = registerOperation()
+        return await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                defer { self.finishOperation() }
+                do {
+                    try configurator.restorePendingIfNeeded()
+                    continuation.resume(returning: nil)
+                } catch {
+                    continuation.resume(returning: error)
+                }
+            }
+        }
+    }
+
+    func waitUntilIdle() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func registerOperation() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        latestSequence &+= 1
+        activeOperations += 1
+        return latestSequence
+    }
+
+    private func finishOperation() {
+        lock.lock()
+        activeOperations = max(0, activeOperations - 1)
+        lock.unlock()
+    }
+
+    private func isSuperseded(_ sequence: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return sequence != latestSequence
+    }
+}

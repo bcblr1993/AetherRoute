@@ -61,7 +61,9 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
                 resolutionMode: .fakeIP,
                 ipv6: .disabled
             )
-        case .fakeIP where dns.allowsIPv6:
+        case .fakeIP where dns.allowsIPv6,
+             .redirHost where dns.allowsIPv6,
+             .unsupported where dns.allowsIPv6:
             return DNSRuntimePolicy(ipv6: .disabled)
         case .fakeIP, .redirHost, .unsupported:
             return .inherited
@@ -87,9 +89,12 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
         profileAllowsIPv6: Bool
     ) -> Bool {
         switch ipv6 {
-        case .inherit: profileAllowsIPv6 && dns.allowsIPv6
-        case .disabled: false
-        case .enabled: true
+        case .inherit:
+            return profileAllowsIPv6 && (!dns.isEnabled || !dns.hasExplicitIPv6 || dns.allowsIPv6)
+        case .disabled:
+            return false
+        case .enabled:
+            return true
         }
     }
 }
@@ -154,7 +159,7 @@ public struct DNSRuntimePolicyStore: Sendable {
         fileManager: FileManager = .default
     ) throws {
         let digest = Self.profileDigest(yaml)
-        let existing = try? loadPayload(fileManager: fileManager)
+        let existing = try? loadResilientPayloadForWrite(fileManager: fileManager)
         var policies = existing?.policies ?? [:]
         var profileOrder = existing?.profileOrder ?? []
         profileOrder.removeAll { $0 == digest }
@@ -247,6 +252,44 @@ public struct DNSRuntimePolicyStore: Sendable {
             throw DNSRuntimePolicyError.decodingFailed
         }
         return payload
+    }
+
+    private func loadResilientPayloadForWrite(
+        fileManager: FileManager
+    ) throws -> DNSRuntimePolicyPayload? {
+        do {
+            return try loadPayload(fileManager: fileManager)
+        } catch DNSRuntimePolicyError.invalidProfileDigest, DNSRuntimePolicyError.decodingFailed {
+            guard let data = try? Data(contentsOf: policyURL, options: [.mappedIfSafe]),
+                  data.count <= Self.maximumFileBytes,
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let version = root["formatVersion"] as? Int,
+                  version == DNSRuntimePolicyPayload.currentVersion,
+                  let rawPolicies = root["policies"] as? [String: Any] else {
+                return nil
+            }
+            let decoder = JSONDecoder()
+            var validPolicies: [String: DNSRuntimePolicy] = [:]
+            for (key, value) in rawPolicies {
+                guard Self.isValidDigest(key),
+                      JSONSerialization.isValidJSONObject(value),
+                      let entryData = try? JSONSerialization.data(withJSONObject: value),
+                      let decoded = try? decoder.decode(DNSRuntimePolicy.self, from: entryData) else {
+                    continue
+                }
+                validPolicies[key] = decoded
+            }
+            let rawOrder = root["profileOrder"] as? [String] ?? []
+            var ordered = rawOrder.filter { validPolicies[$0] != nil }
+            let orderedSet = Set(ordered)
+            for key in validPolicies.keys.sorted() where !orderedSet.contains(key) {
+                ordered.append(key)
+            }
+            return DNSRuntimePolicyPayload(
+                policies: validPolicies,
+                profileOrder: ordered
+            )
+        }
     }
 
     private static func profileDigest(_ yaml: String) -> String {

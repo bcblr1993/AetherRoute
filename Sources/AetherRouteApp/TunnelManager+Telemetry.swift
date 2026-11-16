@@ -183,6 +183,13 @@ extension TunnelManager {
         stopTelemetryPolling()
         updateState()
 
+        if (event == .systemDidWake || event == .networkPathChanged),
+           state == .connected,
+           !isApplicationTerminating,
+           localProxySettings.setAsSystemProxy {
+            applySystemProxyIfNeeded()
+        }
+
         if event == .systemDidWake {
             // One successful request is enough. The provider answers it by
             // starting a converging recovery run that retries with backoff and
@@ -276,7 +283,7 @@ extension TunnelManager {
                 "stage=providerMessage degraded action=reconnectProvider reason=unresponsiveProvider"
             )
             Task { @MainActor [weak self] in
-                await self?.reconnect()
+                await self?.reconnect(isAutomatic: true)
             }
         }
     }
@@ -497,7 +504,7 @@ extension TunnelManager {
                 // Not awaited here: disconnecting stops telemetry polling,
                 // which cancels the task this health check runs on.
                 Task { @MainActor [weak self] in
-                    await self?.reconnect()
+                    await self?.reconnect(isAutomatic: true)
                 }
                 return
             }

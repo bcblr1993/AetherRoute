@@ -21,14 +21,58 @@ public enum SystemResolverReader {
             nil
         )
     ) -> [String] {
-        guard let store,
-              let value = SCDynamicStoreCopyValue(
-                  store,
-                  "State:/Network/Global/DNS" as CFString
-              ) as? [String: Any],
-              let servers = value["ServerAddresses"] as? [String]
-        else { return [] }
-        return servers
+        guard let store else { return [] }
+        let globalServers = (SCDynamicStoreCopyValue(
+            store,
+            "State:/Network/Global/DNS" as CFString
+        ) as? [String: Any])?["ServerAddresses"] as? [String] ?? []
+
+        var primaryServiceServers: [String] = []
+        if let globalIPv4 = SCDynamicStoreCopyValue(
+            store,
+            "State:/Network/Global/IPv4" as CFString
+        ) as? [String: Any],
+           let primaryService = globalIPv4["PrimaryService"] as? String,
+           !primaryService.isEmpty,
+           let serviceDNS = SCDynamicStoreCopyValue(
+               store,
+               "State:/Network/Service/\(primaryService)/DNS" as CFString
+           ) as? [String: Any] {
+            primaryServiceServers = serviceDNS["ServerAddresses"] as? [String] ?? []
+        }
+
+        var supplementalWildcardServers: [String] = []
+        if let serviceKeys = SCDynamicStoreCopyKeyList(
+            store,
+            "State:/Network/Service/.*/DNS" as CFString
+        ) as? [String] {
+            for key in serviceKeys.sorted() {
+                guard let dict = SCDynamicStoreCopyValue(store, key as CFString) as? [String: Any],
+                      let domains = dict["SupplementalMatchDomains"] as? [String],
+                      domains.contains(""),
+                      let servers = dict["ServerAddresses"] as? [String]
+                else { continue }
+                supplementalWildcardServers.append(contentsOf: servers)
+            }
+        }
+
+        return mergedServers(
+            globalServers: globalServers,
+            primaryServiceServers: primaryServiceServers,
+            supplementalWildcardServers: supplementalWildcardServers
+        )
+    }
+
+    static func mergedServers(
+        globalServers: [String],
+        primaryServiceServers: [String],
+        supplementalWildcardServers: [String]
+    ) -> [String] {
+        var result = globalServers.isEmpty ? primaryServiceServers : globalServers
+        for server in supplementalWildcardServers where !server.isEmpty && !result.contains(server) {
+            result.append(server)
+        }
+        return result
     }
 
     /// Compares the system's choice against the resolvers the tunnel installed.

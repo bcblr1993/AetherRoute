@@ -200,7 +200,7 @@ struct AboutAetherRouteView: View {
 
     private var releaseChannelColor: Color {
         switch releaseChannel {
-        case "stable": Color.green
+        case "stable": .green
         case "beta": .orange
         default: .secondary
         }

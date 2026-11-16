@@ -304,7 +304,7 @@ struct IndependentDistributionView: View {
 
     private var licenseTint: Color {
         switch distribution.licenseState {
-        case .active: Color.green
+        case .active: .green
         case .restricted: .orange
         case .failure: .red
         case .inactive: .blue

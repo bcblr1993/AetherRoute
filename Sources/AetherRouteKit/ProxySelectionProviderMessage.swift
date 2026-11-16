@@ -131,6 +131,45 @@ public enum ProxySelectionProviderMessageCodec {
         return totalBytes
     }
 
+    private static func isValidRouteTraceRequest(_ request: RouteTraceRequest) -> Bool {
+        let trimmedHost = request.host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty,
+              request.host.utf8.count <= maximumURLBytes,
+              !request.host.contains("\0"),
+              (1...65_535).contains(request.port) else {
+            return false
+        }
+        if let ip = request.ip,
+           ip.utf8.count > 128 || ip.contains("\0") {
+            return false
+        }
+        if let processPath = request.processPath,
+           processPath.utf8.count > 4_096 || processPath.contains("\0") {
+            return false
+        }
+        guard request.resolvedAddresses.count <= 64 else { return false }
+        for address in request.resolvedAddresses {
+            guard !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  address.utf8.count <= 128,
+                  !address.contains("\0") else {
+                return false
+            }
+        }
+        guard request.customHosts.count <= 256 else { return false }
+        for hostMapping in request.customHosts {
+            guard hostMapping.domain.utf8.count <= 256,
+                  hostMapping.ip.utf8.count <= 128,
+                  !hostMapping.domain.contains("\0"),
+                  !hostMapping.ip.contains("\0") else {
+                return false
+            }
+            if hostMapping.isEnabled, (try? hostMapping.validated()) == nil {
+                return false
+            }
+        }
+        return true
+    }
+
     public static func encode(
         request: ProxySelectionProviderRequest
     ) throws -> Data {
@@ -403,10 +442,12 @@ public enum ProxySelectionProviderMessageCodec {
                 bytes[5] == 0,
                 bytes[6] == 0,
                 bytes[7] == 0,
-                memberLength == 0
+                memberLength == 0,
+                groupLength <= 256 * 1_024
             else { throw ProxySelectionProviderMessageError.malformed }
             let payload = Data(bytes[groupStart..<memberStart])
-            guard let traceRequest = try? JSONDecoder().decode(RouteTraceRequest.self, from: payload) else {
+            guard let traceRequest = try? JSONDecoder().decode(RouteTraceRequest.self, from: payload),
+                  Self.isValidRouteTraceRequest(traceRequest) else {
                 throw ProxySelectionProviderMessageError.malformed
             }
             return .traceRoute(traceRequest)
@@ -928,19 +969,41 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
     public let bypassPolicy: BypassPolicy
     public let dnsPolicy: DNSRuntimePolicy
     public let proxySelections: [String: String]
+    public let diagnosticLogLevel: DiagnosticLogLevel?
 
     public init(
         profileYAML: String,
         routingMode: RoutingMode,
         bypassPolicy: BypassPolicy,
         dnsPolicy: DNSRuntimePolicy,
-        proxySelections: [String: String]
+        proxySelections: [String: String],
+        diagnosticLogLevel: DiagnosticLogLevel? = nil
     ) {
         self.profileYAML = profileYAML
         self.routingMode = routingMode
         self.bypassPolicy = bypassPolicy
         self.dnsPolicy = dnsPolicy
         self.proxySelections = proxySelections
+        self.diagnosticLogLevel = diagnosticLogLevel
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case profileYAML
+        case routingMode
+        case bypassPolicy
+        case dnsPolicy
+        case proxySelections
+        case diagnosticLogLevel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profileYAML = try container.decode(String.self, forKey: .profileYAML)
+        routingMode = try container.decode(RoutingMode.self, forKey: .routingMode)
+        bypassPolicy = try container.decode(BypassPolicy.self, forKey: .bypassPolicy)
+        dnsPolicy = try container.decode(DNSRuntimePolicy.self, forKey: .dnsPolicy)
+        proxySelections = try container.decode([String: String].self, forKey: .proxySelections)
+        diagnosticLogLevel = try container.decodeIfPresent(DiagnosticLogLevel.self, forKey: .diagnosticLogLevel)
     }
 }
 

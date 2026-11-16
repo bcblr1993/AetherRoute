@@ -85,9 +85,8 @@ public enum UserRuleSyncMerge {
             return others > mine ? theirs : rule
         }
 
-        var merged: [Rule] = []
+        var candidates: [Rule] = []
         var seenIDs = Set<UUID>()
-        var seenKeys = Set<String>()
         for rule in local + remote.filter({ !localIDs.contains($0.id) }) {
             let key = rule.id.uuidString
             guard seenIDs.insert(rule.id).inserted else { continue }
@@ -96,7 +95,29 @@ public enum UserRuleSyncMerge {
                 continue
             }
             let candidate = chosen(rule)
-            guard isValid(candidate), seenKeys.insert(dedupKey(candidate)).inserted else { continue }
+            guard isValid(candidate) else { continue }
+            candidates.append(candidate)
+        }
+
+        var winnerByKey: [String: (id: UUID, modifiedAt: Date)] = [:]
+        for candidate in candidates {
+            let dKey = dedupKey(candidate)
+            let modified = metadata.modifiedAt[candidate.id.uuidString] ?? .distantPast
+            if let existing = winnerByKey[dKey] {
+                if modified > existing.modifiedAt {
+                    winnerByKey[dKey] = (candidate.id, modified)
+                }
+            } else {
+                winnerByKey[dKey] = (candidate.id, modified)
+            }
+        }
+
+        var merged: [Rule] = []
+        var seenKeys = Set<String>()
+        for candidate in candidates {
+            let dKey = dedupKey(candidate)
+            guard winnerByKey[dKey]?.id == candidate.id,
+                  seenKeys.insert(dKey).inserted else { continue }
             merged.append(candidate)
             if merged.count >= limit { break }
         }

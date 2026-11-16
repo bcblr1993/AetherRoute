@@ -41,6 +41,89 @@ public enum MenuBarTrafficRenderer {
     public static let trafficCanvasSize = NSSize(width: 82, height: 18)
     public static let badgedTrafficCanvasSize = NSSize(width: 86, height: 18)
 
+    private struct CacheKey: Hashable {
+        let symbol: String
+        let isConnected: Bool
+        let hasUpdate: Bool
+        let uploadValue: String
+        let uploadUnit: String
+        let downloadValue: String
+        let downloadUnit: String
+    }
+
+    /// Tiny LRU cache (capped at 4 entries) so repeated `MenuBarStatusItemView`
+    /// evaluations return the exact `NSImage` without growing memory during
+    /// continuous rate changes (`Tests/MenuBarTraffic/transforms.swift`).
+    private final class BoundedImageCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private let capacity = 4
+        private var entries: [CacheKey: NSImage] = [:]
+        private var order: [CacheKey] = []
+
+        func get(_ key: CacheKey) -> NSImage? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let image = entries[key] else { return nil }
+            if let index = order.firstIndex(of: key) {
+                order.remove(at: index)
+                order.append(key)
+            }
+            return image
+        }
+
+        func set(_ image: NSImage, for key: CacheKey) {
+            lock.lock()
+            defer { lock.unlock() }
+            entries[key] = image
+            if let index = order.firstIndex(of: key) {
+                order.remove(at: index)
+            }
+            order.append(key)
+            while order.count > capacity {
+                let evicted = order.removeFirst()
+                entries.removeValue(forKey: evicted)
+            }
+        }
+    }
+
+    private final class LazyAppearanceVariantCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private let sourceImage: NSImage
+        private let canvas: NSSize
+        private var reps: [NSAppearance.Name: NSBitmapImageRep] = [:]
+
+        init(sourceImage: NSImage, canvas: NSSize) {
+            self.sourceImage = sourceImage
+            self.canvas = canvas
+        }
+
+        func bitmapRep(for appearanceName: NSAppearance.Name) -> NSBitmapImageRep? {
+            lock.lock()
+            if let existing = reps[appearanceName] {
+                lock.unlock()
+                return existing
+            }
+            lock.unlock()
+
+            var built: NSBitmapImageRep?
+            NSAppearance(named: appearanceName)?.performAsCurrentDrawingAppearance {
+                built = MenuBarTrafficRenderer.rasterizeBitmapRep(sourceImage, canvas: canvas)
+            }
+            guard let built else { return nil }
+
+            lock.lock()
+            if let existing = reps[appearanceName] {
+                lock.unlock()
+                return existing
+            }
+            reps[appearanceName] = built
+            lock.unlock()
+            return built
+        }
+    }
+
+    private static let cache = BoundedImageCache()
+
     public static func image(
         symbol: String,
         isConnected: Bool,
@@ -51,6 +134,26 @@ public enum MenuBarTrafficRenderer {
     ) -> NSImage {
         guard isTrafficEnabled else {
             return MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: hasUpdate)
+        }
+
+        let uploadComponents: (value: String, unit: String) = isConnected
+            ? MenuBarTrafficFormatter.rateComponents(uploadBytesPerSecond)
+            : (value: "0", unit: "B/s")
+        let downloadComponents: (value: String, unit: String) = isConnected
+            ? MenuBarTrafficFormatter.rateComponents(downloadBytesPerSecond)
+            : (value: "0", unit: "B/s")
+
+        let key = CacheKey(
+            symbol: symbol,
+            isConnected: isConnected,
+            hasUpdate: hasUpdate,
+            uploadValue: uploadComponents.value,
+            uploadUnit: uploadComponents.unit,
+            downloadValue: downloadComponents.value,
+            downloadUnit: downloadComponents.unit
+        )
+        if let cached = cache.get(key) {
+            return cached
         }
 
         let canvas = hasUpdate ? badgedTrafficCanvasSize : trafficCanvasSize
@@ -103,13 +206,6 @@ public enum MenuBarTrafficRenderer {
             }
 
             // 2. Draw 2-line Monospaced Traffic Rates with Column-Aligned Typography
-            let uploadComponents: (value: String, unit: String) = isConnected
-                ? MenuBarTrafficFormatter.rateComponents(uploadBytesPerSecond)
-                : (value: "0", unit: "B/s")
-            let downloadComponents: (value: String, unit: String) = isConnected
-                ? MenuBarTrafficFormatter.rateComponents(downloadBytesPerSecond)
-                : (value: "0", unit: "B/s")
-
             // Resolve the dynamic color to a concrete sRGB value in the current
             // drawing appearance; CoreText intermittently dropped unresolved
             // dynamic colors from the attribute dictionary (nil value abort).
@@ -152,14 +248,15 @@ public enum MenuBarTrafficRenderer {
             return true
         }
 
-        // Finish text drawing in fixed Retina contexts. Colored labels must
-        // still follow the native status item's drawing appearance, which can
-        // differ from the appearance in which SwiftUI created the image.
+        // Finish text drawing in fixed Retina contexts (`rasterize`). Colored
+        // labels must still follow the native status item's drawing appearance,
+        // which can differ from the appearance in which SwiftUI created the image.
         guard hasUpdate else {
             guard let rendered = rasterize(image, canvas: canvas) else {
                 return MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: false)
             }
             rendered.isTemplate = true
+            cache.set(rendered, for: key)
             return rendered
         }
         let names: [NSAppearance.Name] = [
@@ -167,25 +264,18 @@ public enum MenuBarTrafficRenderer {
             .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
             .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark
         ]
-        var variants: [NSAppearance.Name: NSImage] = [:]
-        for name in names {
-            NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
-                variants[name] = rasterize(image, canvas: canvas)
-            }
-        }
-        guard variants.count == names.count else {
+        let variantCache = LazyAppearanceVariantCache(sourceImage: image, canvas: canvas)
+        let currentName = NSAppearance.currentDrawing().bestMatch(from: names) ?? .aqua
+        guard variantCache.bitmapRep(for: currentName) != nil else {
             return MenuBarBadgedIcon.image(symbol: symbol, hasUpdate: true)
         }
-        let pixelsByAppearance = variants
         let rendered = NSImage(size: canvas, flipped: false) { _ in
             let name = NSAppearance.currentDrawing().bestMatch(from: names) ?? .aqua
-            pixelsByAppearance[name]?.draw(
-                in: NSRect(origin: .zero, size: canvas), from: .zero,
-                operation: .sourceOver, fraction: 1
-            )
-            return true
+            guard let rep = variantCache.bitmapRep(for: name) else { return false }
+            return rep.draw(in: NSRect(origin: .zero, size: canvas))
         }
         rendered.isTemplate = false
+        cache.set(rendered, for: key)
         return rendered
     }
 
@@ -226,7 +316,7 @@ public enum MenuBarTrafficRenderer {
         path.stroke()
     }
 
-    private static func rasterize(_ image: NSImage, canvas: NSSize) -> NSImage? {
+    private static func rasterizeBitmapRep(_ image: NSImage, canvas: NSSize) -> NSBitmapImageRep? {
         guard let pixels = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: Int(canvas.width * 2), pixelsHigh: Int(canvas.height * 2),
@@ -247,6 +337,13 @@ public enum MenuBarTrafficRenderer {
         image.draw(in: NSRect(origin: .zero, size: canvas), from: .zero,
                    operation: .sourceOver, fraction: 1)
         NSGraphicsContext.restoreGraphicsState()
+        return pixels
+    }
+
+    private static func rasterize(_ image: NSImage, canvas: NSSize) -> NSImage? {
+        guard let pixels = rasterizeBitmapRep(image, canvas: canvas) else {
+            return nil
+        }
         let rendered = NSImage(size: canvas)
         rendered.addRepresentation(pixels)
         return rendered

@@ -212,17 +212,16 @@ private struct StatisticsRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(name)
-                GeometryReader { proxy in
-                    Capsule()
-                        .fill(AetherVisual.neutralFill)
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.accentColor)
-                                .frame(width: proxy.size.width * share)
-                        }
-                }
-                .frame(height: AetherVisual.statusDotSize)
-                .accessibilityHidden(true)
+                Capsule()
+                    .fill(AetherVisual.neutralFill)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.accentColor)
+                            .scaleEffect(x: share.isFinite ? min(1, max(0, share)) : 0, y: 1, anchor: .leading)
+                    }
+                    .clipShape(Capsule())
+                    .frame(height: AetherVisual.statusDotSize)
+                    .accessibilityHidden(true)
             }
             Spacer(minLength: AetherVisual.s3)
             VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {

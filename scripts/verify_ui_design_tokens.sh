@@ -109,8 +109,8 @@ fail_if_found \
 
 fail_if_found \
   "state colours on text and symbols use AetherReadableTint or AetherInlineMessage, not the raw system colour" \
-  '\.foregroundStyle\([[:space:]]*\.(red|orange|yellow|green)[[:space:]]*\)' \
-  -g '!AetherRouteVisualSystem.swift'
+  '\.foregroundStyle\([[:space:]]*\.(red|orange|yellow|green)[[:space:]]*\)|\.foregroundStyle\([^\n;)]*\bColor\.(red|orange|yellow|green)\b' \
+  --pcre2 -g '!AetherRouteVisualSystem.swift'
 
 fail_if_found \
   "literal font sizes are forbidden; use a system text style such as .caption or .body (sizes relative to a container are allowed)" \

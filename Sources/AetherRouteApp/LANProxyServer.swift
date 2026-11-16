@@ -136,15 +136,25 @@ final class LANProxyServerController: ObservableObject {
                 newHTTPListener = try NWListener(using: httpParameters, on: httpNWPort)
             }
 
+            let httpListenerID = ObjectIdentifier(newHTTPListener)
             newHTTPListener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor [weak self] in
-                    self?.handleListenerState(state, port: httpPort, type: "Mixed/HTTP")
+                    self?.handleListenerState(
+                        state,
+                        listenerID: httpListenerID,
+                        port: httpPort,
+                        type: "Mixed/HTTP"
+                    )
                 }
             }
 
             newHTTPListener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor [weak self] in
-                    self?.acceptConnection(connection, defaultMode: .mixed)
+                    self?.acceptConnection(
+                        connection,
+                        listenerID: httpListenerID,
+                        defaultMode: .mixed
+                    )
                 }
             }
 
@@ -167,15 +177,25 @@ final class LANProxyServerController: ObservableObject {
                     newSOCKSListener = try NWListener(using: socksParameters, on: socksNWPort)
                 }
 
+                let socksListenerID = ObjectIdentifier(newSOCKSListener)
                 newSOCKSListener.stateUpdateHandler = { [weak self] state in
                     Task { @MainActor [weak self] in
-                        self?.handleListenerState(state, port: socksPort, type: "SOCKS5")
+                        self?.handleListenerState(
+                            state,
+                            listenerID: socksListenerID,
+                            port: socksPort,
+                            type: "SOCKS5"
+                        )
                     }
                 }
 
                 newSOCKSListener.newConnectionHandler = { [weak self] connection in
                     Task { @MainActor [weak self] in
-                        self?.acceptConnection(connection, defaultMode: .socks5Only)
+                        self?.acceptConnection(
+                            connection,
+                            listenerID: socksListenerID,
+                            defaultMode: .socks5Only
+                        )
                     }
                 }
 
@@ -212,7 +232,23 @@ final class LANProxyServerController: ObservableObject {
         Self.logger.info("stage=stop completed")
     }
 
-    private func handleListenerState(_ state: NWListener.State, port: Int, type: String) {
+    private func isCurrentListener(_ listenerID: ObjectIdentifier) -> Bool {
+        if let httpListener, ObjectIdentifier(httpListener) == listenerID {
+            return true
+        }
+        if let socksListener, ObjectIdentifier(socksListener) == listenerID {
+            return true
+        }
+        return false
+    }
+
+    private func handleListenerState(
+        _ state: NWListener.State,
+        listenerID: ObjectIdentifier,
+        port: Int,
+        type: String
+    ) {
+        guard isRunning, isCurrentListener(listenerID) else { return }
         switch state {
         case .ready:
             Self.logger.info("stage=listenerReady type=\(type, privacy: .public) port=\(port)")
@@ -227,17 +263,34 @@ final class LANProxyServerController: ObservableObject {
         }
     }
 
-    private func acceptConnection(_ connection: NWConnection, defaultMode: LANProxyInitialMode) {
+    private func acceptConnection(
+        _ connection: NWConnection,
+        listenerID: ObjectIdentifier,
+        defaultMode: LANProxyInitialMode
+    ) {
+        guard isRunning, isCurrentListener(listenerID) else {
+            connection.cancel()
+            return
+        }
         guard activeSessions.count < Self.maxConcurrentSessions else {
             Self.logger.warning("stage=connectionThrottled active=\(self.activeSessions.count) max=\(Self.maxConcurrentSessions)")
             connection.cancel()
             return
         }
 
+        var selfPorts: Set<Int> = [activeHTTPPort]
+        if socksListener != nil {
+            selfPorts.insert(activeSOCKSPort)
+        }
+        var localAddresses = Self.currentLocalInterfaceAddresses()
+        localAddresses.insert(currentLANIP.lowercased())
+
         let session = LANProxySession(
             clientConnection: connection,
             initialMode: defaultMode,
             queue: serverQueue,
+            selfPorts: selfPorts,
+            localAddresses: localAddresses,
             onTerminated: { [weak self] closedSession in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -249,6 +302,34 @@ final class LANProxyServerController: ObservableObject {
         activeSessions.insert(session)
         activeConnectionsCount = activeSessions.count
         session.start()
+    }
+
+    private static func currentLocalInterfaceAddresses() -> Set<String> {
+        var addresses: Set<String> = []
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let first = head else { return addresses }
+        defer { freeifaddrs(first) }
+
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = cursor {
+            defer { cursor = current.pointee.ifa_next }
+            guard let addr = current.pointee.ifa_addr else { continue }
+            let family = Int32(addr.pointee.sa_family)
+            if family == AF_INET {
+                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                if getnameinfo(addr, socklen_t(addr.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                    let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                    addresses.insert(LANProxySession.normalizeHostString(text))
+                }
+            } else if family == AF_INET6 {
+                var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                if getnameinfo(addr, socklen_t(addr.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                    let text = String(decoding: host.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                    addresses.insert(LANProxySession.normalizeHostString(text))
+                }
+            }
+        }
+        return addresses
     }
 }
 
@@ -456,6 +537,9 @@ final class LANProxySession: Hashable, @unchecked Sendable {
     private let idleTimeout: TimeInterval
     /// Lets already received data finish forwarding after a terminal state.
     private let terminalStateGrace: TimeInterval
+    private let clientIsLoopback: Bool
+    private let selfPorts: Set<Int>
+    private let localAddresses: Set<String>
 
     var isCancelled: Bool {
         os_unfair_lock_lock(&lock)
@@ -470,6 +554,9 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         halfCloseTimeout: TimeInterval = 60,
         terminalStateGrace: TimeInterval = 5,
         idleTimeout: TimeInterval = LANProxySession.defaultIdleTimeout,
+        selfPorts: Set<Int> = [],
+        localAddresses: Set<String> = [],
+        clientIsLoopback: Bool? = nil,
         onTerminated: @escaping @Sendable (LANProxySession) -> Void
     ) {
         self.clientConnection = clientConnection
@@ -478,6 +565,9 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         self.halfCloseTimeout = halfCloseTimeout
         self.terminalStateGrace = terminalStateGrace
         self.idleTimeout = idleTimeout
+        self.selfPorts = selfPorts
+        self.localAddresses = localAddresses
+        self.clientIsLoopback = clientIsLoopback ?? Self.endpointIsLoopback(clientConnection.endpoint)
         self.onTerminated = onTerminated
     }
 
@@ -734,7 +824,96 @@ final class LANProxySession: Hashable, @unchecked Sendable {
 
     // MARK: - Outbound Connection & Relay
 
+    nonisolated static func normalizeHostString(_ host: String) -> String {
+        var trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("["), trimmed.hasSuffix("]"), trimmed.count >= 2 {
+            trimmed = String(trimmed.dropFirst().dropLast())
+        }
+        if let zoneIndex = trimmed.firstIndex(of: "%") {
+            trimmed = String(trimmed[..<zoneIndex])
+        }
+        trimmed = trimmed.lowercased()
+        while trimmed.hasSuffix("."), trimmed.count > 1 {
+            trimmed.removeLast()
+        }
+        return trimmed
+    }
+
+    nonisolated static func endpointIsLoopback(_ endpoint: NWEndpoint) -> Bool {
+        switch endpoint {
+        case let .hostPort(host, _):
+            switch host {
+            case let .ipv4(ipv4):
+                return ipv4.rawValue.first == 127
+            case let .ipv6(ipv6):
+                if ipv6.isLoopback { return true }
+                if let mapped = ipv6.asIPv4 {
+                    return mapped.rawValue.first == 127
+                }
+                return false
+            case let .name(name, _):
+                return isLoopbackTargetHost(name)
+            @unknown default:
+                return false
+            }
+        default:
+            return false
+        }
+    }
+
+    nonisolated static func isLoopbackTargetHost(_ rawHost: String) -> Bool {
+        let host = normalizeHostString(rawHost)
+        guard !host.isEmpty else { return false }
+        if host == "localhost" || host.hasSuffix(".localhost") {
+            return true
+        }
+        if let ipv4 = IPv4Address(host) {
+            return ipv4.rawValue.first == 127 || ipv4.rawValue == Data([0, 0, 0, 0])
+        }
+        if let ipv6 = IPv6Address(host) {
+            if ipv6.isLoopback || ipv6.rawValue == Data(repeating: 0, count: 16) {
+                return true
+            }
+            if let mapped = ipv6.asIPv4 {
+                return mapped.rawValue.first == 127 || mapped.rawValue == Data([0, 0, 0, 0])
+            }
+        }
+        return false
+    }
+
+    nonisolated static func shouldRejectOutboundTarget(
+        host: String,
+        port: Int,
+        clientIsLoopback: Bool,
+        selfPorts: Set<Int>,
+        localAddresses: Set<String>
+    ) -> Bool {
+        guard (1...65_535).contains(port) else { return true }
+        let normalized = normalizeHostString(host)
+        guard !normalized.isEmpty else { return true }
+
+        let targetIsLoopback = isLoopbackTargetHost(normalized)
+        let targetIsSelfHost = targetIsLoopback || localAddresses.contains(normalized)
+        if selfPorts.contains(port) && targetIsSelfHost {
+            return true
+        }
+        if !clientIsLoopback && targetIsLoopback {
+            return true
+        }
+        return false
+    }
+
     private func connectRemote(host: String, port: Int, completion: @escaping @Sendable (Bool) -> Void) {
+        if Self.shouldRejectOutboundTarget(
+            host: host,
+            port: port,
+            clientIsLoopback: clientIsLoopback,
+            selfPorts: selfPorts,
+            localAddresses: localAddresses
+        ) {
+            fireConnectCompletion(completion, result: false)
+            return
+        }
         guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
             fireConnectCompletion(completion, result: false)
             return

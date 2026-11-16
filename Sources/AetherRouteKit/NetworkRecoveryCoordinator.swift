@@ -174,7 +174,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
         let decision: (coalesced: Bool, token: UInt64) = stateLock.withLock {
             let effectiveSupersedes: Bool
             if reason == "appMessage",
-               (isRunning && (currentReason == "wake" || currentAttemptIndex == 0))
+               (isRunning && currentAttemptIndex == 0)
                 || (!isRunning && lastCompletedReason != nil) {
                 // The host app sends resetNetwork on systemDidWake ~500ms after
                 // wake. Often SCDynamicStore (physicalLinkChanged) or NWPathMonitor
@@ -205,7 +205,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
             return (false, runToken)
         }
         if decision.coalesced {
-            observer(.coalesced(reason: reason))
+            queue.async { self.observer(.coalesced(reason: reason)) }
             return
         }
         let token = decision.token
@@ -235,7 +235,7 @@ public final class NetworkRecoveryCoordinator: @unchecked Sendable {
             return running
         }
         if wasRunning {
-            observer(.cancelled(reason: reason))
+            queue.async { self.observer(.cancelled(reason: reason)) }
         }
     }
 

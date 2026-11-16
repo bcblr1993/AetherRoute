@@ -540,7 +540,7 @@ struct SupportDiagnosticsView: View {
                             : "checkmark.circle.fill"
                     )
                     .font(.callout)
-                    .foregroundStyle(statusIsError ? .red : .green)
+                    .foregroundStyle(AetherReadableTint(color: statusIsError ? .red : .green))
                     .accessibilityIdentifier("diagnostics-status")
                 }
 
@@ -707,7 +707,7 @@ struct SupportDiagnosticsView: View {
                     statusMessage,
                     systemImage: statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
                 )
-                .foregroundStyle(statusIsError ? .red : .green)
+                .foregroundStyle(AetherReadableTint(color: statusIsError ? .red : .green))
                 .accessibilityIdentifier("diagnostics-status")
             }
             DisclosureGroup(AppLocalization.string("What the report contains")) {
@@ -1003,14 +1003,18 @@ struct SupportDiagnosticsView: View {
             symbol = "questionmark.circle.fill"
         }
 
+        let foregroundStyle: AnyShapeStyle = tintColor == .secondary
+            ? AnyShapeStyle(AetherVisual.secondaryText)
+            : AnyShapeStyle(AetherReadableTint(color: tintColor))
+
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack(spacing: AetherVisual.s2) {
                 Image(systemName: symbol)
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(tintColor)
+                    .foregroundStyle(foregroundStyle)
                 Text(AppLocalization.string(report.verdict.titleKey))
                     .font(.body.weight(.bold))
-                    .foregroundStyle(tintColor)
+                    .foregroundStyle(foregroundStyle)
                 Spacer()
                 Text(String(format: "%.0f ms", report.totalDurationMs))
                     .font(.caption.monospacedDigit())

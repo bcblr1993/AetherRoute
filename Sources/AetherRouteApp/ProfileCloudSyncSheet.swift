@@ -46,7 +46,7 @@ struct ProfileCloudSyncSheet: View {
                     if let status = cloudSync.status {
                         HStack(spacing: AetherVisual.s2) {
                             Image(systemName: status.isFailure ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                                .foregroundStyle(status.isFailure ? Color.orange : Color.accentColor)
+                                .foregroundStyle(status.isFailure ? AnyShapeStyle(AetherReadableTint(color: .orange)) : AnyShapeStyle(Color.accentColor))
                             Text(status.localizedText)
                                 .font(.callout)
                                 .foregroundStyle(.primary)

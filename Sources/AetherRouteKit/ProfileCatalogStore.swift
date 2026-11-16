@@ -1028,7 +1028,8 @@ public struct ProfileCatalogStore: Sendable {
                     mergedProfiles[matchIndex] = ManagedProfile(
                         id: existing.id,
                         profile: remote.profile,
-                        updatedAt: remote.updatedAt
+                        updatedAt: remote.updatedAt,
+                        mergedSpec: remote.mergedSpec
                     )
                     if let deletedAt = mergedTombstones[existing.id], remote.updatedAt > deletedAt {
                         mergedTombstones.removeValue(forKey: existing.id)
@@ -1052,7 +1053,8 @@ public struct ProfileCatalogStore: Sendable {
                         mergedProfiles[matchIndex] = ManagedProfile(
                             id: existing.id,
                             profile: remote.profile,
-                            updatedAt: remote.updatedAt
+                            updatedAt: remote.updatedAt,
+                            mergedSpec: remote.mergedSpec
                         )
                         if let deletedAt = mergedTombstones[existing.id], remote.updatedAt > deletedAt {
                             mergedTombstones.removeValue(forKey: existing.id)
@@ -1136,6 +1138,12 @@ public struct ProfileCatalogStore: Sendable {
         if (components.scheme == "https" && components.port == 443)
             || (components.scheme == "http" && components.port == 80) {
             components.port = nil
+        }
+        components.fragment = nil
+        if components.path == "/" {
+            components.path = ""
+        } else if components.path.count > 1, components.path.hasSuffix("/") {
+            components.path = String(components.path.dropLast())
         }
         return (components.string ?? url.absoluteString).trimmingCharacters(in: .whitespacesAndNewlines)
     }

@@ -61,9 +61,6 @@ public enum DomesticRoutingOptimizer {
         "DOMAIN-SUFFIX,tailscale.com,DIRECT",
         "DOMAIN-SUFFIX,ts.net,DIRECT",
         "DOMAIN-KEYWORD,tailscale,DIRECT",
-        "DOMAIN-KEYWORD,headscale,DIRECT",
-        "DOMAIN-SUFFIX,baizhiedu.xin,DIRECT",
-        "IP-CIDR,82.157.10.147/32,DIRECT,no-resolve",
         // Apple update & software delivery endpoints (high-bandwidth CDNs)
         "DOMAIN-SUFFIX,swcdn.apple.com,DIRECT",
         "DOMAIN-SUFFIX,updates.cdn-apple.com,DIRECT",
@@ -139,8 +136,6 @@ public enum DomesticRoutingOptimizer {
         "*.home.arpa",
         "*.tailscale.com",
         "*.ts.net",
-        "*headscale*",
-        "*.baizhiedu.xin",
         "captive.apple.com",
         "*.captive.apple.com",
         "time.*.com",
@@ -310,9 +305,14 @@ public enum DomesticRoutingOptimizer {
         )
 
         var emittedSections = Set<String>()
+        var preambleLineCount = 0
 
         for (key, sectionLines) in sections.orderedSections {
-            if key == "dns" {
+            if key == "_preamble_" {
+                resultLines.append(contentsOf: sectionLines)
+                preambleLineCount = resultLines.count
+                emittedSections.insert(key)
+            } else if key == "dns" {
                 if let optimizedDNSLines {
                     resultLines.append(contentsOf: optimizedDNSLines)
                 }
@@ -359,7 +359,7 @@ public enum DomesticRoutingOptimizer {
         }
 
         if !emittedSections.contains("dns"), let optimizedDNSLines {
-            resultLines.insert(contentsOf: optimizedDNSLines, at: 0)
+            resultLines.insert(contentsOf: optimizedDNSLines, at: preambleLineCount)
             emittedSections.insert("dns")
         }
 
@@ -471,11 +471,17 @@ public enum DomesticRoutingOptimizer {
         // Every resolver the profile lists for a key, in order. Block-style
         // lists arrive one item per line after a bare `key:`.
         var existingPolicies: [(String, [String])] = []
+        var fallbackFilterIPCIDRs: [String] = []
+        var fallbackFilterDomains: [String] = []
+        var fallbackFilterGeosites: [String] = []
         var otherDNSProps: [String] = []
+        var otherDNSBlocks: [(key: String, lines: [String])] = []
 
         var childIndent: Int?
         var currentField: String?
         var pendingPolicyIndex: Int?
+        var pendingFallbackSubfield: String?
+        var activeUnknownBlockIndex: Int?
 
         for line in lines.dropFirst() { // Skip "dns:"
             let trimmed = stripInlineComment(line.trimmingCharacters(in: .whitespaces))
@@ -493,6 +499,8 @@ public enum DomesticRoutingOptimizer {
                     let lowerKey = key.lowercased()
                     currentField = lowerKey
                     pendingPolicyIndex = nil
+                    pendingFallbackSubfield = nil
+                    activeUnknownBlockIndex = nil
 
                     switch lowerKey {
                     case "enable", "enhanced-mode", "fake-ip-range":
@@ -530,22 +538,72 @@ public enum DomesticRoutingOptimizer {
                         }
                         continue
                     case "fallback-filter":
-                        // Will be generated deterministically
+                        if !val.isEmpty, val.hasPrefix("{"), val.hasSuffix("}") {
+                            for (subKey, subVal) in parseFlowPolicy(val) {
+                                switch subKey.lowercased() {
+                                case "ipcidr":
+                                    fallbackFilterIPCIDRs.append(contentsOf: parseFlowList(subVal))
+                                case "domain":
+                                    fallbackFilterDomains.append(contentsOf: parseFlowList(subVal))
+                                case "geosite":
+                                    fallbackFilterGeosites.append(contentsOf: parseFlowList(subVal))
+                                default:
+                                    break
+                                }
+                            }
+                        }
                         continue
                     default:
-                        let recognizedDNSFields: Set<String> = [
-                            "ipv6", "use-hosts", "respect-rules", "listen",
-                            "edns-client-subnet"
-                        ]
-                        if recognizedDNSFields.contains(lowerKey) && !val.isEmpty {
+                        if !val.isEmpty {
                             otherDNSProps.append("  \(key): \(val)")
+                        } else {
+                            otherDNSBlocks.append((key: key, lines: []))
+                            activeUnknownBlockIndex = otherDNSBlocks.count - 1
                         }
                         continue
                     }
                 }
             }
 
+            if let blockIdx = activeUnknownBlockIndex {
+                if trimmed.hasPrefix("-") {
+                    let item = stripInlineComment(trimmed.dropFirst().trimmingCharacters(in: .whitespaces))
+                    if !item.isEmpty {
+                        otherDNSBlocks[blockIdx].lines.append("    - \(item)")
+                    }
+                } else {
+                    otherDNSBlocks[blockIdx].lines.append("    \(trimmed)")
+                }
+                continue
+            }
+
             if let field = currentField {
+                if field == "fallback-filter" {
+                    if !trimmed.hasPrefix("-"), let (subKey, subVal) = parseKeyAndValue(trimmed) {
+                        pendingFallbackSubfield = subKey.lowercased()
+                        if !subVal.isEmpty {
+                            let items = parseFlowList(subVal)
+                            switch pendingFallbackSubfield {
+                            case "ipcidr": fallbackFilterIPCIDRs.append(contentsOf: items)
+                            case "domain": fallbackFilterDomains.append(contentsOf: items)
+                            case "geosite": fallbackFilterGeosites.append(contentsOf: items)
+                            default: break
+                            }
+                        }
+                    } else if trimmed.hasPrefix("-"), let subField = pendingFallbackSubfield {
+                        let cleanItem = unquote(stripInlineComment(trimmed.dropFirst().trimmingCharacters(in: .whitespaces)))
+                        if !cleanItem.isEmpty {
+                            switch subField {
+                            case "ipcidr": fallbackFilterIPCIDRs.append(cleanItem)
+                            case "domain": fallbackFilterDomains.append(cleanItem)
+                            case "geosite": fallbackFilterGeosites.append(cleanItem)
+                            default: break
+                            }
+                        }
+                    }
+                    continue
+                }
+
                 if trimmed.hasPrefix("-") {
                     let item = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
                     let cleanItem = unquote(stripInlineComment(item))
@@ -648,14 +706,41 @@ public enum DomesticRoutingOptimizer {
             output.append("    - '\(domain)'")
         }
 
-        var mergedPolicies: [(String, [String])] = domesticNameserverPolicies.map {
-            ($0.0, [$0.1])
-        }
-        var policyKeys = Set(mergedPolicies.map { unquote($0.0) })
+        let overseasPublicPlaintextDNS: Set<String> = [
+            "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "9.9.9.9",
+        ]
+        var userPoliciesByKey: [String: [String]] = [:]
+        var userOrder: [String] = []
         for (k, values) in existingPolicies {
             let cleanK = unquote(k)
             guard !cleanK.lowercased().hasPrefix("geosite:"), !cleanK.isEmpty else { continue }
-            if !policyKeys.contains(cleanK) {
+            let cleanValues = values.map(unquote).filter { !$0.isEmpty }
+            guard !cleanValues.isEmpty else { continue }
+            if userPoliciesByKey[cleanK] == nil {
+                userOrder.append(cleanK)
+            }
+            userPoliciesByKey[cleanK] = cleanValues
+        }
+
+        var mergedPolicies: [(String, [String])] = []
+        var policyKeys = Set<String>()
+        for (rawDomain, defaultResolver) in domesticNameserverPolicies {
+            let cleanDomain = unquote(rawDomain)
+            guard policyKeys.insert(cleanDomain).inserted else { continue }
+            if let userValues = userPoliciesByKey[cleanDomain] {
+                let allForeignPlaintext = userValues.allSatisfy {
+                    overseasPublicPlaintextDNS.contains($0.lowercased())
+                }
+                mergedPolicies.append((
+                    cleanDomain,
+                    allForeignPlaintext ? [defaultResolver] : userValues
+                ))
+            } else {
+                mergedPolicies.append((cleanDomain, [defaultResolver]))
+            }
+        }
+        for cleanK in userOrder where !policyKeys.contains(cleanK) {
+            if let values = userPoliciesByKey[cleanK] {
                 policyKeys.insert(cleanK)
                 mergedPolicies.append((cleanK, values))
             }
@@ -679,11 +764,41 @@ public enum DomesticRoutingOptimizer {
         output.append("  fallback-filter:")
         output.append("    geoip: true")
         output.append("    geoip-code: CN")
+        var mergedIPCIDRs = ["240.0.0.0/4"]
+        for cidr in fallbackFilterIPCIDRs where !cidr.isEmpty && !mergedIPCIDRs.contains(cidr) {
+            mergedIPCIDRs.append(cidr)
+        }
         output.append("    ipcidr:")
-        output.append("      - 240.0.0.0/4")
+        for cidr in mergedIPCIDRs {
+            output.append("      - \(cidr)")
+        }
+        var uniqueDomains: [String] = []
+        for domain in fallbackFilterDomains where !domain.isEmpty && !uniqueDomains.contains(domain) {
+            uniqueDomains.append(domain)
+        }
+        if !uniqueDomains.isEmpty {
+            output.append("    domain:")
+            for domain in uniqueDomains {
+                output.append("      - '\(domain.replacingOccurrences(of: "'", with: "''"))'")
+            }
+        }
+        var uniqueGeosites: [String] = []
+        for site in fallbackFilterGeosites where !site.isEmpty && !uniqueGeosites.contains(site) {
+            uniqueGeosites.append(site)
+        }
+        if !uniqueGeosites.isEmpty {
+            output.append("    geosite:")
+            for site in uniqueGeosites {
+                output.append("      - \(site)")
+            }
+        }
 
         for prop in otherDNSProps {
             output.append(prop)
+        }
+        for block in otherDNSBlocks where !block.lines.isEmpty {
+            output.append("  \(block.key):")
+            output.append(contentsOf: block.lines)
         }
         appendUniqueBlockList("default-nameserver", items: existingDefaultNameservers, to: &output)
         appendUniqueBlockList("proxy-server-nameserver", items: existingProxyServerNameservers, to: &output)
@@ -1531,7 +1646,7 @@ public enum DomesticRoutingOptimizer {
             s.removeLast()
         }
         var results: [(String, String)] = []
-        for pair in s.split(separator: ",") {
+        for pair in splitTopLevelCommas(s) {
             let trimmedPair = pair.trimmingCharacters(in: .whitespaces)
             if let (k, v) = parsePolicyLine(trimmedPair) {
                 results.append((k, v))

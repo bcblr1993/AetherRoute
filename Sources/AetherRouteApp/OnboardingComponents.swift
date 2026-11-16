@@ -192,6 +192,7 @@ struct OnboardingCard: View {
 }
 
 private struct OnboardingCardRowView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let row: OnboardingCardRow
 
     var body: some View {
@@ -231,11 +232,7 @@ private struct OnboardingCardRowView: View {
         case .none:
             EmptyView()
         case .granted:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(Color.white, Color.green)
-                .symbolEffect(.bounce, value: true)
+            grantedCheckmark
                 .accessibilityLabel(AppLocalization.string("Ready"))
                 .accessibilityIdentifier("onboarding-row-\(row.id)-granted")
                 .transition(.scale.combined(with: .opacity))
@@ -263,6 +260,19 @@ private struct OnboardingCardRowView: View {
                 .font(.title2)
                 .foregroundStyle(AetherReadableTint(color: .orange))
                 .accessibilityLabel(AppLocalization.string("Restart needed"))
+        }
+    }
+
+    @ViewBuilder
+    private var grantedCheckmark: some View {
+        let icon = Image(systemName: "checkmark.circle.fill")
+            .font(.title2)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(Color.white, AetherReadableTint(color: .green))
+        if reduceMotion {
+            icon
+        } else {
+            icon.symbolEffect(.bounce, value: true)
         }
     }
 }
@@ -376,7 +386,7 @@ struct OnboardingDoneIllustration: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.largeTitle)
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(Color.white, Color.green)
+                .foregroundStyle(Color.white, AetherReadableTint(color: .green))
                 .background(Color(nsColor: .windowBackgroundColor), in: Circle())
                 .offset(x: AetherVisual.s2, y: AetherVisual.s2)
                 .scaleEffect(hasAppeared ? 1 : 0.4)

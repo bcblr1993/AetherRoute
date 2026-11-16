@@ -25,11 +25,101 @@ final class SourceAppDirectory {
         let path: String
     }
 
-    private var presentations: [RawKey: SourceAppPresentation] = [:]
-    private var icons: [String: NSImage] = [:]
-    private var bundleIdentifiersByPath: [String: String?] = [:]
-    /// Bounds memory if a long session sees many short-lived tools.
-    private let limit = 1_024
+    /// O(1) bounded LRU store so large connection sessions (>= 2,000 flows) do
+    /// not trigger periodic full-cache wipes at 1,024 entries.
+    private final class BoundedLRUCache<Key: Hashable, Value> {
+        private final class Node {
+            let key: Key
+            var value: Value
+            var prev: Node?
+            var next: Node?
+
+            init(key: Key, value: Value) {
+                self.key = key
+                self.value = value
+            }
+        }
+
+        let capacity: Int
+        private var nodes: [Key: Node] = [:]
+        private var head: Node?
+        private var tail: Node?
+
+        init(capacity: Int) {
+            self.capacity = max(1, capacity)
+        }
+
+        var count: Int { nodes.count }
+
+        func contains(_ key: Key) -> Bool {
+            nodes[key] != nil
+        }
+
+        func get(_ key: Key) -> Value? {
+            guard let node = nodes[key] else { return nil }
+            moveToFront(node)
+            return node.value
+        }
+
+        func set(_ value: Value, for key: Key) {
+            if let existing = nodes[key] {
+                existing.value = value
+                moveToFront(existing)
+                return
+            }
+            let node = Node(key: key, value: value)
+            nodes[key] = node
+            insertAtFront(node)
+            if nodes.count > capacity, let evicted = tail {
+                remove(evicted)
+                nodes.removeValue(forKey: evicted.key)
+            }
+        }
+
+        private func moveToFront(_ node: Node) {
+            guard head !== node else { return }
+            remove(node)
+            insertAtFront(node)
+        }
+
+        private func insertAtFront(_ node: Node) {
+            node.prev = nil
+            node.next = head
+            head?.prev = node
+            head = node
+            if tail == nil {
+                tail = node
+            }
+        }
+
+        private func remove(_ node: Node) {
+            let prev = node.prev
+            let next = node.next
+            if let prev {
+                prev.next = next
+            } else {
+                head = next
+            }
+            if let next {
+                next.prev = prev
+            } else {
+                tail = prev
+            }
+            node.prev = nil
+            node.next = nil
+        }
+    }
+
+    private let limit = 2_048
+    private lazy var presentations = BoundedLRUCache<RawKey, SourceAppPresentation>(capacity: limit)
+    private lazy var icons = BoundedLRUCache<String, NSImage>(capacity: limit)
+    private lazy var bundleIdentifiersByPath = BoundedLRUCache<String, String?>(capacity: limit)
+
+    var cachedPresentationCount: Int { presentations.count }
+
+    func hasCachedPresentation(identifier: String, path: String) -> Bool {
+        presentations.contains(RawKey(identifier: identifier, path: path))
+    }
 
     func presentation(for connection: ConnectionTelemetry) -> SourceAppPresentation {
         presentation(
@@ -40,25 +130,23 @@ final class SourceAppDirectory {
 
     func presentation(identifier: String, path: String) -> SourceAppPresentation {
         let key = RawKey(identifier: identifier, path: path)
-        if let cached = presentations[key] { return cached }
+        if let cached = presentations.get(key) { return cached }
         let resolved = resolve(key)
-        if presentations.count >= limit { presentations.removeAll() }
-        presentations[key] = resolved
+        presentations.set(resolved, for: key)
         return resolved
     }
 
     func icon(for presentation: SourceAppPresentation) -> NSImage {
         let key = presentation.groupingKey
-        if let cached = icons[key] { return cached }
+        if let cached = icons.get(key) { return cached }
         let image = loadIcon(for: presentation.identity)
-        if icons.count >= limit { icons.removeAll() }
-        icons[key] = image
+        icons.set(image, for: key)
         return image
     }
 
     func icon(forMatch match: ApplicationRuleMatch?) -> NSImage {
         let key = "match:\(match?.bundleIdentifier ?? "")|\(match?.bundlePath ?? "")"
-        if let cached = icons[key] { return cached }
+        if let cached = icons.get(key) { return cached }
         let image: NSImage
         if let path = match?.bundlePath {
             image = NSWorkspace.shared.icon(forFile: path)
@@ -72,8 +160,7 @@ final class SourceAppDirectory {
                 image = NSWorkspace.shared.icon(for: .application)
             }
         }
-        if icons.count >= limit { icons.removeAll() }
-        icons[key] = image
+        icons.set(image, for: key)
         return image
     }
 
@@ -88,14 +175,11 @@ final class SourceAppDirectory {
         case .application:
             if let path = identity.bundlePath {
                 let cachedBundleID: String?
-                if let existing = bundleIdentifiersByPath[path] {
+                if let existing = bundleIdentifiersByPath.get(path) {
                     cachedBundleID = existing
                 } else {
                     let resolved = Bundle(path: path)?.bundleIdentifier
-                    if bundleIdentifiersByPath.count >= limit {
-                        bundleIdentifiersByPath.removeAll()
-                    }
-                    bundleIdentifiersByPath[path] = resolved
+                    bundleIdentifiersByPath.set(resolved, for: path)
                     cachedBundleID = resolved
                 }
                 let identifier = cachedBundleID ?? identity.bundleIdentifier

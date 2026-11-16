@@ -161,7 +161,8 @@ public actor RuleProviderEngine {
         let dir: URL
         if let customDir = directoryURL {
             dir = customDir
-        } else if let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup) {
+        } else if let appGroup = AppConstants.optionalIdentityValue(AppConstants.appGroupInfoKey),
+                  let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
             dir = container.appendingPathComponent("Library/Application Support/AetherRoute/RuleProviders", isDirectory: true)
         } else {
             dir = fileManager.temporaryDirectory.appendingPathComponent("RuleProviders", isDirectory: true)
@@ -171,7 +172,8 @@ public actor RuleProviderEngine {
             self.stagingBaseURL = stagingBaseURL
         } else if directoryURL != nil {
             self.stagingBaseURL = dir.deletingLastPathComponent()
-        } else if let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: AppConstants.appGroup) {
+        } else if let appGroup = AppConstants.optionalIdentityValue(AppConstants.appGroupInfoKey),
+                  let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
             self.stagingBaseURL = container.appendingPathComponent("Library/Application Support/AetherRoute", isDirectory: true)
         } else {
             self.stagingBaseURL = dir.deletingLastPathComponent()
@@ -785,8 +787,19 @@ public actor RuleProviderEngine {
     /// reconciling duplicates by ID or URL based on update timestamps.
     @discardableResult
     public func mergeCloudSyncPayload(_ data: Data) -> [RuleProviderMetadata] {
+        mergeCloudSyncPayloadOutcome(data).providers
+    }
+
+    public struct CloudSyncMergeOutcome: Sendable, Equatable {
+        public let providers: [RuleProviderMetadata]
+        public let didChangeLocal: Bool
+        public let matchesRemote: Bool
+    }
+
+    public func mergeCloudSyncPayloadOutcome(_ data: Data) -> CloudSyncMergeOutcome {
         guard let payload = try? JSONDecoder().decode(RuleProviderSyncPayload.self, from: data) else {
-            return allProviders()
+            let current = allProviders()
+            return CloudSyncMergeOutcome(providers: current, didChangeLocal: false, matchesRemote: current.isEmpty)
         }
 
         var changed = false
@@ -815,7 +828,14 @@ public actor RuleProviderEngine {
         if changed {
             saveProvidersMetadata()
         }
-        return allProviders()
+        let merged = allProviders()
+        let remoteByID = Dictionary(payload.providers.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        let localByID = Dictionary(merged.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        return CloudSyncMergeOutcome(
+            providers: merged,
+            didChangeLocal: changed,
+            matchesRemote: localByID == remoteByID
+        )
     }
 }
 
