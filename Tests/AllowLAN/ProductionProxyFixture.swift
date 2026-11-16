@@ -28,7 +28,7 @@ final class ProductionProxyFixture: @unchecked Sendable {
                     queue: fixture.queue,
                     // Short enough to observe, long enough to tell apart from
                     // an immediate close.
-                    halfCloseTimeout: 2, terminalStateGrace: 1,
+                    halfCloseTimeout: 2, terminalStateGrace: 1, idleTimeout: 2,
                     onTerminated: { session in
                         fixture.sessions.remove(session)
                         FileHandle.standardOutput.write(Data("closed \(clientPort)\n".utf8))

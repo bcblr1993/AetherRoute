@@ -862,11 +862,22 @@ struct ConnectionSwitch: View {
     }
 }
 
+extension NetworkSetupView {
+    init(
+        tunnel _: TunnelManager,
+        isOnboarding: Bool = false,
+        onClose: (() -> Void)? = nil
+    ) {
+        self.init(isOnboarding: isOnboarding, onClose: onClose)
+    }
+}
+
 private struct OverviewView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let openProfiles: () -> Void
     @State private var isSubscriptionEditorPresented = false
     @State private var isCloudSyncSheetPresented = false
+    @State private var isEngineSetupPresented = false
     @State private var subscriptionURL = ""
 
     var body: some View {
@@ -962,12 +973,50 @@ private struct OverviewView: View {
                         Task { await tunnel.setRoutingMode(mode) }
                     }
                 )
+                if let message = tunnel.networkEngineMessage, tunnel.networkEngineMessageIsError {
+                    OverviewRowDivider()
+                    HStack(spacing: AetherVisual.s2) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AetherReadableTint(color: .orange))
+                            .accessibilityHidden(true)
+                        Text(verbatim: message)
+                            .font(.caption)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityIdentifier("overview-network-engine-message")
+                        if tunnel.networkEngineBlockedNeedsSetup {
+                            Button {
+                                isEngineSetupPresented = true
+                            } label: {
+                                Text(
+                                    AppLocalization.inline(
+                                        "Open Network Setup…",
+                                        chinese: "打开网络引导…"
+                                    )
+                                )
+                            }
+                            .buttonStyle(.aetherGlassCapsule)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("overview-engine-message-open-setup")
+                        }
+                    }
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s2)
+                }
                 OverviewRowDivider()
                 OverviewRouteCheckRow()
             }
             .aetherPanel()
         }
         .transition(.opacity)
+        .sheet(isPresented: $isEngineSetupPresented) {
+            NetworkSetupView(tunnel: tunnel, isOnboarding: false) {
+                isEngineSetupPresented = false
+            }
+            .environmentObject(tunnel)
+            .aetherLargeSheetFrame()
+        }
     }
 }
 
@@ -1588,9 +1637,123 @@ private struct OverviewRowDivider: View {
     }
 }
 
-/// The exit node; the whole row opens the Proxies page to change it.
+// BEGIN OverviewExitDrawerPolicy
+enum OverviewExitDrawerPolicy {
+    private static let metadataTokens = [
+        "剩余流量", "套餐到期", "过期时间", "距离下次重置", "已用流量", "重置流量", "流量重置",
+        "expire", "remaining", "traffic", "官网:", "官网：", "网址:", "网址："
+    ]
+
+    static func isSubscriptionNotice(_ member: String) -> Bool {
+        let trimmed = member.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        let lower = trimmed.lowercased()
+        return metadataTokens.contains { lower.contains($0.lowercased()) }
+    }
+
+    static func selectableGroups(
+        in groups: [ProxyGroupConfigurationSummary]
+    ) -> [ProxyGroupConfigurationSummary] {
+        groups.filter {
+            $0.strategy.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "select"
+                && $0.name.uppercased() != "GLOBAL"
+        }
+    }
+
+    static func displayMembers(from members: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+        for member in members where !isSubscriptionNotice(member) {
+            if seen.insert(member).inserted {
+                result.append(member)
+            }
+        }
+        return result
+    }
+
+    static func shouldShowSearch(memberCount: Int) -> Bool {
+        memberCount > 6
+    }
+
+    static func filterMembers(
+        _ members: [String],
+        query: String,
+        protocolByName: [String: String],
+        transportByName: [String: String],
+        dialerByName: [String: String]
+    ) -> [String] {
+        NodeRegion.filterMembers(
+            members,
+            protocolByName: protocolByName,
+            transportByName: transportByName,
+            dialerByName: dialerByName,
+            query: query,
+            hideTimedOut: false,
+            isTimedOut: { _ in false },
+            selectedMember: nil
+        )
+    }
+
+    static func resolvedActiveGroup(
+        mode: RoutingMode,
+        selectedGroupName: String?,
+        primaryGroup: ProxyGroupConfigurationSummary?,
+        manualGroups: [ProxyGroupConfigurationSummary],
+        globalGroup: ProxyGroupConfigurationSummary?
+    ) -> ProxyGroupConfigurationSummary? {
+        switch mode {
+        case .global:
+            return globalGroup
+        case .rule, .direct:
+            if let selectedGroupName,
+               let matched = manualGroups.first(where: { $0.name == selectedGroupName }) {
+                return matched
+            }
+            if let primaryGroup,
+               manualGroups.contains(where: { $0.name == primaryGroup.name }) {
+                return primaryGroup
+            }
+            return manualGroups.first ?? primaryGroup ?? globalGroup
+        }
+    }
+
+    static func shouldSwitchToManualBeforeSelecting(
+        groupName: String,
+        isFastestMode: Bool
+    ) -> Bool {
+        groupName.uppercased() != "GLOBAL" && isFastestMode
+    }
+
+    static func protocolBadgeLabel(
+        for member: String,
+        protocolsByName: [String: String],
+        groupNames: Set<String>
+    ) -> String? {
+        let upper = member.uppercased()
+        if upper == "DIRECT" || upper == "REJECT" || upper == "REJECT-DROP" {
+            return upper
+        }
+        if groupNames.contains(member) {
+            return "GROUP"
+        }
+        if let proto = protocolsByName[member]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !proto.isEmpty {
+            return proto.uppercased()
+        }
+        return nil
+    }
+}
+// END OverviewExitDrawerPolicy
+
+/// The exit node; clicking expands an inline drawer in Rule/Global mode so nodes can be
+/// switched right from Overview without leaving the page.
 private struct OverviewExitRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @State private var isExpanded = false
+    @State private var selectedGroupName: String?
+    @State private var searchText = ""
+    @State private var pendingMember: String?
+    @State private var listContentHeight: CGFloat = 0
 
     private var effectiveRoutingMode: RoutingMode {
         tunnel.isConnected
@@ -1598,50 +1761,115 @@ private struct OverviewExitRow: View {
             : tunnel.routingMode
     }
 
+    private var allGroups: [ProxyGroupConfigurationSummary] {
+        tunnel.activeProfileSummary?.proxyGroups ?? []
+    }
+
+    private var manualGroups: [ProxyGroupConfigurationSummary] {
+        OverviewExitDrawerPolicy.selectableGroups(in: allGroups)
+    }
+
+    private var activeDrawerGroup: ProxyGroupConfigurationSummary? {
+        OverviewExitDrawerPolicy.resolvedActiveGroup(
+            mode: effectiveRoutingMode,
+            selectedGroupName: selectedGroupName,
+            primaryGroup: tunnel.resolvedPrimaryRoutingGroup(),
+            manualGroups: manualGroups,
+            globalGroup: tunnel.globalProxyGroup ?? tunnel.menuGlobalProxyGroup
+        )
+    }
+
+    private var proxySummaryByName: [String: ProxyConfigurationSummary] {
+        Dictionary(
+            (tunnel.activeProfileSummary?.proxies ?? []).map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    private var unsupportedNames: Set<String> {
+        Set(
+            (tunnel.activeProfileSummary?.proxies ?? [])
+                .filter { !$0.recognition.isSelectable }
+                .map(\.name)
+        )
+    }
+
     var body: some View {
         let outlet = ActiveOutlet(tunnel: tunnel)
-        Button {
-            NotificationCenter.default.post(
-                name: .aetherRouteNavigateToSection,
-                object: AppSection.proxies.rawValue
-            )
-        } label: {
-            OverviewRow(symbol: "globe", tint: .indigo, title: AppLocalization.string("Exit node")) {
-                HStack(spacing: AetherVisual.s2) {
-                    if let outlet {
-                        if outlet.isDirectMode {
-                            Text(verbatim: outlet.resolvedNode)
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .accessibilityIdentifier("overview-active-outlet-node")
-                        } else {
-                            let node = outlet.resolvedNode
-                            AetherRegionCode(name: node, reservesSlot: false)
-                            Text(verbatim: node)
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .accessibilityIdentifier("overview-active-outlet-node")
-                            if outlet.latency != .untested || tunnel.isConnected {
-                                ProxyLatencyText(status: outlet.latency)
-                            }
+        let drawerGroup = activeDrawerGroup
+
+        VStack(spacing: 0) {
+            Button {
+                if drawerGroup == nil {
+                    if isExpanded {
+                        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                            isExpanded = false
                         }
-                    } else {
-                        Text(AppLocalization.string("Choose a node"))
-                            .foregroundStyle(AetherVisual.secondaryText)
                     }
-                    Image(systemName: "chevron.right")
+                    NotificationCenter.default.post(
+                        name: .aetherRouteNavigateToSection,
+                        object: AppSection.proxies.rawValue
+                    )
+                } else {
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                        isExpanded.toggle()
+                    }
+                }
+            } label: {
+                OverviewRow(symbol: "globe", tint: .indigo, title: AppLocalization.string("Exit node")) {
+                    HStack(spacing: AetherVisual.s2) {
+                        if let outlet {
+                            if outlet.isDirectMode {
+                                Text(verbatim: outlet.resolvedNode)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .accessibilityIdentifier("overview-active-outlet-node")
+                            } else {
+                                let node = outlet.resolvedNode
+                                AetherRegionCode(name: node, reservesSlot: false)
+                                Text(verbatim: node)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .accessibilityIdentifier("overview-active-outlet-node")
+                                if outlet.latency != .untested || tunnel.isConnected {
+                                    ProxyLatencyText(status: outlet.latency)
+                                }
+                            }
+                        } else {
+                            Text(AppLocalization.string("Choose a node"))
+                                .foregroundStyle(AetherVisual.secondaryText)
+                        }
+                        Image(
+                            systemName: drawerGroup == nil
+                                ? "chevron.right"
+                                : (isExpanded ? "chevron.up" : "chevron.down")
+                        )
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AetherVisual.tertiaryText)
+                    }
                 }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.aetherPressable)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint(
+                drawerGroup == nil
+                    ? AppLocalization.string("Opens Proxies to change the node")
+                    : AppLocalization.inline(
+                        "Expands node list to switch the exit node",
+                        chinese: "展开节点列表直接切换出口节点"
+                    )
+            )
+            .accessibilityIdentifier("overview-active-outlet")
+
+            if isExpanded, let group = drawerGroup {
+                OverviewRowDivider()
+                drawerContent(for: group)
+                    .transition(.opacity)
+            }
         }
-        .buttonStyle(.aetherPressable)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(AppLocalization.string("Opens Proxies to change the node"))
-        .accessibilityIdentifier("overview-active-outlet")
         // The selection is read from the extension (or the profile while
         // disconnected); without this the row said "Choose a node" until
         // the Proxies page had been opened once.
@@ -1653,6 +1881,341 @@ private struct OverviewExitRow: View {
             guard let primaryGroupName else { return }
             await tunnel.refreshProxySelection(group: primaryGroupName)
         }
+        .onChange(of: effectiveRoutingMode) { _, _ in
+            searchText = ""
+            listContentHeight = 0
+        }
+    }
+
+    private func drawerContent(for group: ProxyGroupConfigurationSummary) -> some View {
+        let rawMembers = group.name == "GLOBAL"
+            ? group.members
+            : (tunnel.proxySelections[group.name]?.members ?? group.members)
+        let cleanMembers = OverviewExitDrawerPolicy.displayMembers(from: rawMembers)
+        let summaries = proxySummaryByName
+        let protocolsByName = summaries.mapValues(\.protocolName)
+        let transportsByName = summaries.compactMapValues(\.transportName)
+        let dialersByName = summaries.compactMapValues(\.dialerProxy)
+        let filteredMembers = OverviewExitDrawerPolicy.filterMembers(
+            cleanMembers,
+            query: searchText,
+            protocolByName: protocolsByName,
+            transportByName: transportsByName,
+            dialerByName: dialersByName
+        )
+        let groupNames = Set(allGroups.map(\.name))
+        let isTestingGroup = tunnel.proxyLatencyRequests.contains(group.name)
+        let selectedMember = resolvedSelectedMember(for: group)
+        let showsFastestNote = OverviewExitDrawerPolicy.shouldSwitchToManualBeforeSelecting(
+            groupName: group.name,
+            isFastestMode: tunnel.proxySelectionMode(for: group.name) == .fastest
+        )
+
+        return VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            if effectiveRoutingMode == .direct {
+                HStack(spacing: AetherVisual.s2) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityHidden(true)
+                    Text(
+                        AppLocalization.inline(
+                            "Direct mode routes all traffic without a proxy. Selected node takes effect in Rule or Global mode.",
+                            chinese: "当前为直连模式，流量不经代理；所选节点将在规则或全局模式下生效。"
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("overview-outlet-direct-mode-banner")
+
+                    Button {
+                        Task { await tunnel.setRoutingMode(.rule) }
+                    } label: {
+                        Text(
+                            AppLocalization.inline(
+                                "Switch to Rule Mode",
+                                chinese: "切换为规则模式"
+                            )
+                        )
+                    }
+                    .buttonStyle(.aetherGlassCapsule)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("overview-outlet-switch-to-rule")
+                }
+                .padding(.horizontal, AetherVisual.s2)
+                .padding(.vertical, AetherVisual.sCompact)
+                .background(
+                    AetherVisual.subtleFill,
+                    in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                )
+            }
+
+            HStack(spacing: AetherVisual.s2) {
+                groupToolbarSwitcher(activeGroup: group)
+                Spacer(minLength: AetherVisual.s1)
+                HStack(spacing: AetherVisual.sCompact) {
+                    if OverviewExitDrawerPolicy.shouldShowSearch(memberCount: cleanMembers.count) {
+                        AetherSearchField(
+                            text: $searchText,
+                            prompt: AppLocalization.string("Search nodes"),
+                            accessibilityIdentifier: "overview-outlet-search"
+                        )
+                        .frame(maxWidth: AetherVisual.searchFieldMinWidth)
+                    }
+                    Button {
+                        Task { await tunnel.testProxyLatency(group: group.name) }
+                    } label: {
+                        AetherProgressButtonLabel(
+                            AppLocalization.string("Test latency"),
+                            systemImage: "bolt",
+                            isWorking: isTestingGroup
+                        )
+                    }
+                    .buttonStyle(.aetherGlassCapsule)
+                    .controlSize(.small)
+                    .disabled(isTestingGroup)
+                    .accessibilityIdentifier("overview-outlet-latency")
+
+                    Button {
+                        NotificationCenter.default.post(
+                            name: .aetherRouteNavigateToSection,
+                            object: AppSection.proxies.rawValue
+                        )
+                    } label: {
+                        HStack(spacing: AetherVisual.sMicro) {
+                            Text(AppLocalization.inline("Open Proxies", chinese: "打开代理页"))
+                            Image(systemName: "arrow.up.right")
+                                .font(.caption2.weight(.semibold))
+                                .accessibilityHidden(true)
+                        }
+                        .lineLimit(1)
+                    }
+                    .buttonStyle(.aetherGlassCapsule)
+                    .controlSize(.small)
+                    .accessibilityIdentifier("overview-outlet-open-proxies")
+                }
+            }
+
+            if showsFastestNote {
+                Text(
+                    AppLocalization.inline(
+                        "Auto-fastest active · click any node to switch to manual",
+                        chinese: "当前自动选最快 · 点击任意节点自动切回手动"
+                    )
+                )
+                .font(.caption2)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .accessibilityIdentifier("overview-outlet-fastest-note")
+            }
+
+            if cleanMembers.isEmpty {
+                Text(AppLocalization.string("No nodes available"))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, AetherVisual.s3)
+            } else if filteredMembers.isEmpty {
+                Text(AppLocalization.string("No matching nodes"))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, AetherVisual.s3)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: AetherVisual.sMicro) {
+                        ForEach(filteredMembers, id: \.self) { member in
+                            drawerNodeRow(
+                                member: member,
+                                group: group,
+                                isSelected: member == selectedMember,
+                                proxySummary: summaries[member],
+                                badgeLabel: OverviewExitDrawerPolicy.protocolBadgeLabel(
+                                    for: member,
+                                    protocolsByName: protocolsByName,
+                                    groupNames: groupNames
+                                )
+                            )
+                        }
+                    }
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { newHeight in
+                        if newHeight > 0 {
+                            listContentHeight = newHeight
+                        }
+                    }
+                }
+                .frame(height: listContentHeight > 0 ? min(listContentHeight, 240) : nil)
+                .frame(maxHeight: 240)
+            }
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
+        .task(id: "\(group.name):\(tunnel.isConnected)") {
+            if group.name == "GLOBAL" {
+                tunnel.seedGlobalSelectionIfNeeded()
+            }
+            await tunnel.refreshProxySelection(group: group.name)
+            guard !Task.isCancelled else { return }
+            if tunnel.isConnected {
+                await tunnel.refreshProxyLatencyIfNeeded(group: group.name)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func groupToolbarSwitcher(activeGroup: ProxyGroupConfigurationSummary) -> some View {
+        if effectiveRoutingMode == .global {
+            groupPillLabel("GLOBAL", isSelected: true)
+                .accessibilityIdentifier("overview-outlet-group-GLOBAL")
+        } else if manualGroups.count > 1 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AetherVisual.s1) {
+                    ForEach(manualGroups) { candidate in
+                        let isSelectedGroup = candidate.name == activeGroup.name
+                        Button {
+                            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                                selectedGroupName = candidate.name
+                                searchText = ""
+                                listContentHeight = 0
+                            }
+                            Task {
+                                await tunnel.refreshProxySelection(group: candidate.name)
+                            }
+                        } label: {
+                            groupPillLabel(candidate.name, isSelected: isSelectedGroup)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("overview-outlet-group-\(candidate.name)")
+                    }
+                }
+            }
+        } else {
+            groupPillLabel(activeGroup.name, isSelected: true)
+                .accessibilityIdentifier("overview-outlet-group-\(activeGroup.name)")
+        }
+    }
+
+    private func groupPillLabel(_ title: String, isSelected: Bool) -> some View {
+        Text(verbatim: title)
+            .font(.caption.weight(isSelected ? .semibold : .medium))
+            .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+            .lineLimit(1)
+            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+            .padding(.vertical, AetherVisual.pillVerticalPadding)
+            .background(
+                isSelected ? AetherVisual.selectionFill : AetherVisual.neutralFill,
+                in: Capsule()
+            )
+            .overlay {
+                Capsule()
+                    .strokeBorder(
+                        isSelected ? AetherVisual.tintBorder(.accentColor) : AetherVisual.cardStroke,
+                        lineWidth: 1
+                    )
+            }
+    }
+
+    private func drawerNodeRow(
+        member: String,
+        group: ProxyGroupConfigurationSummary,
+        isSelected: Bool,
+        proxySummary: ProxyConfigurationSummary?,
+        badgeLabel: String?
+    ) -> some View {
+        let isUnavailable = unsupportedNames.contains(member)
+        let isSwitchingThis = pendingMember == member
+        let resolvedLatency: (status: ProxyLatencyStatus, confidence: ProxyLatencyConfidence) = isUnavailable
+            ? (.timedOut, tunnel.latencyConfidence(group: group.name, member: member))
+            : tunnel.resolvedOutletLatencyStatus(groupName: group.name, selectedMember: member)
+        let isSelectionDisabled = pendingMember != nil
+            || tunnel.proxySelectionRequests.contains(group.name)
+            || group.strategy.lowercased() != "select"
+            || isUnavailable
+
+        return Button {
+            let needsManualSwitch = OverviewExitDrawerPolicy.shouldSwitchToManualBeforeSelecting(
+                groupName: group.name,
+                isFastestMode: tunnel.proxySelectionMode(for: group.name) == .fastest
+            )
+            guard needsManualSwitch || member != resolvedSelectedMember(for: group) else { return }
+            pendingMember = member
+            Task {
+                defer { pendingMember = nil }
+                if group.name == "GLOBAL" {
+                    await tunnel.selectGlobalOutlet(member)
+                } else {
+                    if OverviewExitDrawerPolicy.shouldSwitchToManualBeforeSelecting(
+                        groupName: group.name,
+                        isFastestMode: tunnel.proxySelectionMode(for: group.name) == .fastest
+                    ) {
+                        await tunnel.setProxySelectionMode(.manual, for: group.name)
+                    }
+                    await tunnel.selectProxy(group: group.name, member: member)
+                }
+            }
+        } label: {
+            HStack(spacing: AetherVisual.s2) {
+                if isSwitchingThis {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: AetherVisual.s3)
+                } else {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.subheadline)
+                        .foregroundStyle(
+                            isSelected
+                                ? AnyShapeStyle(Color.accentColor)
+                                : AnyShapeStyle(AetherVisual.tertiaryText)
+                        )
+                        .frame(width: AetherVisual.s3)
+                        .accessibilityHidden(true)
+                }
+                AetherRegionCode(name: member, reservesSlot: true)
+                Text(verbatim: member)
+                    .font(.callout.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let badgeLabel {
+                    AetherProtocolBadge(
+                        type: badgeLabel,
+                        transport: proxySummary?.transportName
+                    )
+                }
+                ProxyLatencyText(
+                    status: resolvedLatency.status,
+                    confidence: resolvedLatency.confidence
+                )
+            }
+            .padding(.horizontal, AetherVisual.s2)
+            .padding(.vertical, AetherVisual.sCompact)
+            .background(
+                RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                    .fill(isSelected ? AetherVisual.selectionFill : Color.clear)
+            )
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+                        .strokeBorder(AetherVisual.tintBorder(.accentColor), lineWidth: 1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.aetherPressable)
+        .disabled(isSelectionDisabled)
+        .accessibilityIdentifier("overview-outlet-node-\(member)")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func resolvedSelectedMember(for group: ProxyGroupConfigurationSummary) -> String? {
+        if group.name == "GLOBAL" {
+            return tunnel.proxySelections["GLOBAL"]?.selectedMember
+                ?? tunnel.activeProfileSummary.flatMap { TunnelManager.resolvedGlobalTargetMember(in: $0) }
+        }
+        return tunnel.proxySelections[group.name]?.selectedMember
     }
 
     private var primaryGroupName: String? {

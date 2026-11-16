@@ -141,10 +141,18 @@ public actor ProxyProviderEngine {
             .appendingPathComponent(Self.sanitizedProviderFileName(name: name), isDirectory: false)
     }
 
+    /// Validates that a proxy provider URL uses `https`, or `http` strictly for
+    /// loopback and private network hosts.
+    nonisolated public static func validateURL(_ url: URL) throws {
+        try ProviderURLValidator.validate(
+            url,
+            invalidURL: ProxyProviderError.invalidURL,
+            insecureScheme: ProxyProviderError.insecureScheme
+        )
+    }
+
     public func addProvider(_ provider: ProxyProviderMetadata) throws {
-        guard provider.url.scheme?.lowercased() == "https" else {
-            throw ProxyProviderError.insecureScheme
-        }
+        try Self.validateURL(provider.url)
         providers[provider.id] = provider
         saveMetadata()
     }
@@ -178,6 +186,7 @@ public actor ProxyProviderEngine {
         guard var provider = providers[id] else {
             throw ProxyProviderError.providerNotFound
         }
+        try Self.validateURL(provider.url)
 
         var request = URLRequest(url: provider.url)
         request.httpMethod = "GET"
@@ -287,7 +296,7 @@ public actor ProxyProviderEngine {
         for spec in specs {
             guard spec.type == "http",
                   let url = URL(string: spec.url),
-                  url.scheme?.lowercased() == "https" else {
+                  (try? Self.validateURL(url)) != nil else {
                 continue
             }
             let existing = providers.values.first { $0.name == spec.name && $0.url == url }

@@ -591,4 +591,105 @@ final class ProfileOverrideCompilerTests: XCTestCase {
         XCTAssertThrowsError(try CustomHostMapping(domain: "", ip: "127.0.0.1").validated())
         XCTAssertThrowsError(try CustomHostMapping(domain: "nas.local", ip: "not-an-ip").validated())
     }
+
+    func testDialerProxyCycleDetectionAndStrippingAcrossYAMLJSONAndGroups() throws {
+        let twoNodeYAML = """
+        proxies:
+          - {name: P1, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: p, dialer-proxy: P2}
+          - {name: P2, type: ss, server: 2.2.2.2, port: 443, cipher: aes-128-gcm, password: p, dialer-proxy: P1}
+        proxy-groups:
+          - {name: Select, type: select, proxies: [P1, P2]}
+        rules:
+          - MATCH,Select
+        """
+        let twoNodeResult = ProfileOverrideCompiler.apply(nil, to: twoNodeYAML)
+        let twoSummary = ProfileConfigurationInspector.inspect(yaml: twoNodeResult.yaml)
+        XCTAssertEqual(twoSummary.proxyCount, 2)
+        let p1Dialer = twoSummary.proxies.first { $0.name == "P1" }?.dialerProxy
+        let p2Dialer = twoSummary.proxies.first { $0.name == "P2" }?.dialerProxy
+        XCTAssertFalse(p1Dialer == "P2" && p2Dialer == "P1")
+
+        let jsonWithThreeCycle = """
+        {"proxies":[{"name":"J1","type":"socks5","server":"127.0.0.1","port":1080,"dialer-proxy":"J2"},
+                    {"name":"J2","type":"socks5","server":"127.0.0.1","port":1081,"dialer-proxy":"J3"},
+                    {"name":"J3","type":"socks5","server":"127.0.0.1","port":1082,"dialer-proxy":"J1"}],
+         "proxy-groups":[{"name":"Select","type":"select","proxies":["J1","J2","J3"]}],
+         "rules":["MATCH,Select"]}
+        """
+        let jsonResult = ProfileOverrideCompiler.apply(nil, to: jsonWithThreeCycle)
+        let jsonSummary = ProfileConfigurationInspector.inspect(yaml: jsonResult.yaml)
+        XCTAssertEqual(jsonSummary.proxyCount, 3)
+        let closedLoopCount = [
+            jsonSummary.proxies.first { $0.name == "J1" }?.dialerProxy == "J2",
+            jsonSummary.proxies.first { $0.name == "J2" }?.dialerProxy == "J3",
+            jsonSummary.proxies.first { $0.name == "J3" }?.dialerProxy == "J1",
+        ].filter { $0 }.count
+        XCTAssertLessThan(closedLoopCount, 3)
+
+        // Acyclic diamond / shared dialer stays untouched.
+        let acyclicOverride = ProfileOverride(
+            chainedProxies: [
+                ChainedProxyOverride(name: "Mid", dialerProxy: "🇭🇰 Hong Kong 01", target: .existingNode(name: "日本 东京 03")),
+                ChainedProxyOverride(name: "TopA", dialerProxy: "Mid", target: .existingNode(name: "HK 02 游戏")),
+                ChainedProxyOverride(name: "TopB", dialerProxy: "Mid", target: .existingNode(name: "HK 02 游戏")),
+            ]
+        )
+        let acyclicResult = ProfileOverrideCompiler.apply(acyclicOverride, to: blockProfile)
+        XCTAssertEqual(acyclicResult.diagnostics, [])
+        let acyclicSummary = ProfileConfigurationInspector.inspect(yaml: acyclicResult.yaml)
+        XCTAssertEqual(acyclicSummary.proxies.first { $0.name == "TopA" }?.dialerProxy, "Mid")
+        XCTAssertEqual(acyclicSummary.proxies.first { $0.name == "TopB" }?.dialerProxy, "Mid")
+        XCTAssertEqual(acyclicSummary.proxies.first { $0.name == "Mid" }?.dialerProxy, "🇭🇰 Hong Kong 01")
+    }
+
+    func testExternalRuleProviderInjectionAndAvailableProxyNames() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("poc-rp-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let provider = RuleProviderMetadata(
+            name: "AdBlock",
+            url: URL(string: "https://rules.example.com/adblock.yaml")!,
+            behavior: .domain,
+            format: .yaml,
+            defaultTarget: "REJECT",
+            isEnabled: true
+        )
+        try "payload:\n  - '+.tracker.example'\n".write(
+            to: dir.appendingPathComponent("\(provider.id.uuidString).dat"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let compiled = ProfileOverrideCompiler.apply(
+            nil,
+            externalRuleProviders: [provider],
+            ruleProviderCacheDirectoryURL: dir,
+            to: blockProfile
+        )
+        let trackerIdx = compiled.yaml.range(of: "DOMAIN-SUFFIX,tracker.example,REJECT")?.lowerBound
+        let matchIdx = compiled.yaml.range(of: "MATCH,")?.lowerBound
+        XCTAssertNotNil(trackerIdx)
+        XCTAssertNotNil(matchIdx)
+        if let trackerIdx, let matchIdx {
+            XCTAssertLessThan(trackerIdx, matchIdx)
+        }
+
+        let profileOverride = ProfileOverride(
+            hiddenNodeKeywords: ["日本"],
+            chainedProxies: [
+                ChainedProxyOverride(name: "LocalChain", dialerProxy: "🇭🇰 Hong Kong 01", target: .existingNode(name: "🇺🇸 United States 02"))
+            ]
+        )
+        let available = ProfileOverrideCompiler.availableProxyNames(
+            in: blockProfile,
+            proxyOverride: profileOverride,
+            additionalProviderNodes: ["SubProviderNode"]
+        )
+        XCTAssertTrue(available.contains("🇭🇰 Hong Kong 01"))
+        XCTAssertTrue(available.contains("LocalChain"))
+        XCTAssertTrue(available.contains("SubProviderNode"))
+        XCTAssertFalse(available.contains("日本 东京 03"))
+    }
 }

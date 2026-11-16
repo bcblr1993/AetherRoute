@@ -28,6 +28,12 @@ swiftc -parse-as-library \
   "$KIT/ProfileConfigurationSummary.swift" \
   "$KIT/ProxySelectionMode.swift" \
   "$KIT/CustomRule.swift" \
+  "$KIT/AppLog.swift" \
+  "$KIT/SubscriptionUsage.swift" \
+  "$KIT/ProfileRuntimeYAML.swift" \
+  "$KIT/ProxyProviderEngine.swift" \
+  "$KIT/DomesticRoutingOptimizer.swift" \
+  "$KIT/RuleProviderEngine.swift" \
   "$ROOT/Tests/ProfileOverride/main.swift" \
   -o "$TEMP_DIR/profile_override_fixture_generator"
 "$TEMP_DIR/profile_override_fixture_generator" "$TEMP_DIR/profiles"

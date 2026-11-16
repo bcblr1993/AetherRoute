@@ -509,10 +509,18 @@ public final class ProfileCloudSyncManager: ObservableObject {
     nonisolated public static func encryptUserRulesSnapshot(
         _ snapshot: CloudSyncUserRulesSnapshot,
         deviceIdentifier: String,
-        keyStore: any ProfileKeyStoring
+        keyStore: any ProfileKeyStoring,
+        fallbackKey: Data? = nil
     ) throws -> Data {
         let plaintext = try JSONEncoder().encode(snapshot)
-        let key = try keyStore.loadOrCreateKey(keyID: Self.cloudSyncKeyID)
+        let key: Data
+        if let existing = try? keyStore.loadKey(keyID: Self.cloudSyncKeyID), existing.count == 32 {
+            key = existing
+        } else if let fallbackKey, fallbackKey.count == 32 {
+            key = fallbackKey
+        } else {
+            key = try keyStore.loadOrCreateKey(keyID: Self.cloudSyncKeyID)
+        }
         let symmetricKey = SymmetricKey(data: key)
         let sealedBox = try AES.GCM.seal(plaintext, using: symmetricKey)
         guard let encryptedCombined = sealedBox.combined else {
@@ -537,7 +545,8 @@ public final class ProfileCloudSyncManager: ObservableObject {
         localBypassPolicy: BypassPolicy,
         localCustomRuleSync: RuleSyncMetadata = .empty,
         localBypassSync: RuleSyncMetadata = .empty,
-        keyStore: any ProfileKeyStoring
+        keyStore: any ProfileKeyStoring,
+        fallbackKey: Data? = nil
     ) throws -> CloudSyncUserRulesSnapshot {
         guard let payload = try? JSONDecoder().decode(CloudSyncPayload.self, from: payloadData) else {
             throw CloudSyncError.catalogCorrupted
@@ -546,18 +555,28 @@ public final class ProfileCloudSyncManager: ObservableObject {
         guard actualSHA256.caseInsensitiveCompare(payload.sha256) == .orderedSame else {
             throw CloudSyncError.catalogCorrupted
         }
-        let key: Data
+        let localKey: Data?
         do {
-            key = try keyStore.loadKey(keyID: Self.cloudSyncKeyID)
+            let loaded = try keyStore.loadKey(keyID: Self.cloudSyncKeyID)
+            localKey = loaded.count == 32 ? loaded : nil
+        } catch ProfileKeyStoreError.keyNotFound {
+            localKey = nil
         } catch {
             throw CloudSyncError.keychainUnavailable
         }
-        let symmetricKey = SymmetricKey(data: key)
         guard let sealedBox = try? AES.GCM.SealedBox(combined: payload.encryptedData) else {
             throw CloudSyncError.catalogCorrupted
         }
-        guard let decryptedData = try? AES.GCM.open(sealedBox, using: symmetricKey) else {
-            throw CloudSyncError.decryptionFailed
+        let decryptedData: Data
+        if let localKey,
+           let opened = try? AES.GCM.open(sealedBox, using: SymmetricKey(data: localKey)) {
+            decryptedData = opened
+        } else if let fallbackKey,
+                  fallbackKey.count == 32,
+                  let opened = try? AES.GCM.open(sealedBox, using: SymmetricKey(data: fallbackKey)) {
+            decryptedData = opened
+        } else {
+            throw localKey == nil ? CloudSyncError.keychainUnavailable : CloudSyncError.decryptionFailed
         }
         guard let remoteSnapshot = try? JSONDecoder().decode(CloudSyncUserRulesSnapshot.self, from: decryptedData) else {
             throw CloudSyncError.catalogCorrupted
@@ -600,6 +619,9 @@ public final class ProfileCloudSyncManager: ObservableObject {
     }
 
     nonisolated public static let cloudSyncKeyID = "cloud-sync-master-key.v1"
+    /// Legacy KVS key retained strictly as a read-only fallback after authenticating
+    /// and decoding remote archives before migrating into synchronized Keychain.
+    nonisolated public static let cloudSyncMasterKeyStorageKey = "aetherroute.cloud_sync.master_key.v1"
     /// Synchronizable through iCloud Keychain: shared by the user's devices.
     nonisolated public static let cloudSyncService = "com.aetherroute.profile-encryption.cloud-sync"
 
@@ -661,6 +683,49 @@ public final class ProfileCloudSyncManager: ObservableObject {
         return nil
     }
 
+    /// Authenticates and decrypts a remote cloud payload using the synchronized Keychain key,
+    /// falling back read-only to `cloudSyncMasterKeyStorageKey` ONLY after AEAD authentication
+    /// and payload decoding succeed.
+    nonisolated static func authenticateAndDecodeCatalogPayload(
+        _ payload: CloudSyncPayload,
+        keyStore: any ProfileKeyStoring,
+        kvStore: any CloudKeyValueStoring
+    ) throws -> (key: Data, catalogPayload: CloudSyncCatalogPayload, usedLegacyFallback: Bool) {
+        let actualSHA256 = SHA256.hash(data: payload.encryptedData).map { String(format: "%02x", $0) }.joined()
+        guard payload.version == CloudSyncPayload.currentVersion,
+              actualSHA256.caseInsensitiveCompare(payload.sha256) == .orderedSame,
+              let sealedBox = try? AES.GCM.SealedBox(combined: payload.encryptedData) else {
+            throw CloudSyncError.catalogCorrupted
+        }
+
+        let localKey: Data?
+        do {
+            let loaded = try keyStore.loadKey(keyID: Self.cloudSyncKeyID)
+            localKey = loaded.count == 32 ? loaded : nil
+        } catch ProfileKeyStoreError.keyNotFound {
+            localKey = nil
+        } catch {
+            throw CloudSyncError.keychainUnavailable
+        }
+
+        if let localKey,
+           let decrypted = try? AES.GCM.open(sealedBox, using: SymmetricKey(data: localKey)) {
+            guard let decoded = Self.decodeCatalogPayload(from: decrypted) else {
+                throw CloudSyncError.catalogCorrupted
+            }
+            return (localKey, decoded, false)
+        }
+
+        if let legacyKey = kvStore.data(forKey: Self.cloudSyncMasterKeyStorageKey),
+           legacyKey.count == 32,
+           let decrypted = try? AES.GCM.open(sealedBox, using: SymmetricKey(data: legacyKey)),
+           let decoded = Self.decodeCatalogPayload(from: decrypted) {
+            return (legacyKey, decoded, true)
+        }
+
+        throw localKey == nil ? CloudSyncError.keychainUnavailable : CloudSyncError.decryptionFailed
+    }
+
     nonisolated static func buildDiagnosticsSnapshot(
         kvStore: any CloudKeyValueStoring,
         keyStore: any ProfileKeyStoring,
@@ -677,13 +742,17 @@ public final class ProfileCloudSyncManager: ObservableObject {
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
            let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) {
             var decodedCount: Int?
-            if let localKey {
-                let actualSHA = SHA256.hash(data: remotePayload.encryptedData).map { String(format: "%02x", $0) }.joined()
-                if actualSHA.caseInsensitiveCompare(remotePayload.sha256) == .orderedSame,
-                   let box = try? AES.GCM.SealedBox(combined: remotePayload.encryptedData),
-                   let plain = try? AES.GCM.open(box, using: SymmetricKey(data: localKey)),
-                   let catalogPayload = Self.decodeCatalogPayload(from: plain) {
-                    decodedCount = catalogPayload.catalog.profiles.count
+            let legacyCandidate = kvStore.data(forKey: Self.cloudSyncMasterKeyStorageKey).flatMap { $0.count == 32 ? $0 : nil }
+            let inspectionKeys = [localKey, legacyCandidate].compactMap { $0 }
+            let actualSHA = SHA256.hash(data: remotePayload.encryptedData).map { String(format: "%02x", $0) }.joined()
+            if actualSHA.caseInsensitiveCompare(remotePayload.sha256) == .orderedSame,
+               let box = try? AES.GCM.SealedBox(combined: remotePayload.encryptedData) {
+                for candidateKey in inspectionKeys {
+                    if let plain = try? AES.GCM.open(box, using: SymmetricKey(data: candidateKey)),
+                       let catalogPayload = Self.decodeCatalogPayload(from: plain) {
+                        decodedCount = catalogPayload.catalog.profiles.count
+                        break
+                    }
                 }
             }
             remoteSummary = CloudSyncArchiveSummary(
@@ -730,6 +799,7 @@ private actor CloudSyncWorker {
     private let deviceID: String
     private var deviceName: String
     private var needsHostLookup: Bool
+    private var authenticatedLegacyKey: Data?
 
     init(
         kvStore: any CloudKeyValueStoring,
@@ -932,6 +1002,36 @@ private actor CloudSyncWorker {
         return (updatedProviders, updatedUserRules)
     }
 
+    private func resolveAuthenticatedLegacyFallbackKey() -> Data? {
+        if let authenticatedLegacyKey, authenticatedLegacyKey.count == 32 {
+            return authenticatedLegacyKey
+        }
+        if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
+           let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData),
+           let (resolvedKey, _, usedFallback) = try? ProfileCloudSyncManager.authenticateAndDecodeCatalogPayload(
+               remotePayload,
+               keyStore: keyStore,
+               kvStore: kvStore
+           ),
+           usedFallback {
+            authenticatedLegacyKey = resolvedKey
+            return resolvedKey
+        }
+        return nil
+    }
+
+    private func resolveEncryptionKeyForPush() throws -> (key: Data, canRetireLegacyKey: Bool) {
+        if let existing = try? keyStore.loadKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID),
+           existing.count == 32 {
+            return (existing, true)
+        }
+        if let legacyKey = resolveAuthenticatedLegacyFallbackKey() {
+            return (legacyKey, false)
+        }
+        let created = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+        return (created, true)
+    }
+
     private func syncUserRulesSnapshot() -> CloudSyncUserRulesSnapshot? {
         guard let customStore = try? CustomRuleStore.applicationGroup(),
               let bypassStore = try? BypassPolicyStore.applicationGroup() else {
@@ -941,6 +1041,9 @@ private actor CloudSyncWorker {
         let localBypass = (try? bypassStore.load()) ?? .empty
         let localRuleSync = customStore.loadSyncMetadata()
         let localBypassSync = bypassStore.loadSyncMetadata()
+        let fallbackKey = resolveAuthenticatedLegacyFallbackKey()
+            ?? kvStore.data(forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey)
+                .flatMap { $0.count == 32 ? $0 : nil }
 
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.userRulesStorageKey),
            let merged = try? ProfileCloudSyncManager.decryptAndMergeUserRulesSnapshot(
@@ -949,7 +1052,8 @@ private actor CloudSyncWorker {
                localBypassPolicy: localBypass,
                localCustomRuleSync: localRuleSync,
                localBypassSync: localBypassSync,
-               keyStore: keyStore
+               keyStore: keyStore,
+               fallbackKey: fallbackKey
            ) {
             let mergedRuleSync = merged.customRuleSync ?? localRuleSync
             let mergedBypassSync = merged.bypassSync ?? localBypassSync
@@ -962,7 +1066,8 @@ private actor CloudSyncWorker {
             if let encoded = try? ProfileCloudSyncManager.encryptUserRulesSnapshot(
                 merged,
                 deviceIdentifier: deviceID,
-                keyStore: keyStore
+                keyStore: keyStore,
+                fallbackKey: resolveAuthenticatedLegacyFallbackKey()
             ), encoded != remoteData {
                 kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
                 kvStore.synchronize()
@@ -995,7 +1100,8 @@ private actor CloudSyncWorker {
         if let encoded = try? ProfileCloudSyncManager.encryptUserRulesSnapshot(
             snapshot,
             deviceIdentifier: deviceID,
-            keyStore: keyStore
+            keyStore: keyStore,
+            fallbackKey: resolveAuthenticatedLegacyFallbackKey()
         ) {
             kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
             kvStore.synchronize()
@@ -1005,7 +1111,7 @@ private actor CloudSyncWorker {
     private func pushLocalToCloud(_ catalog: ProfileCatalog, tombstones: [UUID: Date]) throws {
         let syncPayload = CloudSyncCatalogPayload(catalog: catalog, deletedProfiles: tombstones)
         let catalogData = try JSONEncoder().encode(syncPayload)
-        let key = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+        let (key, canRetireLegacyKey) = try resolveEncryptionKeyForPush()
 
         let symmetricKey = SymmetricKey(data: key)
         let sealedBox = try AES.GCM.seal(catalogData, using: symmetricKey)
@@ -1028,6 +1134,10 @@ private actor CloudSyncWorker {
         }
 
         kvStore.set(payloadData, forKey: CloudSyncPayload.storageKey)
+        if canRetireLegacyKey,
+           kvStore.data(forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey) != nil {
+            kvStore.set(nil, forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey)
+        }
         kvStore.synchronize()
     }
 
@@ -1035,41 +1145,26 @@ private actor CloudSyncWorker {
         _ payload: CloudSyncPayload,
         to store: ProfileCatalogStore
     ) throws -> (catalog: ProfileCatalog, tombstones: [UUID: Date], shouldPushBack: Bool) {
-        let actualSHA256 = SHA256.hash(data: payload.encryptedData).map { String(format: "%02x", $0) }.joined()
-        guard actualSHA256.caseInsensitiveCompare(payload.sha256) == .orderedSame else {
-            Self.logger.error("Cloud sync payload SHA256 integrity verification failed: expected \(payload.sha256), got \(actualSHA256)")
-            throw CloudSyncError.catalogCorrupted
-        }
-
-        let key: Data
-        do {
-            key = try keyStore.loadKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
-        } catch {
-            Self.logger.error("Failed to load cloud sync master key from Keychain: \(String(describing: error), privacy: .public)")
-            throw CloudSyncError.keychainUnavailable
-        }
-        let symmetricKey = SymmetricKey(data: key)
-
-        let sealedBox: AES.GCM.SealedBox
-        do {
-            sealedBox = try AES.GCM.SealedBox(combined: payload.encryptedData)
-        } catch {
-            throw CloudSyncError.catalogCorrupted
-        }
-
-        guard let decryptedData = try? AES.GCM.open(sealedBox, using: symmetricKey) else {
-            Self.logger.error("Failed to decrypt remote catalog payload with master key")
-            throw CloudSyncError.decryptionFailed
-        }
-
-        guard let remoteCatalogPayload = ProfileCloudSyncManager.decodeCatalogPayload(from: decryptedData) else {
-            throw CloudSyncError.catalogCorrupted
+        let (resolvedKey, remoteCatalogPayload, usedLegacyFallback) = try ProfileCloudSyncManager.authenticateAndDecodeCatalogPayload(
+            payload,
+            keyStore: keyStore,
+            kvStore: kvStore
+        )
+        if usedLegacyFallback {
+            authenticatedLegacyKey = resolvedKey
         }
 
         let reconciled = try store.reconcileCloudSync(
             remoteCatalogPayload.catalog,
             tombstones: remoteCatalogPayload.deletedProfiles
         )
+        // Retire legacy plaintext KVS key only after the synchronized Keychain key succeeds
+        // and local catalog persistence finishes.
+        if !usedLegacyFallback,
+           kvStore.data(forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey) != nil {
+            kvStore.set(nil, forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey)
+            kvStore.synchronize()
+        }
         let mergedTombstones = store.loadDeletedProfiles()
         let shouldPushBack = Self.remoteNeedsUpdate(
             appliedCatalog: reconciled,

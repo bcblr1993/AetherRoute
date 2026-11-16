@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import OSLog
 
@@ -209,11 +210,33 @@ public actor RuleProviderEngine {
             .appendingPathComponent(Self.sanitizedProviderFileName(name: name, format: format), isDirectory: false)
     }
 
+    // MARK: - URL Validation
+
+    /// Validates that a provider URL uses `https`, or `http` strictly for loopback
+    /// and private network hosts, rejecting public plaintext HTTP and non-HTTP schemes.
+    nonisolated public static func validateURL(_ url: URL) throws {
+        try ProviderURLValidator.validate(
+            url,
+            invalidURL: RuleProviderError.invalidURL,
+            insecureScheme: RuleProviderError.insecureScheme
+        )
+    }
+
+    nonisolated public static func defaultDirectoryURL(fileManager: FileManager = .default) -> URL {
+        if let container = fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: AppConstants.appGroup
+        ) {
+            return container.appendingPathComponent(
+                "Library/Application Support/AetherRoute/RuleProviders",
+                isDirectory: true
+            )
+        }
+        return fileManager.temporaryDirectory.appendingPathComponent("RuleProviders", isDirectory: true)
+    }
+
     // MARK: - Provider Registration
     public func registerProvider(_ provider: RuleProviderMetadata) throws {
-        guard provider.url.scheme?.lowercased() == "https" else {
-            throw RuleProviderError.insecureScheme
-        }
+        try Self.validateURL(provider.url)
         providers[provider.id] = provider
         saveProvidersMetadata()
     }
@@ -248,23 +271,37 @@ public actor RuleProviderEngine {
     }
 
     // MARK: - Safety-Budgeted Rule Compilation
-    /// Compiles all enabled rule providers into Clash rule strings, enforcing strict
-    /// per-provider and global budgets to guarantee safe memory footprint.
-    public func compileActiveRules(
+    nonisolated public static func cacheFileURL(for id: UUID, in directoryURL: URL) -> URL {
+        directoryURL.appendingPathComponent("\(id.uuidString).dat")
+    }
+
+    /// Reads cached `.dat` payloads for enabled rule providers synchronously so
+    /// `ProfileOverrideCompiler` can inject active external rules into runtime YAML.
+    nonisolated public static func compileCachedRules(
+        for providers: [RuleProviderMetadata],
+        cacheDirectoryURL: URL? = nil,
         maxRulesPerProvider: Int = 2_500,
-        maxTotalRules: Int = 8_000
+        maxTotalRules: Int = 8_000,
+        fileManager: FileManager = .default
     ) -> [String] {
+        let directory = cacheDirectoryURL ?? defaultDirectoryURL(fileManager: fileManager)
         var compiledRules: [String] = []
         var seen = Set<String>()
 
-        let activeProviders = providers.values
-            .filter { $0.isEnabled }
+        let activeProviders = providers
+            .filter { $0.isEnabled && $0.format != .mrs }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
 
         for provider in activeProviders {
-            guard let rules = try? loadRules(for: provider.id), !rules.isEmpty else {
+            let cacheFile = cacheFileURL(for: provider.id, in: directory)
+            guard fileManager.fileExists(atPath: cacheFile.path),
+                  let data = try? Data(contentsOf: cacheFile),
+                  let content = String(data: data, encoding: .utf8) else {
                 continue
             }
+
+            let rules = parseRawRuleContent(content, behavior: provider.behavior, format: provider.format)
+            guard !rules.isEmpty else { continue }
 
             let providerBudget = min(rules.count, maxRulesPerProvider)
             let defaultTarget = provider.defaultTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -287,7 +324,7 @@ public actor RuleProviderEngine {
                     seen.insert(norm)
                     compiledRules.append(ruleString)
                     if compiledRules.count >= maxTotalRules {
-                        Self.logger.warning("Active rules reached safety ceiling of \(maxTotalRules) rules, truncating.")
+                        logger.warning("Active rules reached safety ceiling of \(maxTotalRules) rules, truncating.")
                         return compiledRules
                     }
                 }
@@ -295,6 +332,21 @@ public actor RuleProviderEngine {
         }
 
         return compiledRules
+    }
+
+    /// Compiles all enabled rule providers into Clash rule strings, enforcing strict
+    /// per-provider and global budgets to guarantee safe memory footprint.
+    public func compileActiveRules(
+        maxRulesPerProvider: Int = 2_500,
+        maxTotalRules: Int = 8_000
+    ) -> [String] {
+        Self.compileCachedRules(
+            for: Array(providers.values),
+            cacheDirectoryURL: directoryURL,
+            maxRulesPerProvider: maxRulesPerProvider,
+            maxTotalRules: maxTotalRules,
+            fileManager: fileManager
+        )
     }
 
     // MARK: - Update Logic
@@ -398,6 +450,7 @@ public actor RuleProviderEngine {
 
     // MARK: - Internal Download & Parse
     private func fetchAndParse(provider: RuleProviderMetadata, force: Bool) async throws -> Int {
+        try Self.validateURL(provider.url)
         var request = URLRequest(url: provider.url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
@@ -521,7 +574,7 @@ public actor RuleProviderEngine {
         for spec in specs {
             guard spec.type == "http",
                   let url = URL(string: spec.url),
-                  url.scheme?.lowercased() == "https" else {
+                  (try? Self.validateURL(url)) != nil else {
                 continue
             }
             let format: RuleProviderFormat
@@ -567,6 +620,14 @@ public actor RuleProviderEngine {
     }
 
     public func parseRawRuleContent(
+        _ content: String,
+        behavior: RuleProviderBehavior,
+        format: RuleProviderFormat
+    ) -> [RemoteRuleItem] {
+        Self.parseRawRuleContent(content, behavior: behavior, format: format)
+    }
+
+    nonisolated public static func parseRawRuleContent(
         _ content: String,
         behavior: RuleProviderBehavior,
         format: RuleProviderFormat
@@ -777,5 +838,96 @@ public struct RuleProviderSyncPayload: Codable, Sendable, Equatable {
         self.updatedAtUnixMilliseconds = updatedAtUnixMilliseconds
         self.deviceIdentifier = deviceIdentifier
         self.providers = providers
+    }
+}
+
+enum ProviderURLValidator {
+    static func validate(
+        _ url: URL,
+        invalidURL: @autoclosure () -> Error,
+        insecureScheme: @autoclosure () -> Error
+    ) throws {
+        guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else {
+            throw insecureScheme()
+        }
+        guard scheme == "https" || scheme == "http" else {
+            throw insecureScheme()
+        }
+        guard let rawHost = url.host?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawHost.isEmpty else {
+            throw invalidURL()
+        }
+        if scheme == "https" {
+            return
+        }
+        guard isLoopbackOrPrivateHost(rawHost) else {
+            throw insecureScheme()
+        }
+    }
+
+    static func isLoopbackOrPrivateHost(_ rawHost: String) -> Bool {
+        var host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        while host.hasSuffix(".") {
+            host.removeLast()
+        }
+        if host.hasPrefix("[") && host.hasSuffix("]") && host.count >= 2 {
+            host = String(host.dropFirst().dropLast())
+        }
+        guard !host.isEmpty else { return false }
+
+        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") {
+            return true
+        }
+
+        var addr4 = in_addr()
+        if host.withCString({ inet_pton(AF_INET, $0, &addr4) }) == 1 {
+            return isLoopbackOrPrivateIPv4(UInt32(bigEndian: addr4.s_addr))
+        }
+
+        // Strip optional IPv6 zone ID (e.g. %en0) for link-local parsing.
+        let ipv6Host = host.split(separator: "%", maxSplits: 1).first.map(String.init) ?? host
+        var addr6 = in6_addr()
+        if ipv6Host.withCString({ inet_pton(AF_INET6, $0, &addr6) }) == 1 {
+            return withUnsafeBytes(of: addr6) { bytes in
+                guard bytes.count == 16 else { return false }
+                let isLoopback = bytes[0..<15].allSatisfy { $0 == 0 } && bytes[15] == 1
+                let isUnspecified = bytes.allSatisfy { $0 == 0 }
+                let isULA = (bytes[0] & 0xFE) == 0xFC // fc00::/7
+                let isLinkLocal = bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80 // fe80::/10
+                if isLoopback || isULA || isLinkLocal {
+                    return true
+                }
+                if isUnspecified {
+                    return false
+                }
+                let isIPv4Mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xFF && bytes[11] == 0xFF
+                if isIPv4Mapped {
+                    let v4 = (UInt32(bytes[12]) << 24)
+                        | (UInt32(bytes[13]) << 16)
+                        | (UInt32(bytes[14]) << 8)
+                        | UInt32(bytes[15])
+                    return isLoopbackOrPrivateIPv4(v4)
+                }
+                return false
+            }
+        }
+        return false
+    }
+
+    private static func isLoopbackOrPrivateIPv4(_ ip: UInt32) -> Bool {
+        let firstOctet = (ip >> 24) & 0xFF
+        if firstOctet == 127 || firstOctet == 10 {
+            return true
+        }
+        if (ip & 0xFFF0_0000) == 0xAC10_0000 { // 172.16.0.0/12
+            return true
+        }
+        if (ip & 0xFFFF_0000) == 0xC0A8_0000 { // 192.168.0.0/16
+            return true
+        }
+        if (ip & 0xFFFF_0000) == 0xA9FE_0000 { // 169.254.0.0/16
+            return true
+        }
+        return false
     }
 }

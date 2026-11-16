@@ -347,6 +347,34 @@ class ProductionProxyTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 4)
             self.assertTrue(self.wait_session_closed(sock, 1))
 
+    def test_idle_bidirectional_tunnel_is_reclaimed(self):
+        # Both client and origin remain open without half-closing or traffic.
+        # Echo keeps its socket open for 5 s, so closure within 3.5 s proves
+        # LANProxySession's bidirectional idle timeout reclaimed the slot.
+        with target(Echo) as port:
+            sock = self.client()
+            sock.sendall(self.http_request(port))
+            self.expect_connect(sock)
+            sock.sendall(b"ping")
+            self.assertEqual(receive_exact(sock, 4), b"ping")
+            started = time.monotonic()
+            self.assertTrue(
+                self.wait_session_closed(sock, 3.5),
+                "idle bidirectional tunnel was not reclaimed within idle timeout",
+            )
+            self.assertGreaterEqual(time.monotonic() - started, 1.5)
+
+    def test_active_bidirectional_relay_outlives_idle_bound(self):
+        with target(Echo) as port:
+            sock = self.client()
+            sock.sendall(self.http_request(port))
+            self.expect_connect(sock)
+            for index in range(6):
+                payload = f"hb-{index}".encode()
+                sock.sendall(payload)
+                self.assertEqual(receive_exact(sock, len(payload)), payload)
+                time.sleep(0.5)
+
     def test_active_response_after_half_close_outlives_idle_bound(self):
         with target(SlowStream) as port:
             sock = self.client()

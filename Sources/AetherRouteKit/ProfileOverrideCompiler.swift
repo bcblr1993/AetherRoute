@@ -66,20 +66,65 @@ public enum ProfileOverrideCompiler {
     public static func apply(
         _ override: ProfileOverride?,
         globalOverride: ProfileOverride? = nil,
+        externalRuleProviders: [RuleProviderMetadata] = [],
+        ruleProviderCacheDirectoryURL: URL? = nil,
+        externalRules: [String] = [],
         to yaml: String
     ) -> ProfileOverrideResult {
+        let compiledExternalRules = resolveExternalRules(
+            externalRuleProviders: externalRuleProviders,
+            cacheDirectoryURL: ruleProviderCacheDirectoryURL,
+            explicitExternalRules: externalRules
+        )
+
         if let globalOverride, !globalOverride.isEmpty {
             let filteredGlobal = filterGlobalOverride(globalOverride, shadowedBy: override)
             if !filteredGlobal.isEmpty {
-                let globalResult = applySingle(filteredGlobal, to: yaml)
+                let hasPerProfile = override.map { !$0.isEmpty } ?? false
+                let globalResult = applySingle(
+                    filteredGlobal,
+                    externalRules: hasPerProfile ? [] : compiledExternalRules,
+                    to: yaml
+                )
                 guard let override, !override.isEmpty else {
                     return globalResult
                 }
-                let profileResult = applySingle(override, to: globalResult.yaml)
+                let profileResult = applySingle(
+                    override,
+                    externalRules: compiledExternalRules,
+                    to: globalResult.yaml
+                )
                 return mergeResults(globalResult, profileResult)
             }
         }
-        return applySingle(override, to: yaml)
+        return applySingle(override, externalRules: compiledExternalRules, to: yaml)
+    }
+
+    private static func resolveExternalRules(
+        externalRuleProviders: [RuleProviderMetadata],
+        cacheDirectoryURL: URL?,
+        explicitExternalRules: [String]
+    ) -> [String] {
+        let cachedProviderRules: [String]
+        if externalRuleProviders.isEmpty {
+            cachedProviderRules = []
+        } else {
+            cachedProviderRules = RuleProviderEngine.compileCachedRules(
+                for: externalRuleProviders,
+                cacheDirectoryURL: cacheDirectoryURL
+            )
+        }
+        var merged: [String] = []
+        var seen = Set<String>()
+        for raw in cachedProviderRules + explicitExternalRules {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.filter { !$0.isWhitespace }.uppercased()
+            if seen.insert(key).inserted {
+                merged.append(trimmed)
+            }
+        }
+        return merged
     }
 
     private static func filterGlobalOverride(
@@ -122,16 +167,21 @@ public enum ProfileOverrideCompiler {
 
     private static func applySingle(
         _ override: ProfileOverride?,
+        externalRules: [String] = [],
         to yaml: String
     ) -> ProfileOverrideResult {
-        guard let override, !override.isEmpty else {
-            return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
-        }
+        let effectiveOverride = override ?? ProfileOverride()
         if yaml.first(where: { !$0.isWhitespace }) == "{" {
-            return applyToJSON(override, json: yaml)
+            return applyToJSON(effectiveOverride, externalRules: externalRules, json: yaml)
         }
         let document = YAMLDocument(yaml)
+        if effectiveOverride.isEmpty && externalRules.isEmpty && document.nodeDialerProxies.isEmpty {
+            return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
+        }
         guard document.isEditable else {
+            if effectiveOverride.isEmpty && externalRules.isEmpty {
+                return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
+            }
             return ProfileOverrideResult(
                 yaml: yaml,
                 diagnostics: [.unsupportedProfileLayout],
@@ -140,8 +190,9 @@ public enum ProfileOverrideCompiler {
             )
         }
         let plan = Plan(
-            override: override,
+            override: effectiveOverride,
             nodes: document.nodeNames,
+            nodeDialerProxies: document.nodeDialerProxies,
             groups: document.groups.map { ($0.name, $0.members) },
             nodeTokens: document.nodeTokens,
             yamlCloner: { targetName, newName, dialer in
@@ -153,6 +204,10 @@ public enum ProfileOverrideCompiler {
             },
             proxyItemIndent: document.proxyItemIndent
         )
+        let newExternalRules = document.filterUnseenRules(externalRules)
+        if effectiveOverride.isEmpty && plan.strippedBaseDialerProxies.isEmpty && newExternalRules.isEmpty {
+            return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
+        }
         var diagnostics = plan.diagnostics
 
         var rewritten: [Int: String] = [:]
@@ -169,7 +224,9 @@ public enum ProfileOverrideCompiler {
             replacingGroups: rewritten,
             insertingGroups: plan.customGroupLines,
             insertingProxies: plan.chainedProxyLines,
-            insertingHosts: plan.customHosts
+            insertingHosts: plan.customHosts,
+            strippingDialerProxies: plan.strippedBaseDialerProxies,
+            insertingRules: newExternalRules
         )
         // The result must show every group and proxy the profile had plus the
         // custom ones; anything else means the edit went wrong.
@@ -211,6 +268,56 @@ public enum ProfileOverrideCompiler {
         return YAMLDocument(yaml).nodeNames
     }
 
+    /// Returns deduplicated proxy names available for custom groups and chained proxies,
+    /// incorporating global/per-profile overrides and any additional provider nodes while
+    /// excluding nodes matched by hidden keywords.
+    public static func availableProxyNames(
+        in yaml: String,
+        proxyOverride: ProfileOverride? = nil,
+        globalOverride: ProfileOverride? = nil,
+        additionalProviderNodes: [String] = []
+    ) -> [String] {
+        var keywords: [String] = []
+        if let globalOverride {
+            keywords.append(contentsOf: globalOverride.hiddenNodeKeywords.map { $0.lowercased() })
+        }
+        if let proxyOverride {
+            keywords.append(contentsOf: proxyOverride.hiddenNodeKeywords.map { $0.lowercased() })
+        }
+        func isHidden(_ name: String) -> Bool {
+            guard !keywords.isEmpty else { return false }
+            let lowered = name.lowercased()
+            return keywords.contains(where: { lowered.contains($0) })
+        }
+
+        var result: [String] = []
+        var seen = Set<String>()
+        func appendIfEligible(_ name: String) {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !isHidden(trimmed), seen.insert(trimmed).inserted else { return }
+            result.append(trimmed)
+        }
+
+        for node in nodeNames(in: yaml) {
+            appendIfEligible(node)
+        }
+        if let globalOverride {
+            let filteredGlobal = filterGlobalOverride(globalOverride, shadowedBy: proxyOverride)
+            for chain in filteredGlobal.chainedProxies {
+                appendIfEligible(chain.name)
+            }
+        }
+        if let proxyOverride {
+            for chain in proxyOverride.chainedProxies {
+                appendIfEligible(chain.name)
+            }
+        }
+        for providerNode in additionalProviderNodes {
+            appendIfEligible(providerNode)
+        }
+        return result
+    }
+
     // MARK: - Plan
 
     /// What the override does to this profile, independent of its syntax.
@@ -222,6 +329,7 @@ public enum ProfileOverrideCompiler {
         private(set) var chainedProxies: [String: String] = [:]
         private(set) var emittedChainedProxies: [String] = []
         private(set) var chainedProxyLines: [String] = []
+        private(set) var strippedBaseDialerProxies: Set<String> = []
         private(set) var standaloneChainedProxyGroupName: String?
         private(set) var customHosts: [(domain: String, ip: String)] = []
         let hiddenNodes: [String]
@@ -234,9 +342,10 @@ public enum ProfileOverrideCompiler {
         init(
             override: ProfileOverride,
             nodes: [String],
+            nodeDialerProxies: [String: String] = [:],
             groups: [(name: String, members: [String])],
             nodeTokens: [String: String] = [:],
-            yamlCloner: ((_ target: String, _ newName: String, _ dialer: String) -> [String]?)? = nil,
+            yamlCloner: ((_ target: String, _ newName: String, _ dialer: String?) -> [String]?)? = nil,
             proxyItemIndent: Int = 2
         ) {
             let keywords = override.hiddenNodeKeywords.map { $0.lowercased() }
@@ -275,74 +384,107 @@ public enum ProfileOverrideCompiler {
 
             let emittedCustomGroupSet = Set(emittedCustomGroups)
             let visibleSet = Set(visible)
-            var availableDialers = visibleSet
+            let baseAvailableDialers = visibleSet
                 .union(groupNames)
                 .union(emittedCustomGroups)
-            var standaloneChainedProxies: [String] = []
 
-            for chain in override.chainedProxies {
-                guard !taken.contains(chain.name) else {
-                    diagnostics.append(.nameConflict(group: chain.name))
+            // First pass: collect candidate chained proxies (checking name conflicts and targets)
+            // so mutual or out-of-order chained references can be checked by graph cycle detection.
+            enum ChainValidationOutcome {
+                case nameConflict
+                case targetMissing(String)
+                case candidate(ChainedProxyOverride)
+            }
+            var provisionalTaken = taken
+            var chainOutcomes: [(index: Int, chain: ChainedProxyOverride, outcome: ChainValidationOutcome)] = []
+            for (idx, chain) in override.chainedProxies.enumerated() {
+                guard !provisionalTaken.contains(chain.name) else {
+                    chainOutcomes.append((idx, chain, .nameConflict))
                     continue
                 }
-                guard availableDialers.contains(chain.dialerProxy) else {
-                    diagnostics.append(.dialerProxyMissing(chain: chain.name, dialer: chain.dialerProxy))
+                if case let .existingNode(targetName) = chain.target, !visibleSet.contains(targetName) {
+                    chainOutcomes.append((idx, chain, .targetMissing(targetName)))
                     continue
                 }
-                let compiledLines: [String]?
-                switch chain.target {
-                case var .customNode(node):
-                    node.name = chain.name
-                    node.dialerProxy = chain.dialerProxy
-                    compiledLines = try? AetherNodeProfileCompiler.compileProxyLines(
-                        node: node,
-                        indent: proxyItemIndent
-                    )
-                case let .existingNode(targetName):
-                    guard visibleSet.contains(targetName) else {
-                        diagnostics.append(.targetNodeMissing(chain: chain.name, target: targetName))
-                        continue
-                    }
-                    if let yamlCloner {
-                        compiledLines = yamlCloner(targetName, chain.name, chain.dialerProxy)
-                    } else {
-                        compiledLines = []
-                    }
-                }
-                guard let compiledLines else { continue }
-                taken.insert(chain.name)
-                availableDialers.insert(chain.name)
-                chainedProxies[chain.name] = chain.dialerProxy
-                emittedChainedProxies.append(chain.name)
-                chainedProxyLines.append(contentsOf: compiledLines)
+                provisionalTaken.insert(chain.name)
+                chainOutcomes.append((idx, chain, .candidate(chain)))
+            }
 
-                if let parent = chain.parentGroup {
-                    if groupNames.contains(parent) {
-                        var entry = insertions[parent] ?? ([], [])
-                        switch chain.position {
-                        case .top: entry.top.append(YAMLDocument.quote(chain.name))
-                        case .bottom: entry.bottom.append(YAMLDocument.quote(chain.name))
-                        }
-                        insertions[parent] = entry
-                    } else if emittedCustomGroupSet.contains(parent) {
-                        var currentMembers = customGroupMembers[parent] ?? []
-                        switch chain.position {
-                        case .top: currentMembers.insert(chain.name, at: 0)
-                        case .bottom: currentMembers.append(chain.name)
-                        }
-                        customGroupMembers[parent] = currentMembers
-                    } else {
-                        diagnostics.append(.parentGroupMissing(group: chain.name, parent: parent))
-                    }
-                } else {
-                    standaloneChainedProxies.append(chain.name)
+            // Fixed-point pruning for genuinely missing dialer proxies while keeping mutual/3-way cycles intact.
+            var activeCandidateNames = Set(chainOutcomes.compactMap { entry -> String? in
+                if case .candidate = entry.outcome { return entry.chain.name }
+                return nil
+            })
+            var pruned = true
+            while pruned {
+                pruned = false
+                let availableDialers = baseAvailableDialers.union(activeCandidateNames)
+                for entry in chainOutcomes {
+                    guard case let .candidate(chain) = entry.outcome,
+                          activeCandidateNames.contains(chain.name),
+                          !availableDialers.contains(chain.dialerProxy) else { continue }
+                    activeCandidateNames.remove(chain.name)
+                    pruned = true
                 }
             }
 
-            for groupName in emittedCustomGroups {
-                if (customGroupMembers[groupName] ?? []).isEmpty {
-                    diagnostics.append(.noMatchingNodes(group: groupName))
+            var acceptedChains: [ChainedProxyOverride] = []
+            var standaloneChainedProxies: [String] = []
+            for entry in chainOutcomes {
+                let chain = entry.chain
+                switch entry.outcome {
+                case .nameConflict:
+                    diagnostics.append(.nameConflict(group: chain.name))
+                case let .targetMissing(targetName):
+                    diagnostics.append(.targetNodeMissing(chain: chain.name, target: targetName))
+                case .candidate:
+                    guard activeCandidateNames.contains(chain.name) else {
+                        diagnostics.append(.dialerProxyMissing(chain: chain.name, dialer: chain.dialerProxy))
+                        continue
+                    }
+                    acceptedChains.append(chain)
+                    taken.insert(chain.name)
+                    if let parent = chain.parentGroup {
+                        if groupNames.contains(parent) {
+                            var insertion = insertions[parent] ?? ([], [])
+                            switch chain.position {
+                            case .top: insertion.top.append(YAMLDocument.quote(chain.name))
+                            case .bottom: insertion.bottom.append(YAMLDocument.quote(chain.name))
+                            }
+                            insertions[parent] = insertion
+                        } else if emittedCustomGroupSet.contains(parent) {
+                            var currentMembers = customGroupMembers[parent] ?? []
+                            switch chain.position {
+                            case .top: currentMembers.insert(chain.name, at: 0)
+                            case .bottom: currentMembers.append(chain.name)
+                            }
+                            customGroupMembers[parent] = currentMembers
+                        } else {
+                            diagnostics.append(.parentGroupMissing(group: chain.name, parent: parent))
+                        }
+                    } else {
+                        standaloneChainedProxies.append(chain.name)
+                    }
                 }
+            }
+
+            // Directed-graph DFS cycle detection across base proxies, chained overrides, and proxy groups.
+            var combinedDialers = nodeDialerProxies
+            for chain in acceptedChains {
+                combinedDialers[chain.name] = chain.dialerProxy
+            }
+
+            var resolvedGroupMembers: [String: [String]] = [:]
+            var resolvedGroupOrder: [String] = []
+            for group in groups {
+                let originalTokens = group.members.map(YAMLDocument.quote)
+                let finalTokens = members(of: group.name, original: originalTokens)
+                resolvedGroupMembers[group.name] = finalTokens.map(YAMLDocument.unquote)
+                resolvedGroupOrder.append(group.name)
+            }
+            for customGroup in emittedCustomGroups {
+                resolvedGroupMembers[customGroup] = customGroupMembers[customGroup] ?? []
+                resolvedGroupOrder.append(customGroup)
             }
 
             if !standaloneChainedProxies.isEmpty,
@@ -351,6 +493,49 @@ public enum ProfileOverrideCompiler {
                 standaloneChainedProxyGroupName = autoGroupName
                 customGroupMembers[autoGroupName] = standaloneChainedProxies
                 emittedCustomGroups.append(autoGroupName)
+                resolvedGroupMembers[autoGroupName] = standaloneChainedProxies
+                resolvedGroupOrder.append(autoGroupName)
+            }
+
+            let strippedProxies = ProfileOverrideCompiler.detectAndStripDialerCycles(
+                proxyDialers: &combinedDialers,
+                proxyOrder: nodes + acceptedChains.map(\.name),
+                groupMembers: resolvedGroupMembers,
+                groupOrder: resolvedGroupOrder
+            )
+            let baseNodeSet = Set(nodes)
+            strippedBaseDialerProxies = strippedProxies.intersection(baseNodeSet)
+
+            for chain in acceptedChains {
+                let effectiveDialer: String? = strippedProxies.contains(chain.name) ? nil : chain.dialerProxy
+                let compiledLines: [String]?
+                switch chain.target {
+                case var .customNode(node):
+                    node.name = chain.name
+                    node.dialerProxy = effectiveDialer
+                    compiledLines = try? AetherNodeProfileCompiler.compileProxyLines(
+                        node: node,
+                        indent: proxyItemIndent
+                    )
+                case let .existingNode(targetName):
+                    if let yamlCloner {
+                        compiledLines = yamlCloner(targetName, chain.name, effectiveDialer)
+                    } else {
+                        compiledLines = []
+                    }
+                }
+                guard let compiledLines else { continue }
+                if let effectiveDialer {
+                    chainedProxies[chain.name] = effectiveDialer
+                }
+                emittedChainedProxies.append(chain.name)
+                chainedProxyLines.append(contentsOf: compiledLines)
+            }
+
+            for groupName in emittedCustomGroups where groupName != standaloneChainedProxyGroupName {
+                if (customGroupMembers[groupName] ?? []).isEmpty {
+                    diagnostics.append(.noMatchingNodes(group: groupName))
+                }
             }
 
             let groupKindsByName = Dictionary(uniqueKeysWithValues: override.groups.map { ($0.name, $0.groupKind) })
@@ -453,20 +638,108 @@ public enum ProfileOverrideCompiler {
         return object
     }
 
+    private static func detectAndStripDialerCycles(
+        proxyDialers: inout [String: String],
+        proxyOrder: [String],
+        groupMembers: [String: [String]],
+        groupOrder: [String]
+    ) -> Set<String> {
+        guard !proxyDialers.isEmpty else { return [] }
+
+        enum VisitState { case visiting, visited }
+        enum Edge { case dialer(proxy: String); case groupMember }
+
+        var stripped = Set<String>()
+        let allRoots = proxyOrder + groupOrder
+
+        var strippedInPass = true
+        while strippedInPass {
+            strippedInPass = false
+            var states: [String: VisitState] = [:]
+            var pathNodes: [String] = []
+            var pathEdges: [Edge?] = []
+
+            func dfs(_ node: String, via incomingEdge: Edge?) {
+                if states[node] == .visited { return }
+                if states[node] == .visiting {
+                    if let cycleStart = pathNodes.firstIndex(of: node) {
+                        let cycleEdges: [Edge?] = Array(pathEdges[(cycleStart + 1)...]) + [incomingEdge]
+                        if let closingDialerProxy = cycleEdges.reversed().compactMap({ edge -> String? in
+                            if case let .dialer(proxy) = edge { return proxy }
+                            return nil
+                        }).first {
+                            if proxyDialers.removeValue(forKey: closingDialerProxy) != nil {
+                                stripped.insert(closingDialerProxy)
+                                strippedInPass = true
+                            }
+                        }
+                    }
+                    return
+                }
+
+                states[node] = .visiting
+                pathNodes.append(node)
+                pathEdges.append(incomingEdge)
+
+                if let dialerTarget = proxyDialers[node] {
+                    dfs(dialerTarget, via: .dialer(proxy: node))
+                }
+                if let members = groupMembers[node] {
+                    for member in members {
+                        dfs(member, via: .groupMember)
+                    }
+                }
+
+                pathNodes.removeLast()
+                pathEdges.removeLast()
+                states[node] = .visited
+            }
+
+            for root in allRoots where states[root] == nil {
+                dfs(root, via: nil)
+            }
+        }
+        return stripped
+    }
+
     // MARK: - JSON profiles
 
-    private static func applyToJSON(_ override: ProfileOverride, json: String) -> ProfileOverrideResult {
+    private static func applyToJSON(
+        _ override: ProfileOverride,
+        externalRules: [String] = [],
+        json: String
+    ) -> ProfileOverrideResult {
         guard var root = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else {
             return ProfileOverrideResult(yaml: json, diagnostics: [.unsupportedProfileLayout], customGroupMembers: [:], hiddenNodes: [])
         }
-        let proxies = root["proxies"] as? [[String: Any]] ?? []
+        var proxies = root["proxies"] as? [[String: Any]] ?? []
         let nodes = proxies.compactMap { $0["name"] as? String }
+        var nodeDialerProxies: [String: String] = [:]
+        for entry in proxies {
+            guard let name = entry["name"] as? String else { continue }
+            if let dialer = (entry["dialer-proxy"] as? String) ?? (entry["connect-via"] as? String),
+               !dialer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                nodeDialerProxies[name] = dialer
+            }
+        }
         var groups = root["proxy-groups"] as? [[String: Any]] ?? []
         let plan = Plan(
             override: override,
             nodes: nodes,
+            nodeDialerProxies: nodeDialerProxies,
             groups: groups.map { (($0["name"] as? String) ?? "", ($0["proxies"] as? [String]) ?? []) }
         )
+
+        let existingRules = root["rules"] as? [String] ?? []
+        let existingRuleKeys = Set(existingRules.map { $0.filter { !$0.isWhitespace }.uppercased() })
+        let unseenExternalRules = externalRules.filter {
+            !existingRuleKeys.contains($0.filter { !$0.isWhitespace }.uppercased())
+        }
+
+        if override.isEmpty && plan.strippedBaseDialerProxies.isEmpty && unseenExternalRules.isEmpty {
+            return ProfileOverrideResult(yaml: json, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
+        }
+
         for index in groups.indices {
             guard let name = groups[index]["name"] as? String,
                   let members = groups[index]["proxies"] as? [String] else { continue }
@@ -474,6 +747,15 @@ public enum ProfileOverrideCompiler {
             let updated = plan.members(of: name, original: quotedMembers)
             if updated != quotedMembers {
                 groups[index]["proxies"] = updated.map(YAMLDocument.unquote)
+            }
+        }
+        if !plan.strippedBaseDialerProxies.isEmpty {
+            for idx in proxies.indices {
+                if let name = proxies[idx]["name"] as? String,
+                   plan.strippedBaseDialerProxies.contains(name) {
+                    proxies[idx].removeValue(forKey: "dialer-proxy")
+                    proxies[idx].removeValue(forKey: "connect-via")
+                }
             }
         }
         var addedProxies: [[String: Any]] = []
@@ -490,23 +772,28 @@ public enum ProfileOverrideCompiler {
         )
         for name in plan.emittedChainedProxies {
             guard let chain = chainByName[name] else { continue }
+            let effectiveDialer = plan.chainedProxies[chain.name]
             switch chain.target {
             case var .customNode(node):
                 node.name = chain.name
-                node.dialerProxy = chain.dialerProxy
+                node.dialerProxy = effectiveDialer
                 if let obj = try? AetherNodeProfileCompiler.compileProxyJSONObject(node: node) {
                     addedProxies.append(obj)
                 }
             case let .existingNode(targetName):
                 if var cloned = proxyByName[targetName] {
                     cloned["name"] = chain.name
-                    cloned["dialer-proxy"] = chain.dialerProxy
+                    if let effectiveDialer {
+                        cloned["dialer-proxy"] = effectiveDialer
+                    } else {
+                        cloned.removeValue(forKey: "dialer-proxy")
+                    }
                     cloned.removeValue(forKey: "connect-via")
                     addedProxies.append(cloned)
                 }
             }
         }
-        if !addedProxies.isEmpty {
+        if !addedProxies.isEmpty || !plan.strippedBaseDialerProxies.isEmpty {
             root["proxies"] = addedProxies + proxies
         }
 
@@ -518,6 +805,9 @@ public enum ProfileOverrideCompiler {
             added.append(Self.jsonGroupObject(name: name, kind: kind, members: members))
         }
         root["proxy-groups"] = groups + added
+        if !unseenExternalRules.isEmpty {
+            root["rules"] = unseenExternalRules + existingRules
+        }
         if !plan.customHosts.isEmpty {
             var hostsDict = (root["hosts"] as? [String: Any]) ?? [:]
             for entry in plan.customHosts {
@@ -589,6 +879,7 @@ struct YAMLDocument {
     private(set) var nodeNames: [String] = []
     /// Node name → its `name:` value as written, quotes included.
     private(set) var nodeTokens: [String: String] = [:]
+    private(set) var nodeDialerProxies: [String: String] = [:]
     private(set) var proxyRanges: [String: Range<Int>] = [:]
     private(set) var proxiesHeader: Int?
     private(set) var proxyItemIndent = 2
@@ -597,9 +888,26 @@ struct YAMLDocument {
     private var groupsHeader: Int?
     private var groupItemIndent = 2
     private var rulesHeader: Int?
+    private var rulesHeaderHasEmptyFlow = false
+    private var ruleItemIndent = 2
+    private var existingNormalizedRules: Set<String> = []
     private var hostsHeader: Int?
     private var hostsItemIndent = 2
     private var existingHostLineByDomain: [String: Int] = [:]
+
+    func filterUnseenRules(_ candidates: [String]) -> [String] {
+        var result: [String] = []
+        var seen = existingNormalizedRules
+        for rule in candidates {
+            let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.filter { !$0.isWhitespace }.uppercased()
+            if seen.insert(key).inserted {
+                result.append(trimmed)
+            }
+        }
+        return result
+    }
 
     init(_ text: String) {
         lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
@@ -634,6 +942,9 @@ struct YAMLDocument {
                     nodeNames.append(name)
                     if proxyRanges[name] == nil { proxyRanges[name] = item }
                     if let token = parsed.nameToken { nodeTokens[name] = token }
+                    if let dialer = parsed.dialerProxy, !dialer.isEmpty, nodeDialerProxies[name] == nil {
+                        nodeDialerProxies[name] = dialer
+                    }
                 }
             case "proxy-groups":
                 guard Self.stripComment(inline).isEmpty else { isEditable = false; return }
@@ -677,6 +988,27 @@ struct YAMLDocument {
                 }
             case "rules":
                 rulesHeader = section.start
+                let strippedInline = Self.stripComment(inline)
+                rulesHeaderHasEmptyFlow = (strippedInline == "[]")
+                var detectedRuleIndent: Int?
+                for index in (section.start + 1)..<end {
+                    let line = lines[index]
+                    let trimmed = Self.stripComment(line.trimmingCharacters(in: .whitespaces))
+                    guard !trimmed.isEmpty else { continue }
+                    if trimmed.hasPrefix("- ") || trimmed == "-" {
+                        if detectedRuleIndent == nil {
+                            detectedRuleIndent = Self.indent(of: line)
+                        }
+                        let rawRule = Self.unquote(String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces))
+                        let norm = rawRule.filter { !$0.isWhitespace }.uppercased()
+                        if !norm.isEmpty {
+                            existingNormalizedRules.insert(norm)
+                        }
+                    }
+                }
+                if let detectedRuleIndent {
+                    ruleItemIndent = detectedRuleIndent
+                }
             default:
                 break
             }
@@ -714,6 +1046,7 @@ struct YAMLDocument {
     private struct ParsedItem {
         var name: String?
         var nameToken: String?
+        var dialerProxy: String?
         var members: [String] = []
         var fields: [(key: String, value: Group.Value)]?
     }
@@ -758,9 +1091,13 @@ struct YAMLDocument {
             } else {
                 if raw.hasPrefix("{") || raw.hasPrefix("&") || raw.hasPrefix("*") { item.fields = nil }
                 item.fields?.append((key, .scalar(raw)))
-                if key == "name" {
+                let lowerKey = key.lowercased()
+                if lowerKey == "name" {
                     item.name = Self.unquote(raw)
                     item.nameToken = raw
+                } else if lowerKey == "dialer-proxy" || (lowerKey == "connect-via" && item.dialerProxy == nil) {
+                    let value = Self.unquote(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !value.isEmpty { item.dialerProxy = value }
                 }
             }
         }
@@ -799,9 +1136,13 @@ struct YAMLDocument {
             } else {
                 if raw.hasPrefix("{") { item.fields = nil }
                 item.fields?.append((key, .scalar(raw)))
-                if key == "name" {
+                let lowerKey = key.lowercased()
+                if lowerKey == "name" {
                     item.name = Self.unquote(raw)
                     item.nameToken = raw
+                } else if lowerKey == "dialer-proxy" || (lowerKey == "connect-via" && item.dialerProxy == nil) {
+                    let value = Self.unquote(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !value.isEmpty { item.dialerProxy = value }
                 }
             }
         }
@@ -830,14 +1171,39 @@ struct YAMLDocument {
         return item
     }
 
-    /// Clones an existing proxy item in `proxies:` with a new `name` and
+    /// Clones an existing proxy item in `proxies:` with a new `name` and optional
     /// `dialer-proxy`, preserving nested transport/plugin options.
     func clonedProxyLines(
         from targetName: String,
         newName: String,
-        dialerProxy: String
+        dialerProxy: String?
     ) -> [String]? {
         guard let range = proxyRanges[targetName] else { return nil }
+        return rewritingProxyLines(
+            in: range,
+            newName: newName,
+            dialerProxy: dialerProxy,
+            itemIndent: proxyItemIndent
+        )
+    }
+
+    /// Rewrites an existing proxy item with `dialer-proxy` / `connect-via` removed.
+    private func strippingDialerProxyLines(for proxyName: String) -> [String]? {
+        guard let range = proxyRanges[proxyName] else { return nil }
+        return rewritingProxyLines(
+            in: range,
+            newName: nil,
+            dialerProxy: nil,
+            itemIndent: nil
+        )
+    }
+
+    private func rewritingProxyLines(
+        in range: Range<Int>,
+        newName: String?,
+        dialerProxy: String?,
+        itemIndent: Int?
+    ) -> [String]? {
         let first = lines[range.lowerBound]
         guard let dash = first.firstIndex(of: "-") else { return nil }
         let body = first[first.index(after: dash)...].trimmingCharacters(in: .whitespaces)
@@ -853,7 +1219,7 @@ struct YAMLDocument {
                     continue
                 }
                 let lower = key.lowercased()
-                if lower == "name" {
+                if lower == "name", let newName {
                     parts.append("name: \(Self.quote(newName))")
                 } else if lower == "dialer-proxy" || lower == "connect-via" {
                     continue
@@ -861,8 +1227,11 @@ struct YAMLDocument {
                     parts.append(part)
                 }
             }
-            parts.append("dialer-proxy: \(Self.quote(dialerProxy))")
-            let pad = String(repeating: " ", count: proxyItemIndent)
+            if let dialerProxy {
+                parts.append("dialer-proxy: \(Self.quote(dialerProxy))")
+            }
+            let effectiveIndent = itemIndent ?? Self.indent(of: first)
+            let pad = String(repeating: " ", count: effectiveIndent)
             return ["\(pad)- {\(parts.joined(separator: ", "))}"]
         }
 
@@ -878,9 +1247,16 @@ struct YAMLDocument {
         let fieldPad = String(repeating: " ", count: fieldIndent)
         var result: [String] = []
         let strippedFirst = Self.stripComment(body)
-        if let (key, _) = Self.keyValue(strippedFirst), key.lowercased() == "name" {
-            let prefix = String(first[...dash]) + String(repeating: " ", count: max(1, gap))
-            result.append("\(prefix)name: \(Self.quote(newName))")
+        if let (key, _) = Self.keyValue(strippedFirst) {
+            let lowerFirst = key.lowercased()
+            if lowerFirst == "name", let newName {
+                let prefix = String(first[...dash]) + String(repeating: " ", count: max(1, gap))
+                result.append("\(prefix)name: \(Self.quote(newName))")
+            } else if lowerFirst == "dialer-proxy" || lowerFirst == "connect-via" {
+                // Skip dialer-proxy on the opening `- ` line; promote the first kept line below.
+            } else {
+                result.append(first)
+            }
         } else {
             result.append(first)
         }
@@ -890,7 +1266,7 @@ struct YAMLDocument {
             let indent = Self.indent(of: line)
             if indent == fieldIndent, let (key, _) = Self.keyValue(trimmed) {
                 let lower = key.lowercased()
-                if lower == "name" {
+                if lower == "name", let newName {
                     result.append("\(fieldPad)name: \(Self.quote(newName))")
                     continue
                 }
@@ -898,38 +1274,57 @@ struct YAMLDocument {
                     continue
                 }
             }
-            result.append(line)
+            if result.isEmpty {
+                let dashPrefix = String(repeating: " ", count: dashColumn) + "-" + String(repeating: " ", count: max(1, gap))
+                result.append(dashPrefix + line.trimmingCharacters(in: .whitespaces))
+            } else {
+                result.append(line)
+            }
         }
-        result.append("\(fieldPad)dialer-proxy: \(Self.quote(dialerProxy))")
+        if let dialerProxy {
+            result.append("\(fieldPad)dialer-proxy: \(Self.quote(dialerProxy))")
+        }
         return result
     }
 
-    /// The document with some groups replaced and custom groups / proxies / hosts added.
+    /// The document with some groups replaced and custom groups / proxies / hosts / rules added.
     func render(
         replacingGroups: [Int: String],
         insertingGroups: [String],
         insertingProxies: [String] = [],
-        insertingHosts: [(domain: String, ip: String)] = []
+        insertingHosts: [(domain: String, ip: String)] = [],
+        strippingDialerProxies: Set<String> = [],
+        insertingRules: [String] = []
     ) -> String {
         let pad = String(repeating: " ", count: groupItemIndent)
         let hostPad = String(repeating: " ", count: hostsItemIndent)
+        let rulePad = String(repeating: " ", count: ruleItemIndent)
         let hostLines = insertingHosts.map { entry in
             "\(hostPad)\(Self.quote(entry.domain)): \(Self.quote(entry.ip))"
         }
+        let ruleLines = insertingRules.map { "\(rulePad)- \($0)" }
         let overriddenHostLineIndices = Set(
             insertingHosts.compactMap { existingHostLineByDomain[$0.domain] }
         )
         let firstMajorHeader = [proxiesHeader, groupsHeader, rulesHeader].compactMap { $0 }.min()
         var wroteHostsSection = hostsHeader != nil || hostLines.isEmpty
+        var wroteRules = ruleLines.isEmpty
         var output: [String] = []
         output.reserveCapacity(
-            lines.count + insertingGroups.count + insertingProxies.count + hostLines.count + 6
+            lines.count + insertingGroups.count + insertingProxies.count + hostLines.count + ruleLines.count + 8
         )
         let lastGroupLowerBound = groups.last?.lineRange.lowerBound
         let lastGroupLastLine = groups.last.map { $0.lineRange.upperBound - 1 }
         let replacedStarts = Dictionary(uniqueKeysWithValues: replacingGroups.map {
             (groups[$0.key].lineRange.lowerBound, (groups[$0.key].lineRange, $0.value))
         })
+        var strippedProxyStarts: [Int: (Range<Int>, [String])] = [:]
+        for proxyName in strippingDialerProxies {
+            if let range = proxyRanges[proxyName],
+               let replacement = strippingDialerProxyLines(for: proxyName) {
+                strippedProxyStarts[range.lowerBound] = (range, replacement)
+            }
+        }
         var skipUntil = -1
         for (index, line) in lines.enumerated() {
             if index < skipUntil { continue }
@@ -938,6 +1333,11 @@ struct YAMLDocument {
                 output.append("hosts:")
                 output.append(contentsOf: hostLines)
                 wroteHostsSection = true
+            }
+            if let (range, replacementLines) = strippedProxyStarts[index] {
+                output.append(contentsOf: replacementLines)
+                skipUntil = range.upperBound
+                continue
             }
             if let (range, replacement) = replacedStarts[index] {
                 output.append(pad + "- " + replacement)
@@ -960,6 +1360,12 @@ struct YAMLDocument {
                     output.append("proxy-groups:")
                     output.append(contentsOf: insertingGroups.map { "  - " + $0 })
                 }
+                if rulesHeaderHasEmptyFlow, !ruleLines.isEmpty {
+                    output.append("rules:")
+                    output.append(contentsOf: ruleLines)
+                    wroteRules = true
+                    continue
+                }
             }
             if index == hostsHeader, !hostLines.isEmpty {
                 output.append("hosts:")
@@ -975,6 +1381,10 @@ struct YAMLDocument {
             }
             if index == lastGroupLastLine, !insertingGroups.isEmpty {
                 output.append(contentsOf: insertingGroups.map { pad + "- " + $0 })
+            }
+            if index == rulesHeader, !wroteRules {
+                output.append(contentsOf: ruleLines)
+                wroteRules = true
             }
         }
         if !wroteHostsSection {
@@ -992,6 +1402,12 @@ struct YAMLDocument {
             }
             output.append("proxy-groups:")
             output.append(contentsOf: insertingGroups.map { "  - " + $0 })
+            output.append("")
+        }
+        if !wroteRules {
+            if output.last == "" { output.removeLast() }
+            output.append("rules:")
+            output.append(contentsOf: ruleLines)
             output.append("")
         }
         return output.joined(separator: "\n")

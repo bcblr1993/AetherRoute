@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 2.9.5 (Build 2026111301)</title>
-            <pubDate>Fri, 13 Nov 2026 10:39:48 +0800</pubDate>
-            <sparkle:version>2026111301</sparkle:version>
-            <sparkle:shortVersionString>2.9.5</sparkle:shortVersionString>
+            <title>Version 3.0.0 (Build 2026111602)</title>
+            <pubDate>Mon, 16 Nov 2026 11:29:41 +0800</pubDate>
+            <sparkle:version>2026111602</sparkle:version>
+            <sparkle:shortVersionString>3.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/2.9.5/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.0.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,40 +120,42 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 2.9.5 更新要点</span>
-  <span class="release-badge">Build 2026111301 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.0.0 更新要点</span>
+  <span class="release-badge">Build 2026111602 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🚀 核心升级：主流订阅深度兼容与离线 RULE-SET 合成</span>
+  <span class="section-tag tag-feature">🚀 核心升级：概览内联切节点与全链路规则引擎</span>
   <ul>
-    <li><strong>离线合成主流规则集</strong>：为 ACL4SSR、Loyalsoldier 与 blackmatrix7 常见 <code>RULE-SET</code> 自动合成经过 bundled <code>GeoSite.dat</code>（23 个分类全量校验）验证的内置 <code>GEOSITE</code> / <code>GEOIP</code> / <code>IP-CIDR</code> / <code>DOMAIN-SUFFIX</code> 规则，无需联网拉取远程 GitHub 规则文件即可在 TUN 与透明代理下开箱即用。</li>
-    <li><strong>保留本地自定义规则集</strong>：在保持安全边界的前提下，按原顺序优先保留本地 <code>inline</code> 与 <code>file</code>（<code>domain</code> / <code>ipcidr</code>）自定义 <code>rule-providers</code>，并规范移除无害的 <code>external-ui-download-url</code> 等客户端界面字段，严格拦截未知可执行键。</li>
+    <li><strong>概览页内联展开策略组与就地切节点</strong>：直接在「概览 › 线路」展开当前出口策略组，支持搜索过滤、实时测速与一键切换节点；在「极速自动」与「直连」模式下提供更顺滑的切换引导。</li>
+    <li><strong>原生 <code>.mrs</code> 规则集与 <code>proxy-providers</code> 生命周期</strong>：支持外部 <code>RuleProvider</code> / <code>ProxyProvider</code> 暂存、校验与刷新，新增多源订阅合并（Concurrent Fetch）、全局覆写（Global Override）以及 <code>dialer-proxy</code> 三色 DFS 环路消除。</li>
+    <li><strong>完整规则类型、<code>ASN.mmdb</code> 与进程规则选择器</strong>：扩展支持 <code>RULE-SET</code>、<code>GEOSITE</code>、<code>IP-ASN</code> 及组合规则，支持多镜像自定义下载与命令行/应用进程选择器。</li>
+    <li><strong>节点延迟历史折线、System Proxy 与路由模拟器</strong>：Proxy 列表与卡片新增延迟历史曲线与丢包感知故障转移；新增系统代理引擎模式、实时路由/DNS 模拟探测与丰富的 <code>aetherroute://</code> 自动化 URL。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🐞 透明代理与嵌入式双核容错加固</span>
+  <span class="section-tag tag-fix">🐞 稳定性加固与跨端同步修复</span>
   <ul>
-    <li><strong>统一嵌入式策略与来源规则清理</strong>：透明代理配置加固统一同步嵌入式流引擎校验策略，在顶层规则、<code>sub-rules</code> 与内联 classical provider 中自动裁剪流级无法匹配的来源元数据规则（<code>SRC-IP-CIDR</code> / <code>SRC-PORT</code> / <code>IN-PORT</code> / <code>SRC-GEOIP</code> / <code>SRC-IP-SUFFIX</code> / <code>SRC-IP-ASN</code> 等），彻底避免策略不对齐导致的启动拒绝。</li>
-    <li><strong>远程规则拉取容错与解析对齐</strong>：嵌入式路由器在 <code>http</code> 规则集首轮拉取失败时记录告警并以空规则集降级继续启动，同时对损坏本地文件保持严格快速失败；<code>rule-providers</code> 省略 <code>behavior</code> 时对齐 Mihomo 默认 <code>domain</code> 并修复空 <code>StringTrie</code> / <code>DomainSet</code> 边界访问。</li>
+    <li><strong>热重载保留手动选中节点与 Snell 首包竞态修复</strong>：修复双核重载丢失内存态 <code>Select</code> 选中的问题，合并 Snell v2/v3 <code>[salt][header]</code> 与首包负载写操作，彻底消除短连接偶发 EOF；新增本地代理 120 秒空闲超时回收。</li>
+    <li><strong>引擎切换预检与引导恢复</strong>：切换 TUN / 透明代理前自动预检系统扩展授权状态，未就绪时保护当前连接并在概览直接展示引导入口；对齐 macOS 与 iOS 的 iCloud 同步键值与规则序列化。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 全链路隔离验收与性能达标</span>
+  <span class="section-tag tag-improve">✨ 全维度隔离验证与双档流畅达标</span>
   <ul>
-    <li><strong>全量对照与 12 协议互通通过</strong>：协议实验室 43 节点与 Mihomo 对照 43/43 一致，默认与 Chrome 指纹 12 协议互通及真实站点 ECH 握手全部通过。</li>
-    <li><strong>UI 卡顿与内存预算双档达标</strong>：<code>showcase</code> 与 <code>large</code>（500 节点 / 万条规则 / 2000 连接）切页 p95 分别为 114.5 ms 与 114.2 ms（较 2.9.4 再降 ~10 ms），内存平稳控制在 67–82 MB。</li>
+    <li><strong>43 节点实机对照与双指纹 12 协议全通</strong>：协议实验室 43/43 节点全部可用，默认与 Chrome TLS 指纹 12 协议互通及真实站点 ECH 握手全量通过，6 维虚拟机矩阵 160/160 全通。</li>
+    <li><strong>UI 卡顿与内存预算双档达标</strong>：300 秒重度压测下 <code>showcase</code> 与 <code>large</code>（500 节点 / 万条规则 / 2000 连接）切页 p95 为 120.3 ms 与 120.8 ms，内存平稳控制在 71–87 MB（增长 ≤ +2 MB）。</li>
   </ul>
 </div>
 
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/2.9.5/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.0.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v2.9.5/AetherRoute-2.9.5-build-2026111301-arm64.dmg"
-                sparkle:edSignature="0FgHb+hMn+hc+qQJ8DI4lYPDHuecDwG5uB4UF96e4vbdp7BR5+kLHa/1RIXC6Mnv97+Bw8zWDSpbQ99WqBTQCg=="
-                length="30223331"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.0.0/AetherRoute-3.0.0-build-2026111602-arm64.dmg"
+                sparkle:edSignature="ACuR1kq2Bu0YWBNXn7MmkVHUtXHzrozn4EqJ5EQrpnhJljpoN2N/EDdq9UxWZOhnCtHThcu4jq0WZq8ytp2dBA=="
+                length="31186700"
                 type="application/octet-stream" />
         </item>
     </channel>

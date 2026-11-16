@@ -41,35 +41,29 @@ extension TunnelManager {
         return required
     }
 
-    /// Reads what the system already granted, without prompting. Engines
-    /// that are mid-request or failed keep their state so a refresh (for
-    /// example when the app becomes active) does not hide an error.
+    /// Reads what the system already granted, without prompting. Active
+    /// in-flight system prompts keep their state, while failed or reboot
+    /// states re-probe so approvals or restarts completed outside the button
+    /// action unlock onboarding immediately.
     func refreshNetworkSetupStatus() async {
         if isUIReviewMode { return }
         for mode in networkSetupEngines where networkSetupStates[mode] == nil {
             networkSetupStates[mode] = .checking
         }
         for mode in networkSetupEngines {
-            if let current = networkSetupStates[mode], Self.keepsStateOnRefresh(current) {
+            let current = networkSetupStates[mode]
+            if let current, !NetworkSetupProgress.shouldProbeOnRefresh(current) {
                 continue
             }
             let probe = await SystemExtensionStatusProbe.probe(
                 identifier: mode.providerBundleIdentifier
             )
             let hasConfiguration = ((try? await loadExistingManager(for: mode)) ?? nil) != nil
-            networkSetupStates[mode] = NetworkSetupProgress.detectedState(
+            networkSetupStates[mode] = NetworkSetupProgress.refreshedState(
+                current: current,
                 extension: probe,
                 hasConfiguration: hasConfiguration
             )
-        }
-    }
-
-    private static func keepsStateOnRefresh(_ state: NetworkSetupStepState) -> Bool {
-        switch state {
-        case .installingExtension, .awaitingConfigurationConsent, .rebootRequired, .failed:
-            true
-        default:
-            false
         }
     }
 

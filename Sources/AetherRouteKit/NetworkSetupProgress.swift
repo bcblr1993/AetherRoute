@@ -71,6 +71,49 @@ public enum NetworkSetupProgress {
         }
     }
 
+    /// Active system sheets keep their live state across foreground switches;
+    /// completed, pending, reboot-pending, and failed states are re-probed so
+    /// external System Settings approvals or macOS restarts recover cleanly.
+    public static func shouldProbeOnRefresh(_ state: NetworkSetupStepState) -> Bool {
+        switch state {
+        case .installingExtension, .awaitingConfigurationConsent:
+            return false
+        case .checking, .pending, .awaitingApproval, .rebootRequired, .ready, .failed:
+            return true
+        }
+    }
+
+    /// Resolves the next setup step state when refreshing from system probes.
+    public static func refreshedState(
+        current: NetworkSetupStepState?,
+        extension probe: NetworkExtensionProbe,
+        hasConfiguration: Bool
+    ) -> NetworkSetupStepState {
+        let detected = detectedState(extension: probe, hasConfiguration: hasConfiguration)
+        guard let current else { return detected }
+        guard shouldProbeOnRefresh(current) else { return current }
+        switch current {
+        case .failed:
+            switch detected {
+            case .ready, .awaitingApproval, .rebootRequired:
+                return detected
+            case .checking, .pending, .installingExtension, .awaitingConfigurationConsent, .failed:
+                return current
+            }
+        case .rebootRequired:
+            switch detected {
+            case .ready, .awaitingApproval:
+                return detected
+            case .checking, .pending, .installingExtension, .awaitingConfigurationConsent, .rebootRequired, .failed:
+                return .rebootRequired
+            }
+        case .checking, .pending, .awaitingApproval, .ready:
+            return detected
+        case .installingExtension, .awaitingConfigurationConsent:
+            return current
+        }
+    }
+
     /// Setup is done when every engine is ready, or when at least one engine
     /// is ready and the other is unavailable for this session (blocked by
     /// system/organisation policy, waiting for a restart after uninstall, or

@@ -1111,7 +1111,11 @@ extension TunnelManager {
         await refreshSubscription(id: activeProfileID, isAutomatic: isAutomatic)
     }
 
-    func refreshSubscription(id: UUID, isAutomatic: Bool = false) async {
+    func refreshSubscription(id: UUID,
+                             isAutomatic: Bool = false,
+                             prefetchedUpdate: ProfileSubscriptionUpdate? = nil,
+                             rebuildDependents: Bool = true,
+                             allowLiveReload: Bool = true) async {
         guard ensurePrivacyConsent() else { return }
         guard let managed = profiles.first(where: { $0.id == id }),
               let subscription = managed.profile.subscription else {
@@ -1121,7 +1125,9 @@ extension TunnelManager {
             }
             return
         }
-        guard canRefreshSubscription(id: id) else { return }
+        if prefetchedUpdate == nil {
+            guard canRefreshSubscription(id: id) else { return }
+        }
         if isUIReviewMode {
             recordSubscriptionUpdateError(nil, for: id)
             if !isAutomatic {
@@ -1131,19 +1137,26 @@ extension TunnelManager {
             return
         }
 
-        refreshingSubscriptionProfileIDs.insert(id)
-        isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
-        defer {
-            refreshingSubscriptionProfileIDs.remove(id)
+        let manageRefreshTracking = prefetchedUpdate == nil
+        if manageRefreshTracking {
+            refreshingSubscriptionProfileIDs.insert(id)
             isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
+        }
+        defer {
+            if manageRefreshTracking {
+                refreshingSubscriptionProfileIDs.remove(id)
+                isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
+            }
         }
 
         do {
-            let update = try await subscriptionClient.fetch(subscription)
-            guard let currentManaged = profiles.first(where: { $0.id == id }) else {
-                throw ProfileCatalogStoreError.activeProfileNotFound
+            let update: ProfileSubscriptionUpdate
+            if let prefetchedUpdate {
+                update = prefetchedUpdate
+            } else {
+                update = try await subscriptionClient.fetch(subscription)
             }
-            let profile = currentManaged.profile
+            let profile = managed.profile
             let keepRuntime = state == .connected
             // UserDefaults is documented thread-safe; it is only read and
             // written here, off the main actor.
@@ -1181,7 +1194,7 @@ extension TunnelManager {
                     with: updated,
                     defaults: defaults
                 )
-                if case .updated = update {
+                if rebuildDependents, case .updated = update {
                     return (try? ProfileCatalogStore.applicationGroup().rebuildDependentMergedProfiles(referencing: id))
                         ?? updatedCatalog
                 }
@@ -1193,7 +1206,7 @@ extension TunnelManager {
                 profiles.first(where: { $0.id == activeID })?.mergedSpec?.sourceProfileIDs.contains(id)
             } ?? false
             let isActiveTarget = id == activeProfileID || activeIsDependentMerge
-            if isActiveTarget, state == .connected, case .updated = update {
+            if allowLiveReload, isActiveTarget, state == .connected, case .updated = update {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
                 let reloadPayloadData = try await prepareReloadProfilePayload(
                     requestedMode: currentRoutingMode
@@ -1507,9 +1520,11 @@ extension TunnelManager {
         let globalOverride = isUIReviewMode
             ? ProfileOverride()
             : ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+        let activeRuleProviders = isUIReviewMode ? [] : customRuleProviders.filter(\.isEnabled)
         return ProfileOverrideCompiler.apply(
             profile.overrides,
             globalOverride: globalOverride,
+            externalRuleProviders: activeRuleProviders,
             to: profile.yaml
         ).yaml
     }
@@ -1596,6 +1611,70 @@ extension TunnelManager {
     @discardableResult
     func rebuildMergedProfile(id: UUID) async -> Bool {
         guard ensurePrivacyConsent() else { return false }
+        let remoteSources: [(id: UUID, subscription: ProfileSubscription)]
+        if let targetManaged = profiles.first(where: { $0.id == id }),
+           let spec = targetManaged.mergedSpec,
+           !isUIReviewMode {
+            let profilesByID = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+            remoteSources = spec.sourceProfileIDs.compactMap { sourceID in
+                guard let source = profilesByID[sourceID],
+                      let subscription = source.profile.subscription,
+                      canRefreshSubscription(id: sourceID) else {
+                    return nil
+                }
+                return (sourceID, subscription)
+            }
+        } else {
+            remoteSources = []
+        }
+
+        if !remoteSources.isEmpty {
+            let sourceIDs = remoteSources.map(\.id)
+            refreshingSubscriptionProfileIDs.formUnion(sourceIDs)
+            isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
+            defer {
+                refreshingSubscriptionProfileIDs.subtract(sourceIDs)
+                isRefreshingSubscription = !refreshingSubscriptionProfileIDs.isEmpty
+            }
+
+            let client = subscriptionClient
+            let fetchedUpdates: [(UUID, Result<ProfileSubscriptionUpdate, Error>)] = await withTaskGroup(
+                of: (UUID, Result<ProfileSubscriptionUpdate, Error>).self
+            ) { group in
+                for source in remoteSources {
+                    group.addTask {
+                        do {
+                            let update = try await client.fetch(source.subscription)
+                            return (source.id, .success(update))
+                        } catch {
+                            return (source.id, .failure(error))
+                        }
+                    }
+                }
+                var collected: [(UUID, Result<ProfileSubscriptionUpdate, Error>)] = []
+                for await item in group {
+                    collected.append(item)
+                }
+                return collected
+            }
+
+            for (sourceID, result) in fetchedUpdates {
+                do {
+                    let update = try result.get()
+                    await refreshSubscription(
+                        id: sourceID,
+                        isAutomatic: true,
+                        prefetchedUpdate: update,
+                        rebuildDependents: false,
+                        allowLiveReload: false
+                    )
+                } catch {
+                    diagnosticEvents.record(.profileOperationFailed)
+                    recordSubscriptionUpdateError(localizedProfileOperationError(error), for: sourceID)
+                }
+            }
+        }
+
         let keepRuntime = state == .connected
         do {
             try await performProductionProfileCatalogOperation(
@@ -1640,10 +1719,12 @@ extension TunnelManager {
         _ = await RuleProviderEngine.shared.updateAllExpired()
         _ = await ProxyProviderEngine.shared.refreshAll(force: true)
 
+        await reloadCustomRuleProvidersFromEngine()
+        refreshActiveProfileSummary()
         if state == .connected, !isUIReviewMode {
             await reloadCustomRulesLive()
         }
-        let rules = await RuleProviderEngine.shared.allProviders()
+        let rules = customRuleProviders
         let proxies = await ProxyProviderEngine.shared.allProviders()
         profileMessage = AppLocalization.inline(
             "External rule and proxy providers staged.",

@@ -190,6 +190,7 @@ struct AllowLANTestMain {
         print("  -> Testing concurrency limits & idempotent cancellation...")
 
         assert(LANProxyServerController.maxConcurrentSessions == 256, "Max concurrent sessions must be 256")
+        assert(LANProxySession.defaultIdleTimeout == 120, "Default bidirectional idle timeout must be 120 seconds")
 
         // Test LANProxySession idempotent cancel and thread safety
         final class AtomicCounter: @unchecked Sendable {

@@ -443,11 +443,17 @@ final class LANProxySession: Hashable, @unchecked Sendable {
     private var closesAfterResponse = false
     private var completedRelayDirections = 0
     private var halfCloseIdleItem: DispatchWorkItem?
+    private var relayIdleItem: DispatchWorkItem?
     private var terminalGraceItem: DispatchWorkItem?
+    private var lastRelayActivityNanoseconds: UInt64 = 0
     private static let maximumHTTPHeaderBytes = 65_536
+    /// Production default idle timeout for an active bidirectional relay without traffic.
+    nonisolated static let defaultIdleTimeout: TimeInterval = 120
     /// Idle bound for a half-closed relay whose peer never closes its side.
     /// Refreshed by traffic, so a long response after upload EOF continues.
     private let halfCloseTimeout: TimeInterval
+    /// Maximum inactivity before an open bidirectional relay closes automatically.
+    private let idleTimeout: TimeInterval
     /// Lets already received data finish forwarding after a terminal state.
     private let terminalStateGrace: TimeInterval
 
@@ -463,6 +469,7 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         queue: DispatchQueue,
         halfCloseTimeout: TimeInterval = 60,
         terminalStateGrace: TimeInterval = 5,
+        idleTimeout: TimeInterval = LANProxySession.defaultIdleTimeout,
         onTerminated: @escaping @Sendable (LANProxySession) -> Void
     ) {
         self.clientConnection = clientConnection
@@ -470,6 +477,7 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         self.queue = queue
         self.halfCloseTimeout = halfCloseTimeout
         self.terminalStateGrace = terminalStateGrace
+        self.idleTimeout = idleTimeout
         self.onTerminated = onTerminated
     }
 
@@ -511,12 +519,15 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         handshakeTimeoutItem = nil
         let idleItem = halfCloseIdleItem
         halfCloseIdleItem = nil
+        let relayItem = relayIdleItem
+        relayIdleItem = nil
         let graceItem = terminalGraceItem
         terminalGraceItem = nil
         os_unfair_lock_unlock(&lock)
 
         timeoutItem?.cancel()
         idleItem?.cancel()
+        relayItem?.cancel()
         graceItem?.cancel()
         client.cancel()
         remote?.cancel()
@@ -796,6 +807,52 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + halfCloseTimeout, execute: item)
     }
 
+    private func recordRelayActivity() {
+        let now = DispatchTime.now().uptimeNanoseconds
+        os_unfair_lock_lock(&lock)
+        lastRelayActivityNanoseconds = now
+        os_unfair_lock_unlock(&lock)
+    }
+
+    /// Closes an open bidirectional relay after `idleTimeout` without traffic.
+    /// Records chunk timestamps under lock and schedules at most one timer per window.
+    private func armOrEvaluateRelayIdleTimer(resetActivity: Bool = false) {
+        guard idleTimeout > 0, idleTimeout.isFinite else { return }
+        let boundedSeconds = min(idleTimeout, 86_400 * 365)
+        let timeoutNanoseconds = UInt64((boundedSeconds * 1_000_000_000).rounded(.up))
+        let now = DispatchTime.now().uptimeNanoseconds
+
+        os_unfair_lock_lock(&lock)
+        guard !isCancelledInternal else {
+            relayIdleItem = nil
+            os_unfair_lock_unlock(&lock)
+            return
+        }
+        if resetActivity || lastRelayActivityNanoseconds == 0 {
+            lastRelayActivityNanoseconds = now
+        }
+        let elapsed = now >= lastRelayActivityNanoseconds
+            ? now - lastRelayActivityNanoseconds
+            : 0
+        if elapsed >= timeoutNanoseconds {
+            relayIdleItem = nil
+            os_unfair_lock_unlock(&lock)
+            cancel()
+            return
+        }
+        let remainingNanoseconds = timeoutNanoseconds - elapsed
+        let item = DispatchWorkItem { [weak self] in
+            self?.armOrEvaluateRelayIdleTimer()
+        }
+        let previous = relayIdleItem
+        relayIdleItem = item
+        os_unfair_lock_unlock(&lock)
+
+        previous?.cancel()
+        let clampedNanos = Int(min(remainingNanoseconds, UInt64(Int.max)))
+        queue.asyncAfter(deadline: .now() + .nanoseconds(clampedNanos), execute: item)
+    }
+
     private func fireConnectCompletion(_ completion: @escaping @Sendable (Bool) -> Void, result: Bool) {
         os_unfair_lock_lock(&lock)
         if connectCompletionFired || isCancelledInternal {
@@ -825,6 +882,8 @@ final class LANProxySession: Hashable, @unchecked Sendable {
             return
         }
 
+        armOrEvaluateRelayIdleTimer(resetActivity: true)
+
         let initialData = prefix + consumeHandshakeBytes(handshakeBuffer.count)
         let clientFinished = clientReadComplete
         relayStream(from: remote, to: clientConnection)
@@ -835,6 +894,7 @@ final class LANProxySession: Hashable, @unchecked Sendable {
             remote.send(content: initialData, completion: .contentProcessed { [weak self] error in
                 guard let self, !self.isCancelled else { return }
                 guard error == nil else { self.cancel(); return }
+                self.recordRelayActivity()
                 if clientFinished { self.finishRelayDirection(to: remote) }
                 else { self.relayStream(from: self.clientConnection, to: remote) }
             })
@@ -852,9 +912,11 @@ final class LANProxySession: Hashable, @unchecked Sendable {
             }
 
             if let data = content, !data.isEmpty, let dest = destConn {
+                self.recordRelayActivity()
                 dest.send(content: data, completion: .contentProcessed { [weak self, weak sourceConn, weak destConn] sendError in
                     guard let self, !self.isCancelled else { return }
                     if sendError != nil { self.cancel(); return }
+                    self.recordRelayActivity()
                     self.refreshHalfCloseIdleTimer()
                     if isComplete, let destConn { self.finishRelayDirection(to: destConn) }
                     else { self.relayStream(from: sourceConn, to: destConn) }

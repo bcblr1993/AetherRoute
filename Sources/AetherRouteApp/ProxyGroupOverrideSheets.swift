@@ -150,7 +150,14 @@ struct CustomProxyGroupSheet: View {
         return (result.customGroupMembers[trimmed] ?? [], conflict)
     }
 
-    private var nodes: [String] { tunnel.activeProfileNodeNames }
+    private var nodes: [String] {
+        ProfileOverrideCompiler.availableProxyNames(
+            in: tunnel.activeProfile?.yaml ?? "",
+            proxyOverride: tunnel.activeProfileOverrides,
+            globalOverride: tunnel.loadGlobalProfileOverride(),
+            additionalProviderNodes: (tunnel.activeProfileSummary?.proxies ?? []).map(\.name)
+        )
+    }
 
     private var regionOptions: [ProfileOverrideSuggestions.Region] {
         ProfileOverrideSuggestions.regions(in: nodes)
@@ -931,9 +938,13 @@ struct ChainedProxySheet: View {
 
     private var profileNodes: [String] {
         let editingName = initial?.name
-        return (tunnel.activeProfileSummary?.proxies ?? [])
-            .map(\.name)
-            .filter { $0 != editingName }
+        return ProfileOverrideCompiler.availableProxyNames(
+            in: tunnel.activeProfile?.yaml ?? "",
+            proxyOverride: tunnel.activeProfileOverrides,
+            globalOverride: tunnel.loadGlobalProfileOverride(),
+            additionalProviderNodes: (tunnel.activeProfileSummary?.proxies ?? []).map(\.name)
+        )
+        .filter { $0 != editingName }
     }
 
     private var parentOptions: [String] {

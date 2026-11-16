@@ -485,6 +485,7 @@ final class TunnelManager: ObservableObject {
     let engineReconnect = NetworkEngineReconnectCoordinator()
     @Published var networkEngineMessage: String?
     @Published var networkEngineMessageIsError = false
+    @Published var networkEngineBlockedNeedsSetup = false
     @Published var isTransferringProfiles = false
     @Published var routingResourceStatuses:
         [RoutingResourceKind: RoutingResourceStatus] = [:]
@@ -2897,6 +2898,13 @@ final class TunnelManager: ObservableObject {
                 proxySelections["GLOBAL"] = normalized
             }
         }
+    }
+
+    func setProxySelectionMode(
+        _ mode: ProxySelectionMode,
+        for groupName: String
+    ) async {
+        await setProxySelectionMode(group: groupName, mode: mode)
     }
 
     func selectGlobalOutlet(_ member: String) async {

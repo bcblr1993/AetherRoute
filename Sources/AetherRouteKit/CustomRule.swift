@@ -592,6 +592,110 @@ public struct ApplicationRuleMatch: Equatable, Sendable {
         self.bundleIdentifier = identifier.isEmpty ? nil : identifier
         self.bundlePath = path.isEmpty ? nil : path
     }
+
+    /// Candidate process executable basenames derived from an optional
+    /// `CFBundleExecutable` name and the `.app` bundle stem in `bundlePath`.
+    public func expectedProcessNames(bundleExecutableName: String? = nil) -> [String] {
+        var names: [String] = []
+        var seen = Set<String>()
+        func append(_ raw: String?) {
+            guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty else { return }
+            let basename = URL(fileURLWithPath: trimmed).lastPathComponent
+            guard !basename.isEmpty, seen.insert(basename).inserted else { return }
+            names.append(basename)
+        }
+        append(bundleExecutableName)
+        if let bundlePath {
+            let last = URL(fileURLWithPath: bundlePath).lastPathComponent
+            if last.lowercased().hasSuffix(".app"), last.count > 4 {
+                append(String(last.dropLast(4)))
+            } else {
+                append(last)
+            }
+        }
+        return names
+    }
+
+    /// Evaluates whether a connection's process metadata matches this application rule,
+    /// supporting signing identifier prefix matching, firmlink / AppTranslocation `.app`
+    /// bundle paths, and NE-sandbox process basename fallback when `proc_pidpath` is unavailable.
+    public func matches(
+        signingIdentifier: String? = nil,
+        executablePath: String? = nil,
+        processName: String? = nil,
+        bundleExecutableName: String? = nil
+    ) -> Bool {
+        if let bundleIdentifier {
+            let sig = signingIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !sig.isEmpty, sig == bundleIdentifier || sig.hasPrefix(bundleIdentifier + ".") {
+                return true
+            }
+        }
+
+        let exec = executablePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let bundlePath, !exec.isEmpty {
+            let normalizedBundle = bundlePath.hasSuffix("/") && bundlePath.count > 1
+                ? String(bundlePath.dropLast())
+                : bundlePath
+            if exec == normalizedBundle || exec.hasPrefix(normalizedBundle + "/") {
+                return true
+            }
+            let bundleComponent = URL(fileURLWithPath: normalizedBundle).lastPathComponent
+            if bundleComponent.lowercased().hasSuffix(".app"),
+               exec.contains("/\(bundleComponent)/") || exec.hasSuffix("/\(bundleComponent)") {
+                return true
+            }
+        }
+
+        let sig = signingIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let sigConflict = bundleIdentifier != nil && !sig.isEmpty
+        if exec.isEmpty && !sigConflict {
+            let rawProc = processName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let procBasename = URL(fileURLWithPath: rawProc).lastPathComponent
+            if !procBasename.isEmpty {
+                return expectedProcessNames(bundleExecutableName: bundleExecutableName)
+                    .contains(procBasename)
+            }
+        }
+
+        return false
+    }
+}
+
+public extension CustomRule {
+    /// Evaluates whether runtime process metadata matches this custom rule
+    /// (`.application`, `.processName`, or `.processPath`).
+    func matchesApplication(
+        signingIdentifier: String? = nil,
+        executablePath: String? = nil,
+        processName: String? = nil,
+        bundleExecutableName: String? = nil
+    ) -> Bool {
+        guard isEnabled else { return false }
+        switch kind {
+        case .application:
+            return applicationMatch?.matches(
+                signingIdentifier: signingIdentifier,
+                executablePath: executablePath,
+                processName: processName,
+                bundleExecutableName: bundleExecutableName
+            ) ?? false
+        case .processName:
+            let target = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !target.isEmpty else { return false }
+            let candidate = (processName ?? executablePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return !candidate.isEmpty && URL(fileURLWithPath: candidate).lastPathComponent == target
+        case .processPath:
+            let target = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let exec = executablePath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !target.isEmpty, !exec.isEmpty else { return false }
+            return exec == target
+        default:
+            return false
+        }
+    }
 }
 
 /// The outcome of parsing a pasted block of Clash rules: every rule that

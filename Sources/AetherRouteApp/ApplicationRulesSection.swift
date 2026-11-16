@@ -146,10 +146,14 @@ struct ApplicationRulesSection: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let bundle = Bundle(url: url)
         let name = FileManager.default.displayName(atPath: url.path)
+        let displayName = name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+        let executableBasename = bundle?.executableURL?.lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         add(
             identifier: bundle?.bundleIdentifier,
             path: url.path,
-            name: name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+            name: displayName,
+            executableBasename: executableBasename
         )
     }
 
@@ -168,6 +172,7 @@ struct ApplicationRulesSection: View {
         panel.prompt = AppLocalization.string("Add")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         let path = url.path
+        let basename = url.lastPathComponent
         let validation = CustomRuleValidator.validate(
             kind: .processPath,
             value: path,
@@ -180,15 +185,29 @@ struct ApplicationRulesSection: View {
                     kind: .processPath,
                     value: path,
                     target: .direct,
-                    comment: url.lastPathComponent
+                    comment: basename
                 )
             )
+            // Fallback PROCESS-NAME basename ensures reliable matching when NE sandbox
+            // `proc_pidpath` fails to resolve the full path.
+            let nameRule = CustomRule(
+                kind: .processName,
+                value: basename,
+                target: .direct,
+                comment: "\(basename) (basename fallback)"
+            )
+            let alreadyExists = tunnel.customRules.contains {
+                $0.kind == .processName && $0.value == basename
+            }
+            if !alreadyExists, CustomRuleValidator.validate(nameRule).isValid {
+                _ = await tunnel.addCustomRule(nameRule)
+            }
         }
     }
 
     /// New rules start as "direct", the commonest reason to add one; the
     /// row's menu changes it.
-    private func add(identifier: String?, path: String?, name: String) {
+    private func add(identifier: String?, path: String?, name: String, executableBasename: String? = nil) {
         Task {
             await tunnel.setApplicationRule(
                 bundleIdentifier: identifier,
@@ -196,6 +215,27 @@ struct ApplicationRulesSection: View {
                 displayName: name,
                 target: .direct
             )
+            // Unsigned `.app` bundles cannot rely on `signing_identifier` inside NE;
+            // retain a companion `PROCESS-NAME` basename fallback when `proc_pidpath` is blocked.
+            if (identifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let candidateBasename = [executableBasename, name]
+                    .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .first { !$0.isEmpty }
+                if let basename = candidateBasename {
+                    let fallback = CustomRule(
+                        kind: .processName,
+                        value: basename,
+                        target: .direct,
+                        comment: "\(name) (basename fallback)"
+                    )
+                    let exists = tunnel.customRules.contains {
+                        $0.kind == .processName && $0.value == basename
+                    }
+                    if !exists, CustomRuleValidator.validate(fallback).isValid {
+                        _ = await tunnel.addCustomRule(fallback)
+                    }
+                }
+            }
         }
     }
 }

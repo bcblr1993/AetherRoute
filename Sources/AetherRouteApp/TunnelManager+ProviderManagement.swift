@@ -4,7 +4,70 @@ import Network
 import NetworkExtension
 import OSLog
 
+// BEGIN NetworkEngineSwitchPreflight
+enum NetworkEngineSwitchPreflight {
+    enum Blocker: Equatable, Sendable {
+        case notInstalled
+        case awaitingApproval
+        case rebootRequired
+        case uninstalling
+    }
+
+    enum Decision: Equatable, Sendable {
+        case proceed
+        case blocked(Blocker)
+    }
+
+    static func decision(for probe: NetworkExtensionProbe) -> Decision {
+        switch probe {
+        case .enabled, .unknown:
+            return .proceed
+        case .notInstalled:
+            return .blocked(.notInstalled)
+        case .awaitingApproval:
+            return .blocked(.awaitingApproval)
+        case .rebootRequired:
+            return .blocked(.rebootRequired)
+        case .uninstalling:
+            return .blocked(.uninstalling)
+        }
+    }
+
+    static func requiresNetworkSetupSheet(for blocker: Blocker) -> Bool {
+        switch blocker {
+        case .notInstalled, .awaitingApproval:
+            return true
+        case .rebootRequired, .uninstalling:
+            return false
+        }
+    }
+}
+// END NetworkEngineSwitchPreflight
+
 extension TunnelManager {
+    private static func engineSwitchBlockerMessage(
+        for blocker: NetworkEngineSwitchPreflight.Blocker,
+        targetMode: NetworkEngineMode
+    ) -> String {
+        switch blocker {
+        case .awaitingApproval:
+            AppLocalization.inline(
+                "Current connection kept. Allow \(targetMode.localizedTitle) extension in System Settings before switching.",
+                chinese: "已保持当前连接。请先在系统设置中允许 \(targetMode.localizedTitle) 系统扩展后再切换。"
+            )
+        case .notInstalled:
+            AppLocalization.inline(
+                "Current connection kept. Install and allow \(targetMode.localizedTitle) extension in Network Setup before switching.",
+                chinese: "已保持当前连接。请先在网络引导中安装并授权 \(targetMode.localizedTitle) 系统扩展后再切换。"
+            )
+        case .rebootRequired, .uninstalling:
+            AppLocalization.inline(
+                "Current connection kept. Restart your Mac to finish \(targetMode.localizedTitle) extension update before switching.",
+                chinese: "已保持当前连接。请先重启 Mac 以完成 \(targetMode.localizedTitle) 扩展更新后再切换。"
+            )
+        }
+    }
+
     func setNetworkEngineMode(_ mode: NetworkEngineMode) async {
         guard !isSwitchingNetworkEngine, mode != networkEngineMode, canChangeNetworkEngine else { return }
         if isUIReviewMode {
@@ -12,6 +75,7 @@ extension TunnelManager {
             userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
             networkEngineMessage = AppLocalization.string("Network engine updated.")
             networkEngineMessageIsError = false
+            networkEngineBlockedNeedsSetup = false
             return
         }
         let previousMode = networkEngineMode
@@ -21,6 +85,7 @@ extension TunnelManager {
         networkEngineMessage = shouldReconnect
             ? AppLocalization.string("Switching network engine…") : nil
         networkEngineMessageIsError = false
+        networkEngineBlockedNeedsSetup = false
         defer {
             isSwitchingNetworkEngine = false
             if case .failed = state {} else {
@@ -31,6 +96,15 @@ extension TunnelManager {
         guard shouldReconnect else {
             await applyNetworkEngineMode(mode)
             networkEngineMessage = AppLocalization.string("Network engine updated.")
+            return
+        }
+        let targetProbe = await SystemExtensionStatusProbe.probe(
+            identifier: mode.providerBundleIdentifier
+        )
+        if case .blocked(let blocker) = NetworkEngineSwitchPreflight.decision(for: targetProbe) {
+            networkEngineMessage = Self.engineSwitchBlockerMessage(for: blocker, targetMode: mode)
+            networkEngineMessageIsError = true
+            networkEngineBlockedNeedsSetup = NetworkEngineSwitchPreflight.requiresNetworkSetupSheet(for: blocker)
             return
         }
         state = .connecting
