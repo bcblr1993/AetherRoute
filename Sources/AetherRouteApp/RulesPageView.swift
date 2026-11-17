@@ -2288,6 +2288,11 @@ private struct RuleProviderEditorSheet: View {
         }
         isSaving = true
         errorMessage = nil
+        let clampedHours = max(1, intervalHours)
+        let (rawIntervalSeconds, overflow) = clampedHours.multipliedReportingOverflow(by: 3_600)
+        let safeIntervalSeconds: UInt32 = overflow
+            ? UInt32.max
+            : RuleProviderEngine.sanitizedIntervalSeconds(rawIntervalSeconds)
         let provider = RuleProviderMetadata(
             id: initialProvider?.id ?? UUID(),
             name: trimmedName,
@@ -2296,7 +2301,7 @@ private struct RuleProviderEditorSheet: View {
             format: format,
             defaultTarget: defaultTarget,
             isEnabled: initialProvider?.isEnabled ?? true,
-            intervalSeconds: UInt32(max(1, intervalHours) * 3_600),
+            intervalSeconds: safeIntervalSeconds,
             lastUpdatedAt: initialProvider?.lastUpdatedAt,
             ruleCount: initialProvider?.ruleCount ?? 0,
             etag: initialProvider?.etag,

@@ -262,7 +262,9 @@ private func waitForPortListening(_ port: Int) async throws {
 private func makeTestTunnel(
     reviewState: String? = "disconnected",
     extraEnvironment: [String: String] = [:],
-    executor: SystemProxyCommandExecuting? = nil
+    executor: SystemProxyCommandExecuting? = nil,
+    ruleProviderEngine: RuleProviderEngine = .shared,
+    proxyProviderEngine: ProxyProviderEngine = .shared
 ) -> (tunnel: TunnelManager, defaults: UserDefaults, suiteName: String) {
     let suiteName = "com.aetherroute.macfunc.tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -282,7 +284,9 @@ private func makeTestTunnel(
         routingModePreferenceStore: RoutingModePreferenceStore(defaults: defaults),
         connectionIntentStore: ConnectionIntentStore(defaults: defaults),
         systemProxyConfigurator: configurator,
-        userDefaults: defaults
+        userDefaults: defaults,
+        ruleProviderEngine: ruleProviderEngine,
+        proxyProviderEngine: proxyProviderEngine
     )
     return (tunnel, defaults, suiteName)
 }
@@ -315,6 +319,8 @@ enum MacFuncLifecycleAndV3FixTests {
             ("testCreateAndRebuildMergedProfileEnforceUpdatingGuard", testCreateAndRebuildMergedProfileEnforceUpdatingGuard),
             ("testLANProxyLoopbackAndSelfPortSecurityRules", testLANProxyLoopbackAndSelfPortSecurityRules),
             ("testLANProxyRejectsSelfListeningPortLoopLiveAndAllowsLocalTarget", testLANProxyRejectsSelfListeningPortLoopLiveAndAllowsLocalTarget),
+            ("testRefreshAllExternalProvidersKeepsGlobalCustomRulesIsolated", testRefreshAllExternalProvidersKeepsGlobalCustomRulesIsolated),
+            ("testUpgradeWithLegacyPollutedProvidersJSONInCatalogCleansGlobalRulesAndPreservesUserProviders", testUpgradeWithLegacyPollutedProvidersJSONInCatalogCleansGlobalRulesAndPreservesUserProviders),
         ]
 
         var passed = 0
@@ -964,6 +970,217 @@ enum MacFuncLifecycleAndV3FixTests {
         try expect(
             (okResponse ?? "").contains("200 Connection Established"),
             "LANProxyServer failed to connect loopback client to local test port \(localEcho.port); got \(String(describing: okResponse))"
+        )
+    }
+
+    @MainActor
+    private static func testRefreshAllExternalProvidersKeepsGlobalCustomRulesIsolated() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MacFuncExternalProviders-\(UUID().uuidString)", isDirectory: true)
+        let ruleStorage = tempDir.appendingPathComponent("RuleProviders", isDirectory: true)
+        let proxyStorage = tempDir.appendingPathComponent("ProxyProviders", isDirectory: true)
+        try FileManager.default.createDirectory(at: ruleStorage, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: proxyStorage, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let ruleEngine = RuleProviderEngine(
+            directoryURL: ruleStorage,
+            stagingBaseURL: tempDir,
+            httpFetcher: { requestURL in
+                let response = HTTPURLResponse(url: requestURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (Data("+.internal.example.com\n".utf8), response)
+            }
+        )
+        let proxyEngine = ProxyProviderEngine(
+            directoryURL: proxyStorage,
+            stagingBaseURL: tempDir,
+            httpFetcher: { requestURL in
+                let response = HTTPURLResponse(url: requestURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                let yaml = "proxies:\n  - {name: PoolNode, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: p}\n"
+                return (Data(yaml.utf8), response)
+            }
+        )
+
+        let (tunnel, _, suiteName) = makeTestTunnel(
+            reviewState: "disconnected",
+            ruleProviderEngine: ruleEngine,
+            proxyProviderEngine: proxyEngine
+        )
+        defer { cleanupDefaults(suiteName) }
+
+        let profileWithRuleProvider = ActiveProfile(
+            name: "CorpProfile",
+            yaml: """
+            mixed-port: 7890
+            proxies:
+              - {name: HK-1, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: pass}
+            proxy-providers:
+              corp-pool:
+                type: http
+                url: https://sub.example.com/corp-pool.yaml
+                interval: 3600
+            proxy-groups:
+              - {name: PROXY, type: select, proxies: [HK-1, DIRECT], use: [corp-pool]}
+            rule-providers:
+              internal:
+                type: http
+                behavior: domain
+                format: text
+                url: https://rules.example.com/internal.txt
+                interval: 86400
+            rules:
+              - RULE-SET,internal,DIRECT
+              - MATCH,PROXY
+            """
+        )
+        tunnel.activeProfile = profileWithRuleProvider
+
+        let refreshed = await tunnel.refreshAllExternalProviders()
+        try expect(refreshed.rules.count == 1 && refreshed.rules.first?.name == "internal", "Expected staged rule provider 'internal' in refreshAllExternalProviders return value")
+        try expect(refreshed.proxies.count == 1 && refreshed.proxies.first?.name == "corp-pool", "Expected staged proxy provider 'corp-pool'")
+        try expect(
+            tunnel.customRuleProviders.isEmpty,
+            "Subscription rule-providers polluted tunnel.customRuleProviders: \(tunnel.customRuleProviders)"
+        )
+        try expect(
+            tunnel.compiledRemoteRulesCache.isEmpty,
+            "Subscription rule-providers polluted tunnel.compiledRemoteRulesCache: \(tunnel.compiledRemoteRulesCache)"
+        )
+
+        // Switching to a second profile without providers must scope loadAllExternalProviders() to active profile
+        tunnel.activeProfile = ActiveProfile(
+            name: "CleanProfile",
+            yaml: """
+            proxies:
+              - {name: HK-1, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: pass}
+            proxy-groups:
+              - {name: PROXY, type: select, proxies: [HK-1, DIRECT]}
+            rules:
+              - MATCH,DIRECT
+            """
+        )
+        let loadedClean = await tunnel.loadAllExternalProviders()
+        try expect(
+            loadedClean.rules.isEmpty && loadedClean.proxies.isEmpty,
+            "loadAllExternalProviders leaked providers from previous profile: \(loadedClean)"
+        )
+    }
+
+    @MainActor
+    private static func testUpgradeWithLegacyPollutedProvidersJSONInCatalogCleansGlobalRulesAndPreservesUserProviders() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MacFuncLegacyUpgrade-\(UUID().uuidString)", isDirectory: true)
+        let ruleStorage = tempDir.appendingPathComponent("RuleProviders", isDirectory: true)
+        let proxyStorage = tempDir.appendingPathComponent("ProxyProviders", isDirectory: true)
+        try FileManager.default.createDirectory(at: ruleStorage, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: proxyStorage, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let pollutedID = UUID()
+        let userCustomID = UUID()
+        let legacyProviders = [
+            RuleProviderMetadata(
+                id: pollutedID,
+                name: "internal",
+                url: URL(string: "https://rules.example.com/internal.txt")!,
+                behavior: .domain,
+                format: .text,
+                defaultTarget: "PROXY",
+                isEnabled: true,
+                intervalSeconds: 86_400,
+                lastUpdatedAt: Date(),
+                ruleCount: 1
+            ),
+            RuleProviderMetadata(
+                id: userCustomID,
+                name: "User-Custom-Rules",
+                url: URL(string: "https://rules.example.com/user.txt")!,
+                behavior: .domain,
+                format: .text,
+                defaultTarget: "REJECT",
+                isEnabled: true,
+                intervalSeconds: 86_400,
+                lastUpdatedAt: Date(),
+                ruleCount: 1
+            ),
+        ]
+        try JSONEncoder().encode(legacyProviders)
+            .write(to: ruleStorage.appendingPathComponent("providers.json"), options: [.atomic])
+        try Data("+.internal.example.com\n".utf8)
+            .write(to: ruleStorage.appendingPathComponent("\(pollutedID.uuidString).dat"), options: [.atomic])
+        try Data("+.custom.example.com\n".utf8)
+            .write(to: ruleStorage.appendingPathComponent("\(userCustomID.uuidString).dat"), options: [.atomic])
+
+        let ruleEngine = RuleProviderEngine(directoryURL: ruleStorage, stagingBaseURL: tempDir)
+        let proxyEngine = ProxyProviderEngine(directoryURL: proxyStorage, stagingBaseURL: tempDir)
+        let (tunnel, _, suiteName) = makeTestTunnel(
+            reviewState: "disconnected",
+            ruleProviderEngine: ruleEngine,
+            proxyProviderEngine: proxyEngine
+        )
+        defer { cleanupDefaults(suiteName) }
+
+        let profile1 = ActiveProfile(
+            name: "CorpProfile",
+            yaml: """
+            mixed-port: 7890
+            proxies:
+              - {name: HK-1, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: pass}
+            proxy-groups:
+              - {name: PROXY, type: select, proxies: [HK-1, DIRECT]}
+            rule-providers:
+              internal:
+                type: http
+                behavior: domain
+                format: text
+                url: https://rules.example.com/internal.txt
+                interval: 86400
+            rules:
+              - RULE-SET,internal,DIRECT
+              - MATCH,PROXY
+            """
+        )
+        let profile2 = ActiveProfile(
+            name: "CleanProfile",
+            yaml: """
+            mixed-port: 7890
+            proxies:
+              - {name: HK-1, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: pass}
+            proxy-groups:
+              - {name: PROXY, type: select, proxies: [HK-1, DIRECT]}
+            rules:
+              - MATCH,DIRECT
+            """
+        )
+        tunnel.profiles = [ManagedProfile(profile: profile1), ManagedProfile(profile: profile2)]
+        tunnel.activeProfile = profile2
+
+        await tunnel.reloadCustomRuleProvidersFromEngine()
+
+        try expect(
+            tunnel.customRuleProviders.map(\.id) == [userCustomID],
+            "Expected legacy polluted provider pruned while preserving User-Custom-Rules, got: \(tunnel.customRuleProviders)"
+        )
+        try expect(
+            !tunnel.compiledRemoteRulesCache.contains("DOMAIN-SUFFIX,internal.example.com,PROXY"),
+            "Legacy polluted rule leaked into compiledRemoteRulesCache: \(tunnel.compiledRemoteRulesCache)"
+        )
+        try expect(
+            tunnel.compiledRemoteRulesCache.contains("DOMAIN-SUFFIX,custom.example.com,REJECT"),
+            "Genuine User-Custom-Rules was dropped from compiledRemoteRulesCache: \(tunnel.compiledRemoteRulesCache)"
+        )
+
+        tunnel.activeProfile = profile1
+        let optimizedProfile1 = DomesticRoutingOptimizer.optimizedProfile(
+            for: profile1.yaml,
+            remoteRules: tunnel.compiledRemoteRulesCache,
+            enableDomesticDirect: false,
+            providerBaseDirectoryURL: tempDir
+        )
+        try expect(
+            !optimizedProfile1.contains("DOMAIN-SUFFIX,internal.example.com,PROXY")
+                && optimizedProfile1.contains("RULE-SET,internal,DIRECT"),
+            "Upgraded profile1 still shadows RULE-SET,internal,DIRECT:\n\(optimizedProfile1)"
         )
     }
 }

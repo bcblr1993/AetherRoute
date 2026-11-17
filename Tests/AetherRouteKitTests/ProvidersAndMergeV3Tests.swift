@@ -56,12 +56,13 @@ final class ProvidersAndMergeV3Tests: XCTestCase {
         let rules = try await engine.loadRules(for: provider.id)
         XCTAssertTrue(rules.isEmpty)
 
-        let stagedURL = tempDir.appendingPathComponent("providers/rules/geosite-cn.mrs")
+        let geositeFileName = RuleProviderEngine.sanitizedProviderFileName(name: "geosite-cn", format: .mrs)
+        let stagedURL = tempDir.appendingPathComponent("providers/rules/\(geositeFileName)")
         XCTAssertTrue(FileManager.default.fileExists(atPath: stagedURL.path))
         XCTAssertEqual(try Data(contentsOf: stagedURL), binaryPayload)
 
-        let tunStagedURL = tempDir.appendingPathComponent("Runtime/providers/rules/geosite-cn.mrs")
-        let flowStagedURL = tempDir.appendingPathComponent("Runtime/FlowCore/providers/rules/geosite-cn.mrs")
+        let tunStagedURL = tempDir.appendingPathComponent("Runtime/providers/rules/\(geositeFileName)")
+        let flowStagedURL = tempDir.appendingPathComponent("Runtime/FlowCore/providers/rules/\(geositeFileName)")
         XCTAssertEqual(try Data(contentsOf: tunStagedURL), binaryPayload)
         XCTAssertEqual(try Data(contentsOf: flowStagedURL), binaryPayload)
     }
@@ -139,9 +140,12 @@ final class ProvidersAndMergeV3Tests: XCTestCase {
 
         _ = await engine.stageProviders(inProfileYAML: profileYAML)
 
-        let stagedYAML = tempDir.appendingPathComponent("providers/rules/classical-large.yaml")
-        let stagedTXT = tempDir.appendingPathComponent("providers/rules/ip-large.txt")
-        let stagedMRS = tempDir.appendingPathComponent("providers/rules/ads-mrs.mrs")
+        let classicalFileName = RuleProviderEngine.sanitizedProviderFileName(name: "classical-large", format: .yaml)
+        let ipFileName = RuleProviderEngine.sanitizedProviderFileName(name: "ip-large", format: .text)
+        let adsFileName = RuleProviderEngine.sanitizedProviderFileName(name: "ads-mrs", format: .mrs)
+        let stagedYAML = tempDir.appendingPathComponent("providers/rules/\(classicalFileName)")
+        let stagedTXT = tempDir.appendingPathComponent("providers/rules/\(ipFileName)")
+        let stagedMRS = tempDir.appendingPathComponent("providers/rules/\(adsFileName)")
         XCTAssertEqual(try Data(contentsOf: stagedYAML), largeYAMLData)
         XCTAssertEqual(try Data(contentsOf: stagedTXT), largeTXTData)
         XCTAssertEqual(try Data(contentsOf: stagedMRS), mrsData)
@@ -156,9 +160,9 @@ final class ProvidersAndMergeV3Tests: XCTestCase {
         XCTAssertFalse(optimized.contains("type: http"))
         XCTAssertFalse(optimized.contains("https://rules.example.com/"))
         XCTAssertTrue(optimized.contains("type: file"))
-        XCTAssertTrue(optimized.contains("./providers/rules/classical-large.yaml"))
-        XCTAssertTrue(optimized.contains("./providers/rules/ip-large.txt"))
-        XCTAssertTrue(optimized.contains("./providers/rules/ads-mrs.mrs"))
+        XCTAssertTrue(optimized.contains("./providers/rules/\(classicalFileName)"))
+        XCTAssertTrue(optimized.contains("./providers/rules/\(ipFileName)"))
+        XCTAssertTrue(optimized.contains("./providers/rules/\(adsFileName)"))
         XCTAssertTrue(optimized.contains("format: mrs"))
         XCTAssertTrue(optimized.contains("RULE-SET,ads-mrs,REJECT"))
         XCTAssertTrue(optimized.contains("RULE-SET,classical-large,Proxy"))
@@ -248,12 +252,13 @@ final class ProvidersAndMergeV3Tests: XCTestCase {
         XCTAssertEqual(meta.proxyCount, 2)
         XCTAssertEqual(meta.usage?.totalBytes, 10_737_418_240)
         XCTAssertEqual(meta.usage?.usedBytes, 3_221_225_472)
-        XCTAssertEqual(meta.stagedRelativePath, "./providers/proxies/airport-a.yaml")
+        let airportFileName = ProxyProviderEngine.sanitizedProviderFileName(name: "airport-a")
+        XCTAssertEqual(meta.stagedRelativePath, "./providers/proxies/\(airportFileName)")
         XCTAssertNil(meta.lastError)
 
-        let rootFile = tempDir.appendingPathComponent("providers/proxies/airport-a.yaml")
-        let tunFile = tempDir.appendingPathComponent("Runtime/providers/proxies/airport-a.yaml")
-        let flowFile = tempDir.appendingPathComponent("Runtime/FlowCore/providers/proxies/airport-a.yaml")
+        let rootFile = tempDir.appendingPathComponent("providers/proxies/\(airportFileName)")
+        let tunFile = tempDir.appendingPathComponent("Runtime/providers/proxies/\(airportFileName)")
+        let flowFile = tempDir.appendingPathComponent("Runtime/FlowCore/providers/proxies/\(airportFileName)")
         XCTAssertEqual(try String(contentsOf: rootFile, encoding: .utf8), providerYAML)
         XCTAssertEqual(try String(contentsOf: tunFile, encoding: .utf8), providerYAML)
         XCTAssertEqual(try String(contentsOf: flowFile, encoding: .utf8), providerYAML)
@@ -267,7 +272,7 @@ final class ProvidersAndMergeV3Tests: XCTestCase {
         XCTAssertFalse(optimized.contains("type: http"))
         XCTAssertFalse(optimized.contains("https://sub.example.com/nodes.yaml"))
         XCTAssertTrue(optimized.contains("type: file"))
-        XCTAssertTrue(optimized.contains("./providers/proxies/airport-a.yaml"))
+        XCTAssertTrue(optimized.contains("./providers/proxies/\(airportFileName)"))
     }
 
     func testProxyProviderEngineRejectsHTMLPayloadWithoutOverwritingCache() async throws {
@@ -290,7 +295,8 @@ final class ProvidersAndMergeV3Tests: XCTestCase {
         } catch {
             // expected
         }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("providers/proxies/broken.yaml").path))
+        let brokenFileName = ProxyProviderEngine.sanitizedProviderFileName(name: "broken")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tempDir.appendingPathComponent("providers/proxies/\(brokenFileName)").path))
     }
 
     // MARK: - P0-2: ProfileOverrideStore.globalOverride & MergedProfileSpec

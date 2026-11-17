@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 3.0.1 (Build 2026111603)</title>
-            <pubDate>Mon, 16 Nov 2026 21:27:12 +0800</pubDate>
-            <sparkle:version>2026111603</sparkle:version>
-            <sparkle:shortVersionString>3.0.1</sparkle:shortVersionString>
+            <title>Version 3.0.2 (Build 2026111702)</title>
+            <pubDate>Tue, 17 Nov 2026 17:35:48 +0800</pubDate>
+            <sparkle:version>2026111702</sparkle:version>
+            <sparkle:shortVersionString>3.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.0.1/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.0.2/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,39 +120,35 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 3.0.1 更新要点</span>
-  <span class="release-badge">Build 2026111603 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.0.2 更新要点</span>
+  <span class="release-badge">Build 2026111702 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🛡️ 连接生命周期、系统代理与并发安全性修复</span>
+  <span class="section-tag tag-fix">🛡️ 规则集隔离升级迁移、系统代理恢复与 Actor 并发安全修复</span>
   <ul>
-    <li><strong>连接状态机与测速隔离加固</strong>：串行化连接重启、网络恢复与模式切换任务，消除并发取消导致的卡死与错误状态残留；引入 <code>ProxyLatencyStore</code> 隔离高频延迟刷新与全局视图重绘，修复取消批处理延迟测速后回落可达性及未恢复 <code>DispatchSource</code> 陷阱的问题；完善融合配置（Merged Profile）重建原子回滚并严守 <code>aetherroute://</code> 外部 URL 安全边界。</li>
-    <li><strong>系统代理、局域网代理与透明代理并发治理</strong>：将 <code>SystemProxyConfigurator</code> 迁出主线程并在服务缺失时支持安全部分回滚；增强 <code>LANProxyServer</code> 回环与自监听端口防护及 <code>NWListener</code> 并发状态校验；透明代理优化 4096 并发流预算控制、UDP 空闲超时清理、TCP 半关闭看门狗及锁序，防止高并发下阻塞与租约泄漏。</li>
+    <li><strong>订阅规则集作用域彻底隔离与旧版数据无损迁移</strong>：订阅内声明的 <code>http</code> <code>rule-providers</code> 与用户全局自定义规则集彻底分库管理，修复订阅规则集被默认目标 <code>PROXY</code> 注入并抢占原有 <code>RULE-SET,...,DIRECT</code> 或在切换配置后泄漏的问题；升级时自动从旧版 <code>providers.json</code> 迁移遗留订阅污染条目并清理重入缓存与 stale iCloud 同步记录，同时完整保护用户手动创建的全局规则集。</li>
+    <li><strong>异常刷新间隔溢出防护</strong>：对订阅与用户编辑器输入的 <code>interval</code> 执行范围校验，拦截负数及超过 <code>UInt32.max</code>（如 <code>4294967296</code>）的异常数值并安全回退至默认值（86400s / 3600s），杜绝进程信号 5 闪退。</li>
+    <li><strong>停用网络服务系统代理完整恢复</strong>：退出或断开时统一恢复包括已停用服务（<code>*Service</code>）在内的系统代理备份状态，并在恢复失败时保留备份等待重试，防止后续重新启用该网络服务后遗留失效的本机端口代理。</li>
+    <li><strong>规则/代理集合下载重入保护与唯一哈希文件名</strong>：<code>RuleProviderEngine</code> 与 <code>ProxyProviderEngine</code> 引入版本代数与身份快照校验，请求返回后若条目已删除或已修改则自动丢弃旧响应；暂存缓存文件名统一引入 SHA-256 唯一短哈希，消除特殊字符转换与 APFS 大小写导致的同名覆盖。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">🔍 路由模拟增强、订阅兼容性与 iCloud 同步精校</span>
+  <span class="section-tag tag-improve">✨ TDD 红转绿闭环验证与全维度隔离验收</span>
   <ul>
-    <li><strong>路由模拟、规则兼容与 DNS 精度提升</strong>：路由模拟器新增离线 <code>MMDBLookupReader</code> GeoIP/ASN 查询及非 FakeIP / <code>customHosts</code> 解析，并严格校验会话一致性；修复国内直连优化器误删用户策略与前导 DNS 配置、补齐 <code>include-all</code> / <code>VMess AEAD</code> / 缩进规范化及系统解析器优先级抢占检测。</li>
-    <li><strong>iCloud KVS 幂等同步与跨版本平滑升级</strong>：合并规则按 <code>modifiedAt</code> 与内容精确去重，消除稳态同步重复写入与无效通知刷屏。</li>
+    <li><strong>核心与回归测试全绿通过</strong>：Fast Lane（<code>14/14</code>）、完整 <code>test.sh</code>（<code>707</code> 项 XCTests + <code>143</code> 项 Swift Testing + <code>109</code> 项透明代理测试 + <code>27</code> 项 FlowCoreBridge 测试 + <code>20/20</code> 生命周期测试）、双指纹 12 协议互通、真实站点 ECH 与 43 节点实机对照（42/42 通联一致，<code>ours_missing=0, ours_fail=0</code>）全部通过。</li>
+    <li><strong>6 维 VM 矩阵与双档 UI/内存预算达标</strong>：无头 <code>macos27</code> 6 维矩阵 <code>160/160</code> 全部通过；300 秒压测下 <code>showcase</code> 切页 p50 <strong>85.7 ms</strong>（p95 115.8 ms）、<code>large</code>（500 节点 / 万条规则 / 2000 连接）切页 p50 <strong>85.2 ms</strong>（p95 121.1 ms），内存稳定维持 71–86 MB（增长 ≤ +2 MB）。</li>
   </ul>
 </div>
-<div class="section">
-  <span class="section-tag tag-improve">✨ 全量隔离验证与 UI 流畅度再升级</span>
-  <ul>
-    <li><strong>双指纹 12 协议互通与 6 维 VM 矩阵全通</strong>：默认与 Chrome 指纹 12 协议互通（各 68 项互通 + 34 项证书拒签）、Chrome 真实站点 ECH 握手、43 节点实机对照（43/43）与 6 维虚拟机矩阵（160/160，含透明代理 5 项专项门禁）全部通过；TUN 与透明代理双引擎 50 秒空闲复用、2 MiB 上传及 3 轮网卡断连切换恢复（0–2 秒）均 100% 达标。</li>
-    <li><strong>UI 卡顿与峰值耗时进一步优化</strong>：300 秒压测下 <code>showcase</code> 切页 p95 降至 <strong>115.7 ms</strong>（max 129.2 ms），<code>large</code>（500 节点 / 万条规则 / 2000 连接）切页 p95 降至 <strong>113.3 ms</strong>（max 142.6 ms），内存平稳维持 71–86 MB（增长 ≤ +2 MB）。</li>
-  </ul>
-</div>
+
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.0.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.0.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.0.1/AetherRoute-3.0.1-build-2026111603-arm64.dmg"
-                sparkle:edSignature="oFp8JmqWIYyg3kqpSxL/KeITOdt6ELgpbq8/ekMlu0kSu6JQeqBIIos2/3Uibun9kP57jLTcrJi9sSSL1EpFAA=="
-                length="31034354"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.0.2/AetherRoute-3.0.2-build-2026111702-arm64.dmg"
+                sparkle:edSignature="MyOpNLhrQUjFNyd7WPkP09JoVPjwUDCkTbc4cwLWmZldjChUdFgqZzhNSEy+h+/ZBxy9up4WixtepexTC+gJDw=="
+                length="31485566"
                 type="application/octet-stream" />
         </item>
     </channel>

@@ -74,7 +74,8 @@ public enum ProfileOverrideCompiler {
         let compiledExternalRules = resolveExternalRules(
             externalRuleProviders: externalRuleProviders,
             cacheDirectoryURL: ruleProviderCacheDirectoryURL,
-            explicitExternalRules: externalRules
+            explicitExternalRules: externalRules,
+            profileYAML: yaml
         )
 
         if let globalOverride, !globalOverride.isEmpty {
@@ -103,16 +104,36 @@ public enum ProfileOverrideCompiler {
     private static func resolveExternalRules(
         externalRuleProviders: [RuleProviderMetadata],
         cacheDirectoryURL: URL?,
-        explicitExternalRules: [String]
+        explicitExternalRules: [String],
+        profileYAML: String
     ) -> [String] {
         let cachedProviderRules: [String]
         if externalRuleProviders.isEmpty {
             cachedProviderRules = []
         } else {
-            cachedProviderRules = RuleProviderEngine.compileCachedRules(
-                for: externalRuleProviders,
-                cacheDirectoryURL: cacheDirectoryURL
-            )
+            let resolvedCacheDir = cacheDirectoryURL ?? RuleProviderEngine.optionalDefaultDirectoryURL()
+            let customIDs: Set<UUID> = if let resolvedCacheDir {
+                RuleProviderEngine.loadUUIDSet(
+                    fileManager: .default,
+                    url: resolvedCacheDir.appendingPathComponent(RuleProviderEngine.customProviderIDsFilename)
+                )
+            } else {
+                []
+            }
+            let remoteSpecs = DomesticRoutingOptimizer.extractRemoteRuleProviders(from: profileYAML)
+            let eligibleProviders = externalRuleProviders.filter {
+                !RuleProviderEngine.isLegacySubscriptionPollutedEntry(
+                    $0,
+                    userConfirmedCustomIDs: customIDs,
+                    remoteSpecs: remoteSpecs
+                )
+            }
+            cachedProviderRules = eligibleProviders.isEmpty
+                ? []
+                : RuleProviderEngine.compileCachedRules(
+                    for: eligibleProviders,
+                    cacheDirectoryURL: cacheDirectoryURL
+                )
         }
         var merged: [String] = []
         var seen = Set<String>()

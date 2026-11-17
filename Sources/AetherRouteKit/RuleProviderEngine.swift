@@ -143,6 +143,8 @@ public actor RuleProviderEngine {
 
     public static let maximumPayloadBytes = 5 * 1_024 * 1_024 // 5MB max bound for text/yaml
     public static let maximumBinaryPayloadBytes = 32 * 1_024 * 1_024 // 32MB max bound for binary .mrs
+    static let customProviderIDsFilename = "custom-provider-ids.json"
+    static let migratedLegacyProviderIDsFilename = "migrated-legacy-provider-ids.json"
     private static let logger = AppLog.logger(category: "kit.rule-providers")
 
     private let fileManager: FileManager
@@ -150,6 +152,16 @@ public actor RuleProviderEngine {
     private let stagingBaseURL: URL
     private let httpFetcher: HTTPFetcher?
     private var providers: [UUID: RuleProviderMetadata] = [:]
+    private var providerRevisions: [UUID: UInt64] = [:]
+    private var stagedProfileProviders: [UUID: RuleProviderMetadata] = [:]
+    private var stagedProviderRevisions: [UUID: UInt64] = [:]
+    private var userConfirmedCustomIDs: Set<UUID> = []
+    private var migratedLegacyProviderIDs: Set<UUID> = []
+
+    private enum ProviderStoreKind {
+        case custom
+        case stagedProfile
+    }
 
     public init(
         fileManager: FileManager = .default,
@@ -181,29 +193,198 @@ public actor RuleProviderEngine {
         self.httpFetcher = httpFetcher
 
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        let resolvedStagingBaseURL = self.stagingBaseURL
         let metaURL = dir.appendingPathComponent("providers.json")
-        self.providers = Self.loadProvidersMetadata(fileManager: fileManager, metadataURL: metaURL)
+        var loadedProviders = Self.loadProvidersMetadata(fileManager: fileManager, metadataURL: metaURL)
+        var initialRevisions: [UUID: UInt64] = [:]
+        let stagedMetaURL = dir.appendingPathComponent("staged-profile-providers.json")
+        var loadedStaged = Self.loadProvidersMetadata(fileManager: fileManager, metadataURL: stagedMetaURL)
+        let loadedCustomIDs = Self.loadUUIDSet(
+            fileManager: fileManager,
+            url: dir.appendingPathComponent(Self.customProviderIDsFilename)
+        )
+        var loadedMigratedIDs = Self.loadUUIDSet(
+            fileManager: fileManager,
+            url: dir.appendingPathComponent(Self.migratedLegacyProviderIDsFilename)
+        )
+
+        let discoveredYAMLs: [String]
+        let hasCandidateUnconfirmedProxy = loadedProviders.values.contains { entry in
+            !loadedCustomIDs.contains(entry.id)
+                && entry.isEnabled
+                && entry.defaultTarget.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "PROXY"
+                && entry.format != .mrs
+        }
+        if hasCandidateUnconfirmedProxy {
+            discoveredYAMLs = Self.discoverProfileYAMLs(in: resolvedStagingBaseURL, fileManager: fileManager)
+        } else {
+            discoveredYAMLs = []
+        }
+        Self.migrateLegacyState(
+            inProfileYAMLs: discoveredYAMLs,
+            providers: &loadedProviders,
+            providerRevisions: &initialRevisions,
+            stagedProfileProviders: &loadedStaged,
+            userConfirmedCustomIDs: loadedCustomIDs,
+            migratedLegacyProviderIDs: &loadedMigratedIDs,
+            directoryURL: dir,
+            stagingBaseURL: resolvedStagingBaseURL,
+            fileManager: fileManager
+        )
+        self.providers = loadedProviders
+        self.providerRevisions = initialRevisions
+        self.stagedProfileProviders = loadedStaged
+        self.userConfirmedCustomIDs = loadedCustomIDs
+        self.migratedLegacyProviderIDs = loadedMigratedIDs
     }
 
-    public static func sanitizedProviderFileName(name: String, format: RuleProviderFormat) -> String {
+    nonisolated static func sanitizedHashedFileName(
+        name: String,
+        defaultStem: String,
+        fileExtension: String,
+        strippedExtensions: [String]
+    ) -> String {
+        var stemSource = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let loweredSource = stemSource.lowercased()
+        for ext in strippedExtensions where loweredSource.hasSuffix(ext) && stemSource.count > ext.count {
+            stemSource = String(stemSource.dropLast(ext.count))
+            break
+        }
+
+        var mapped = ""
+        mapped.reserveCapacity(min(stemSource.count, 48))
+        var previousWasDash = false
+        for scalar in stemSource.unicodeScalars {
+            let isASCIIAlnum = (scalar.value >= 48 && scalar.value <= 57)
+                || (scalar.value >= 65 && scalar.value <= 90)
+                || (scalar.value >= 97 && scalar.value <= 122)
+            let isUnderscore = scalar.value == 95
+            if isASCIIAlnum || isUnderscore {
+                mapped.append(contentsOf: String(scalar).lowercased())
+                previousWasDash = false
+            } else if !previousWasDash, !mapped.isEmpty {
+                mapped.append("-")
+                previousWasDash = true
+            }
+            if mapped.count >= 48 {
+                break
+            }
+        }
+        while mapped.hasPrefix("-") || mapped.hasPrefix(".") {
+            mapped.removeFirst()
+        }
+        while mapped.hasSuffix("-") || mapped.hasSuffix(".") {
+            mapped.removeLast()
+        }
+        let stem = mapped.isEmpty ? defaultStem : mapped
+        let digest = SHA256.hash(data: Data(name.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+        return "\(stem)-\(digest).\(fileExtension)"
+    }
+
+    nonisolated public static func sanitizedProviderFileName(name: String, format: RuleProviderFormat) -> String {
+        sanitizedHashedFileName(
+            name: name,
+            defaultStem: "provider",
+            fileExtension: format.fileExtension,
+            strippedExtensions: [".yaml", ".yml", ".txt", ".mrs"]
+        )
+    }
+
+    nonisolated static func legacySanitizedFileName(
+        name: String,
+        defaultStem: String,
+        fileExtension: String,
+        acceptedSuffixes: [String]
+    ) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
         var scalars = trimmed.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
         if scalars.isEmpty {
-            scalars = Array("provider")
+            scalars = Array(defaultStem)
         }
         var base = String(scalars)
         while base.hasPrefix(".") {
             base.removeFirst()
         }
         if base.isEmpty {
-            base = "provider"
+            base = defaultStem
         }
-        let ext = format.fileExtension
-        if base.lowercased().hasSuffix(".\(ext)") {
+        let lowered = base.lowercased()
+        if acceptedSuffixes.contains(where: { lowered.hasSuffix($0) }) {
             return base
         }
-        return "\(base).\(ext)"
+        return "\(base).\(fileExtension)"
+    }
+
+    nonisolated static func legacySanitizedProviderFileName(name: String, format: RuleProviderFormat) -> String {
+        let ext = format.fileExtension
+        return legacySanitizedFileName(
+            name: name,
+            defaultStem: "provider",
+            fileExtension: ext,
+            acceptedSuffixes: [".\(ext)"]
+        )
+    }
+
+    nonisolated static func inferFormat(specFormat: String, url: String, path: String) -> RuleProviderFormat {
+        if specFormat == "mrs" || url.lowercased().hasSuffix(".mrs") || path.lowercased().hasSuffix(".mrs") {
+            return .mrs
+        }
+        if specFormat == "text" || url.lowercased().hasSuffix(".txt") || path.lowercased().hasSuffix(".txt") {
+            return .text
+        }
+        return .yaml
+    }
+
+    nonisolated static func isLegacySubscriptionPollutedEntry(
+        _ entry: RuleProviderMetadata,
+        userConfirmedCustomIDs: Set<UUID>,
+        remoteSpecs: [DomesticRoutingOptimizer.RemoteRuleProviderSpec]
+    ) -> Bool {
+        guard !userConfirmedCustomIDs.contains(entry.id) else {
+            return false
+        }
+        let normalizedTarget = entry.defaultTarget.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard entry.isEnabled, normalizedTarget == "PROXY" else {
+            return false
+        }
+        if entry.format == .mrs {
+            return true
+        }
+        return remoteSpecs.contains { spec in
+            guard spec.type == "http", let specURL = URL(string: spec.url) else {
+                return false
+            }
+            let specBehavior = RuleProviderBehavior(rawValue: spec.behavior) ?? .domain
+            let specFormat = inferFormat(specFormat: spec.format, url: spec.url, path: spec.path)
+            let specInterval = sanitizedIntervalSeconds(spec.interval)
+            return spec.name == entry.name
+                && specURL == entry.url
+                && specBehavior == entry.behavior
+                && specFormat == entry.format
+                && specInterval == entry.intervalSeconds
+        }
+    }
+
+    nonisolated public static func optionalDefaultDirectoryURL(fileManager: FileManager = .default) -> URL? {
+        guard let appGroup = AppConstants.optionalIdentityValue(AppConstants.appGroupInfoKey),
+              let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else {
+            return nil
+        }
+        return container.appendingPathComponent(
+            "Library/Application Support/AetherRoute/RuleProviders",
+            isDirectory: true
+        )
+    }
+
+    nonisolated public static func sanitizedIntervalSeconds(
+        _ raw: Int?,
+        defaultValue: UInt32 = 86_400
+    ) -> UInt32 {
+        guard let raw, raw > 0, let exact = UInt32(exactly: raw) else {
+            return defaultValue
+        }
+        return exact
     }
 
     public func stagedRuleFileURL(name: String, format: RuleProviderFormat) -> URL {
@@ -239,15 +420,41 @@ public actor RuleProviderEngine {
     // MARK: - Provider Registration
     public func registerProvider(_ provider: RuleProviderMetadata) throws {
         try Self.validateURL(provider.url)
+        if let existing = providers[provider.id],
+           existing.url != provider.url || existing.behavior != provider.behavior || existing.format != provider.format {
+            providerRevisions[provider.id, default: 0] &+= 1
+        }
         providers[provider.id] = provider
+        if userConfirmedCustomIDs.insert(provider.id).inserted {
+            saveUUIDSet(userConfirmedCustomIDs, to: customProviderIDsURL)
+        }
+        if migratedLegacyProviderIDs.remove(provider.id) != nil {
+            saveUUIDSet(migratedLegacyProviderIDs, to: migratedLegacyProviderIDsURL)
+        }
         saveProvidersMetadata()
     }
 
     public func removeProvider(id: UUID) {
-        providers.removeValue(forKey: id)
+        let removed = providers.removeValue(forKey: id)
+        providerRevisions[id, default: 0] &+= 1
         saveProvidersMetadata()
+        if userConfirmedCustomIDs.remove(id) != nil {
+            saveUUIDSet(userConfirmedCustomIDs, to: customProviderIDsURL)
+        }
         let cacheFile = cacheFileURL(for: id)
         try? fileManager.removeItem(at: cacheFile)
+        if let removed {
+            let stillReferenced = providers.values.contains { $0.name == removed.name && $0.format == removed.format }
+                || stagedProfileProviders.values.contains { $0.name == removed.name && $0.format == removed.format }
+            if !stillReferenced {
+                Self.removeStagedFile(
+                    relativeSubdirectory: "providers/rules",
+                    fileName: Self.sanitizedProviderFileName(name: removed.name, format: removed.format),
+                    stagingBaseURL: stagingBaseURL,
+                    fileManager: fileManager
+                )
+            }
+        }
     }
 
     public func allProviders() -> [RuleProviderMetadata] {
@@ -263,12 +470,22 @@ public actor RuleProviderEngine {
         guard var p = providers[id] else { return false }
         p.isEnabled.toggle()
         providers[id] = p
+        if userConfirmedCustomIDs.insert(id).inserted {
+            saveUUIDSet(userConfirmedCustomIDs, to: customProviderIDsURL)
+        }
         saveProvidersMetadata()
         return p.isEnabled
     }
 
     public func updateProviderMetadata(_ provider: RuleProviderMetadata) {
+        if let existing = providers[provider.id],
+           existing.url != provider.url || existing.behavior != provider.behavior || existing.format != provider.format {
+            providerRevisions[provider.id, default: 0] &+= 1
+        }
         providers[provider.id] = provider
+        if userConfirmedCustomIDs.insert(provider.id).inserted {
+            saveUUIDSet(userConfirmedCustomIDs, to: customProviderIDsURL)
+        }
         saveProvidersMetadata()
     }
 
@@ -353,10 +570,10 @@ public actor RuleProviderEngine {
 
     // MARK: - Update Logic
     public func forceRefresh(id: UUID) async throws -> Int {
-        guard let provider = providers[id] else {
+        guard providers[id] != nil else {
             throw RuleProviderError.providerNotFound
         }
-        return try await fetchAndParse(provider: provider, force: true)
+        return try await fetchAndParse(providerID: id, kind: .custom, force: true)
     }
 
     public func updateIfNeeded(id: UUID) async throws -> Bool {
@@ -371,7 +588,7 @@ public actor RuleProviderEngine {
             }
         }
 
-        _ = try await fetchAndParse(provider: provider, force: false)
+        _ = try await fetchAndParse(providerID: id, kind: .custom, force: false)
         return true
     }
 
@@ -387,7 +604,7 @@ public actor RuleProviderEngine {
 
             if needsUpdate {
                 do {
-                    let count = try await fetchAndParse(provider: provider, force: false)
+                    let count = try await fetchAndParse(providerID: id, kind: .custom, force: false)
                     results[id] = .success(count)
                 } catch {
                     results[id] = .failure(error)
@@ -451,51 +668,109 @@ public actor RuleProviderEngine {
     }
 
     // MARK: - Internal Download & Parse
-    private func fetchAndParse(provider: RuleProviderMetadata, force: Bool) async throws -> Int {
-        try Self.validateURL(provider.url)
-        var request = URLRequest(url: provider.url)
+    private func providerRecord(for id: UUID, kind: ProviderStoreKind) -> RuleProviderMetadata? {
+        switch kind {
+        case .custom: providers[id]
+        case .stagedProfile: stagedProfileProviders[id]
+        }
+    }
+
+    private func setProviderRecord(_ record: RuleProviderMetadata, for id: UUID, kind: ProviderStoreKind) {
+        switch kind {
+        case .custom:
+            providers[id] = record
+            saveProvidersMetadata()
+        case .stagedProfile:
+            stagedProfileProviders[id] = record
+            saveStagedProvidersMetadata()
+        }
+    }
+
+    private func revision(for id: UUID, kind: ProviderStoreKind) -> UInt64 {
+        switch kind {
+        case .custom: providerRevisions[id, default: 0]
+        case .stagedProfile: stagedProviderRevisions[id, default: 0]
+        }
+    }
+
+    private func activeSnapshot(
+        id: UUID,
+        kind: ProviderStoreKind,
+        expectedRevision: UInt64,
+        expectedSnapshot: RuleProviderMetadata
+    ) throws -> RuleProviderMetadata {
+        guard let current = providerRecord(for: id, kind: kind) else {
+            throw RuleProviderError.providerNotFound
+        }
+        guard revision(for: id, kind: kind) == expectedRevision,
+              current.url == expectedSnapshot.url,
+              current.behavior == expectedSnapshot.behavior,
+              current.format == expectedSnapshot.format else {
+            throw CancellationError()
+        }
+        return current
+    }
+
+    private func fetchAndParse(providerID: UUID, kind: ProviderStoreKind, force: Bool) async throws -> Int {
+        guard let snapshot = providerRecord(for: providerID, kind: kind) else {
+            throw RuleProviderError.providerNotFound
+        }
+        let expectedRevision = revision(for: providerID, kind: kind)
+        try Self.validateURL(snapshot.url)
+        var request = URLRequest(url: snapshot.url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
         request.setValue("AetherRoute/1.0", forHTTPHeaderField: "User-Agent")
 
-        if !force, let etag = provider.etag {
+        if !force, let etag = snapshot.etag {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
 
         let (data, response): (Data, URLResponse)
         do {
             if let httpFetcher {
-                (data, response) = try await httpFetcher(provider.url)
+                (data, response) = try await httpFetcher(snapshot.url)
             } else {
                 (data, response) = try await URLSession.shared.data(for: request)
             }
         } catch {
+            _ = try activeSnapshot(
+                id: providerID,
+                kind: kind,
+                expectedRevision: expectedRevision,
+                expectedSnapshot: snapshot
+            )
             throw RuleProviderError.downloadFailed(error.localizedDescription)
         }
+
+        var current = try activeSnapshot(
+            id: providerID,
+            kind: kind,
+            expectedRevision: expectedRevision,
+            expectedSnapshot: snapshot
+        )
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw RuleProviderError.downloadFailed("Invalid HTTP response")
         }
 
         if httpResponse.statusCode == 304 {
-            var updated = provider
-            updated.lastUpdatedAt = Date()
-            providers[provider.id] = updated
-            saveProvidersMetadata()
-            return provider.ruleCount
+            current.lastUpdatedAt = Date()
+            setProviderRecord(current, for: providerID, kind: kind)
+            return current.ruleCount
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
             throw RuleProviderError.downloadFailed("HTTP \(httpResponse.statusCode)")
         }
 
-        let maxBytes = provider.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
+        let maxBytes = current.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
         guard data.count <= maxBytes else {
             throw RuleProviderError.oversizedPayload(data.count)
         }
 
         let ruleCount: Int
-        if provider.format == .mrs {
+        if current.format == .mrs {
             guard !data.isEmpty else {
                 throw RuleProviderError.parsingFailed
             }
@@ -504,19 +779,29 @@ public actor RuleProviderEngine {
             guard let text = String(data: data, encoding: .utf8) else {
                 throw RuleProviderError.parsingFailed
             }
-            let parsedRules = parseRawRuleContent(text, behavior: provider.behavior, format: provider.format)
+            let parsedRules = parseRawRuleContent(text, behavior: current.behavior, format: current.format)
             guard !parsedRules.isEmpty || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 throw RuleProviderError.parsingFailed
             }
             ruleCount = parsedRules.count
         }
 
-        // Save cache to disk
-        let cacheFile = cacheFileURL(for: provider.id)
+        // Re-check actor state before committing any disk or metadata writes.
+        current = try activeSnapshot(
+            id: providerID,
+            kind: kind,
+            expectedRevision: expectedRevision,
+            expectedSnapshot: snapshot
+        )
+
+        let cacheFile: URL = switch kind {
+        case .custom: cacheFileURL(for: current.id)
+        case .stagedProfile: stagedCacheFileURL(for: current.id)
+        }
         try data.write(to: cacheFile, options: [.atomic])
 
         // Stage full snapshot (raw binary .mrs or un-truncated .yaml/.txt) for TUN & Transparent Proxy
-        let stagedName = Self.sanitizedProviderFileName(name: provider.name, format: provider.format)
+        let stagedName = Self.sanitizedProviderFileName(name: current.name, format: current.format)
         try Self.stageFileData(
             data,
             relativeSubdirectory: "providers/rules",
@@ -526,15 +811,29 @@ public actor RuleProviderEngine {
         )
 
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        var updated = provider
-        updated.lastUpdatedAt = Date()
-        updated.ruleCount = ruleCount
-        updated.etag = httpResponse.value(forHTTPHeaderField: "ETag")
-        updated.sha256 = hash
-        providers[provider.id] = updated
-        saveProvidersMetadata()
+        current.lastUpdatedAt = Date()
+        current.ruleCount = ruleCount
+        current.etag = httpResponse.value(forHTTPHeaderField: "ETag")
+        current.sha256 = hash
+        setProviderRecord(current, for: providerID, kind: kind)
 
         return ruleCount
+    }
+
+    nonisolated static func stagedFileURLs(
+        relativeSubdirectory: String,
+        fileName: String,
+        stagingBaseURL: URL
+    ) -> [URL] {
+        [
+            stagingBaseURL.appendingPathComponent(relativeSubdirectory, isDirectory: true),
+            stagingBaseURL
+                .appendingPathComponent("Runtime", isDirectory: true)
+                .appendingPathComponent(relativeSubdirectory, isDirectory: true),
+            stagingBaseURL
+                .appendingPathComponent("Runtime/FlowCore", isDirectory: true)
+                .appendingPathComponent(relativeSubdirectory, isDirectory: true),
+        ].map { $0.appendingPathComponent(fileName, isDirectory: false) }
     }
 
     /// Stages a snapshot file into `<base>/<subdir>/<file>` and mirrors regular files
@@ -547,30 +846,71 @@ public actor RuleProviderEngine {
         stagingBaseURL: URL,
         fileManager: FileManager = .default
     ) throws -> URL {
-        let primaryDir = stagingBaseURL.appendingPathComponent(relativeSubdirectory, isDirectory: true)
-        let tunDir = stagingBaseURL
-            .appendingPathComponent("Runtime", isDirectory: true)
-            .appendingPathComponent(relativeSubdirectory, isDirectory: true)
-        let flowDir = stagingBaseURL
-            .appendingPathComponent("Runtime/FlowCore", isDirectory: true)
-            .appendingPathComponent(relativeSubdirectory, isDirectory: true)
-
-        let destinations = [primaryDir, tunDir, flowDir]
-        for dir in destinations {
-            try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-            let fileURL = dir.appendingPathComponent(fileName, isDirectory: false)
+        let fileURLs = stagedFileURLs(
+            relativeSubdirectory: relativeSubdirectory,
+            fileName: fileName,
+            stagingBaseURL: stagingBaseURL
+        )
+        for fileURL in fileURLs {
+            try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             if let existing = try? Data(contentsOf: fileURL), existing == data {
                 continue
             }
             try data.write(to: fileURL, options: [.atomic])
             try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         }
-        return primaryDir.appendingPathComponent(fileName, isDirectory: false)
+        return fileURLs[0]
     }
 
-    /// Stages all remote `http` rule-providers declared inside a profile's YAML.
+    public static func removeStagedFile(
+        relativeSubdirectory: String,
+        fileName: String,
+        stagingBaseURL: URL,
+        fileManager: FileManager = .default
+    ) {
+        for fileURL in stagedFileURLs(
+            relativeSubdirectory: relativeSubdirectory,
+            fileName: fileName,
+            stagingBaseURL: stagingBaseURL
+        ) {
+            try? fileManager.removeItem(at: fileURL)
+        }
+    }
+
+    /// Reconciles legacy `providers.json` entries that originated from profile-level
+    /// `rule-providers:` sections against the provided profile YAMLs without performing
+    /// network fetches or touching user-confirmed custom global rule sets.
+    public func reconcileLegacyProfileProviders(inProfileYAMLs yamls: [String]) {
+        performLegacyMigration(inProfileYAMLs: yamls)
+    }
+
+    /// Returns previously staged remote `http` rule-providers declared inside a profile's YAML
+    /// without mixing them into the user's global custom rule-providers list.
+    public func stagedProviders(inProfileYAML yaml: String) -> [RuleProviderMetadata] {
+        performLegacyMigration(inProfileYAMLs: [yaml])
+        let specs = DomesticRoutingOptimizer.extractRemoteRuleProviders(from: yaml)
+        var results: [RuleProviderMetadata] = []
+        var seenIDs = Set<UUID>()
+        for spec in specs {
+            guard spec.type == "http",
+                  let url = URL(string: spec.url),
+                  (try? Self.validateURL(url)) != nil else {
+                continue
+            }
+            let match = stagedProfileProviders.values.first { $0.name == spec.name && $0.url == url }
+                ?? stagedProfileProviders.values.first { $0.name == spec.name }
+            if let match, seenIDs.insert(match.id).inserted {
+                results.append(match)
+            }
+        }
+        return results
+    }
+
+    /// Stages all remote `http` rule-providers declared inside a profile's YAML into an isolated
+    /// profile-provider store so subscription rules keep their original targets and ordering.
     @discardableResult
     public func stageProviders(inProfileYAML yaml: String, force: Bool = false) async -> [RuleProviderMetadata] {
+        performLegacyMigration(inProfileYAMLs: [yaml])
         let specs = DomesticRoutingOptimizer.extractRemoteRuleProviders(from: yaml)
         var staged: [RuleProviderMetadata] = []
         for spec in specs {
@@ -579,41 +919,38 @@ public actor RuleProviderEngine {
                   (try? Self.validateURL(url)) != nil else {
                 continue
             }
-            let format: RuleProviderFormat
-            if spec.format == "mrs" || spec.url.lowercased().hasSuffix(".mrs") || spec.path.lowercased().hasSuffix(".mrs") {
-                format = .mrs
-            } else if spec.format == "text" || spec.url.lowercased().hasSuffix(".txt") || spec.path.lowercased().hasSuffix(".txt") {
-                format = .text
-            } else {
-                format = .yaml
-            }
+            let format = Self.inferFormat(specFormat: spec.format, url: spec.url, path: spec.path)
             let behavior = RuleProviderBehavior(rawValue: spec.behavior) ?? .domain
-            let existing = providers.values.first { $0.name == spec.name && $0.url == url }
-                ?? providers.values.first { $0.name == spec.name }
+            let existing = stagedProfileProviders.values.first { $0.name == spec.name && $0.url == url }
+                ?? stagedProfileProviders.values.first { $0.name == spec.name }
             var metadata = existing ?? RuleProviderMetadata(
                 name: spec.name,
                 url: url,
                 behavior: behavior,
                 format: format,
-                intervalSeconds: UInt32(spec.interval ?? 86_400)
+                intervalSeconds: Self.sanitizedIntervalSeconds(spec.interval)
             )
+            let specChanged = metadata.url != url || metadata.behavior != behavior || metadata.format != format
             metadata.url = url
             metadata.behavior = behavior
             metadata.format = format
-            if let interval = spec.interval, interval > 0 {
-                metadata.intervalSeconds = UInt32(interval)
+            if let interval = spec.interval, interval > 0, let valid = UInt32(exactly: interval) {
+                metadata.intervalSeconds = valid
             }
-            providers[metadata.id] = metadata
-            saveProvidersMetadata()
+            stagedProfileProviders[metadata.id] = metadata
+            if specChanged {
+                stagedProviderRevisions[metadata.id, default: 0] &+= 1
+            }
+            saveStagedProvidersMetadata()
 
             do {
-                _ = try await fetchAndParse(provider: metadata, force: force)
-                if let updated = providers[metadata.id] {
+                _ = try await fetchAndParse(providerID: metadata.id, kind: .stagedProfile, force: force)
+                if let updated = stagedProfileProviders[metadata.id] {
                     staged.append(updated)
                 }
             } catch {
                 Self.logger.warning("Failed staging rule provider \(spec.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                if let current = providers[metadata.id] {
+                if let current = stagedProfileProviders[metadata.id] {
                     staged.append(current)
                 }
             }
@@ -751,8 +1088,212 @@ public actor RuleProviderEngine {
         directoryURL.appendingPathComponent("\(id.uuidString).dat")
     }
 
+    private func stagedCacheFileURL(for id: UUID) -> URL {
+        directoryURL.appendingPathComponent("\(id.uuidString).staged.dat")
+    }
+
     private var metadataURL: URL {
         directoryURL.appendingPathComponent("providers.json")
+    }
+
+    private var stagedMetadataURL: URL {
+        directoryURL.appendingPathComponent("staged-profile-providers.json")
+    }
+
+    private var customProviderIDsURL: URL {
+        directoryURL.appendingPathComponent(Self.customProviderIDsFilename)
+    }
+
+    private var migratedLegacyProviderIDsURL: URL {
+        directoryURL.appendingPathComponent(Self.migratedLegacyProviderIDsFilename)
+    }
+
+    nonisolated static func loadUUIDSet(fileManager: FileManager, url: URL) -> Set<UUID> {
+        guard fileManager.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([UUID].self, from: data) else {
+            return []
+        }
+        return Set(decoded)
+    }
+
+    private func saveUUIDSet(_ set: Set<UUID>, to url: URL) {
+        let sorted = set.map(\.uuidString).sorted()
+        if let encoded = try? JSONEncoder().encode(sorted) {
+            try? encoded.write(to: url, options: [.atomic])
+        }
+    }
+
+    private nonisolated static func discoverProfileYAMLs(in stagingBaseURL: URL, fileManager: FileManager) -> [String] {
+        var yamls: [String] = []
+        let debugRawURL = stagingBaseURL.appendingPathComponent("debug_profile_raw.yaml", isDirectory: false)
+        if fileManager.fileExists(atPath: debugRawURL.path),
+           let raw = try? String(contentsOf: debugRawURL, encoding: .utf8),
+           !raw.isEmpty {
+            yamls.append(raw)
+        }
+        return yamls
+    }
+
+    private func performLegacyMigration(inProfileYAMLs yamls: [String]) {
+        Self.migrateLegacyState(
+            inProfileYAMLs: yamls,
+            providers: &providers,
+            providerRevisions: &providerRevisions,
+            stagedProfileProviders: &stagedProfileProviders,
+            userConfirmedCustomIDs: userConfirmedCustomIDs,
+            migratedLegacyProviderIDs: &migratedLegacyProviderIDs,
+            directoryURL: directoryURL,
+            stagingBaseURL: stagingBaseURL,
+            fileManager: fileManager
+        )
+    }
+
+    private nonisolated static func migrateLegacyState(
+        inProfileYAMLs yamls: [String],
+        providers: inout [UUID: RuleProviderMetadata],
+        providerRevisions: inout [UUID: UInt64],
+        stagedProfileProviders: inout [UUID: RuleProviderMetadata],
+        userConfirmedCustomIDs: Set<UUID>,
+        migratedLegacyProviderIDs: inout Set<UUID>,
+        directoryURL: URL,
+        stagingBaseURL: URL,
+        fileManager: FileManager
+    ) {
+        var remoteSpecs: [DomesticRoutingOptimizer.RemoteRuleProviderSpec] = []
+        for yaml in yamls where !yaml.isEmpty {
+            remoteSpecs.append(contentsOf: DomesticRoutingOptimizer.extractRemoteRuleProviders(from: yaml))
+        }
+
+        var providersChanged = false
+        var stagedChanged = false
+        var migratedIDsChanged = false
+
+        let legacyEntries = providers.values.filter {
+            isLegacySubscriptionPollutedEntry(
+                $0,
+                userConfirmedCustomIDs: userConfirmedCustomIDs,
+                remoteSpecs: remoteSpecs
+            )
+        }
+
+        for entry in legacyEntries {
+            providers.removeValue(forKey: entry.id)
+            providerRevisions[entry.id, default: 0] &+= 1
+            providersChanged = true
+
+            if migratedLegacyProviderIDs.insert(entry.id).inserted {
+                migratedIDsChanged = true
+            }
+
+            let legacyCacheFile = cacheFileURL(for: entry.id, in: directoryURL)
+            let legacyData = try? Data(contentsOf: legacyCacheFile)
+
+            let existingStaged = stagedProfileProviders.values.first { $0.name == entry.name && $0.url == entry.url }
+            let targetID = existingStaged?.id ?? entry.id
+            if var currentStaged = existingStaged {
+                let entryDate = entry.lastUpdatedAt?.timeIntervalSince1970 ?? 0
+                let stagedDate = currentStaged.lastUpdatedAt?.timeIntervalSince1970 ?? 0
+                if stagedDate == 0 || entryDate > stagedDate {
+                    currentStaged.behavior = entry.behavior
+                    currentStaged.format = entry.format
+                    currentStaged.intervalSeconds = entry.intervalSeconds
+                    currentStaged.lastUpdatedAt = entry.lastUpdatedAt ?? currentStaged.lastUpdatedAt
+                    currentStaged.ruleCount = max(currentStaged.ruleCount, entry.ruleCount)
+                    currentStaged.etag = entry.etag ?? currentStaged.etag
+                    currentStaged.sha256 = entry.sha256 ?? currentStaged.sha256
+                    stagedProfileProviders[targetID] = currentStaged
+                    stagedChanged = true
+                }
+            } else {
+                stagedProfileProviders[targetID] = entry
+                stagedChanged = true
+            }
+
+            let targetStagedCache = directoryURL.appendingPathComponent("\(targetID.uuidString).staged.dat")
+            if let legacyData, !fileManager.fileExists(atPath: targetStagedCache.path) {
+                try? legacyData.write(to: targetStagedCache, options: [.atomic])
+            }
+            if fileManager.fileExists(atPath: legacyCacheFile.path) {
+                try? fileManager.removeItem(at: legacyCacheFile)
+            }
+        }
+
+        if providersChanged {
+            if let encoded = try? JSONEncoder().encode(Array(providers.values)) {
+                try? encoded.write(to: directoryURL.appendingPathComponent("providers.json"), options: [.atomic])
+            }
+        }
+        if stagedChanged {
+            if let encoded = try? JSONEncoder().encode(Array(stagedProfileProviders.values)) {
+                try? encoded.write(to: directoryURL.appendingPathComponent("staged-profile-providers.json"), options: [.atomic])
+            }
+        }
+        if migratedIDsChanged {
+            let sorted = migratedLegacyProviderIDs.map(\.uuidString).sorted()
+            if let encoded = try? JSONEncoder().encode(sorted) {
+                try? encoded.write(to: directoryURL.appendingPathComponent(migratedLegacyProviderIDsFilename), options: [.atomic])
+            }
+        }
+
+        let rulesStagingDir = stagingBaseURL.appendingPathComponent("providers/rules", isDirectory: true)
+
+        // Re-stage cached snapshots under hashed filenames and remove legacy unhashed copies.
+        for stagedEntry in stagedProfileProviders.values {
+            let stagedName = sanitizedProviderFileName(name: stagedEntry.name, format: stagedEntry.format)
+            let stagedURL = rulesStagingDir.appendingPathComponent(stagedName, isDirectory: false)
+            let cacheURL = directoryURL.appendingPathComponent("\(stagedEntry.id.uuidString).staged.dat")
+            if !fileManager.fileExists(atPath: stagedURL.path),
+               let data = try? Data(contentsOf: cacheURL),
+               !data.isEmpty {
+                _ = try? stageFileData(
+                    data,
+                    relativeSubdirectory: "providers/rules",
+                    fileName: stagedName,
+                    stagingBaseURL: stagingBaseURL,
+                    fileManager: fileManager
+                )
+            }
+            let legacyFileName = legacySanitizedProviderFileName(name: stagedEntry.name, format: stagedEntry.format)
+            if legacyFileName != stagedName {
+                removeStagedFile(
+                    relativeSubdirectory: "providers/rules",
+                    fileName: legacyFileName,
+                    stagingBaseURL: stagingBaseURL,
+                    fileManager: fileManager
+                )
+            }
+        }
+
+        for entry in providers.values {
+            let hashedName = sanitizedProviderFileName(name: entry.name, format: entry.format)
+            let legacyName = legacySanitizedProviderFileName(name: entry.name, format: entry.format)
+            guard legacyName != hashedName else { continue }
+            let existingLegacy = stagedFileURLs(
+                relativeSubdirectory: "providers/rules",
+                fileName: legacyName,
+                stagingBaseURL: stagingBaseURL
+            ).contains { fileManager.fileExists(atPath: $0.path) }
+            guard existingLegacy else { continue }
+            let hashedURL = rulesStagingDir.appendingPathComponent(hashedName, isDirectory: false)
+            if !fileManager.fileExists(atPath: hashedURL.path),
+               let data = try? Data(contentsOf: cacheFileURL(for: entry.id, in: directoryURL)),
+               !data.isEmpty {
+                _ = try? stageFileData(
+                    data,
+                    relativeSubdirectory: "providers/rules",
+                    fileName: hashedName,
+                    stagingBaseURL: stagingBaseURL,
+                    fileManager: fileManager
+                )
+            }
+            removeStagedFile(
+                relativeSubdirectory: "providers/rules",
+                fileName: legacyName,
+                stagingBaseURL: stagingBaseURL,
+                fileManager: fileManager
+            )
+        }
     }
 
     private static func loadProvidersMetadata(fileManager: FileManager, metadataURL: URL) -> [UUID: RuleProviderMetadata] {
@@ -772,6 +1313,13 @@ public actor RuleProviderEngine {
         let list = Array(providers.values)
         if let encoded = try? JSONEncoder().encode(list) {
             try? encoded.write(to: metadataURL, options: [.atomic])
+        }
+    }
+
+    private func saveStagedProvidersMetadata() {
+        let list = Array(stagedProfileProviders.values)
+        if let encoded = try? JSONEncoder().encode(list) {
+            try? encoded.write(to: stagedMetadataURL, options: [.atomic])
         }
     }
 
@@ -796,6 +1344,18 @@ public actor RuleProviderEngine {
         public let matchesRemote: Bool
     }
 
+    private func isMigratedLegacyRemoteProvider(_ remote: RuleProviderMetadata) -> Bool {
+        if migratedLegacyProviderIDs.contains(remote.id) {
+            return true
+        }
+        guard !userConfirmedCustomIDs.contains(remote.id),
+              remote.isEnabled,
+              remote.defaultTarget.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "PROXY" else {
+            return false
+        }
+        return stagedProfileProviders.values.contains { $0.name == remote.name && $0.url == remote.url }
+    }
+
     public func mergeCloudSyncPayloadOutcome(_ data: Data) -> CloudSyncMergeOutcome {
         guard let payload = try? JSONDecoder().decode(RuleProviderSyncPayload.self, from: data) else {
             let current = allProviders()
@@ -804,10 +1364,16 @@ public actor RuleProviderEngine {
 
         var changed = false
         for remote in payload.providers {
+            if isMigratedLegacyRemoteProvider(remote) {
+                continue
+            }
             if let existing = providers[remote.id] {
                 let existingTime = existing.lastUpdatedAt?.timeIntervalSince1970 ?? 0
                 let remoteTime = remote.lastUpdatedAt?.timeIntervalSince1970 ?? 0
                 if remoteTime >= existingTime && remote != existing {
+                    if existing.url != remote.url || existing.behavior != remote.behavior || existing.format != remote.format {
+                        providerRevisions[remote.id, default: 0] &+= 1
+                    }
                     providers[remote.id] = remote
                     changed = true
                 }
@@ -816,6 +1382,8 @@ public actor RuleProviderEngine {
                 let remoteTime = remote.lastUpdatedAt?.timeIntervalSince1970 ?? 0
                 if remoteTime > existingTime {
                     providers.removeValue(forKey: matchByURL.id)
+                    providerRevisions[matchByURL.id, default: 0] &+= 1
+                    providerRevisions[remote.id, default: 0] &+= 1
                     providers[remote.id] = remote
                     changed = true
                 }

@@ -1069,7 +1069,7 @@ private actor CloudSyncWorker {
             if outcome.didChangeLocal {
                 updatedProviders = outcome.providers
             }
-            shouldPushProviders = !outcome.matchesRemote && !outcome.providers.isEmpty
+            shouldPushProviders = !outcome.matchesRemote
         } else {
             shouldPushProviders = !(await ruleProviderEngine.allProviders().isEmpty)
         }

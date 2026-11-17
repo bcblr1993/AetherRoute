@@ -327,7 +327,7 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        let services = try listActiveNetworkServices()
+        let services = try listNetworkServices(includeDisabled: false)
         let hadPriorBackup = defaults.data(forKey: backupKey) != nil
         var backup = loadBackupLocked() ?? BackupState(services: [:])
         var didUpdateBackup = false
@@ -387,13 +387,16 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
             return
         }
 
-        let activeServices: Set<String>? = (try? listActiveNetworkServices()).map(Set.init)
+        // Disabled network services (prefixed with `*` in `networksetup -listallnetworkservices`)
+        // still exist in macOS preferences and accept proxy restore commands; only truly removed
+        // interfaces absent from the service list are skipped.
+        let knownServices: Set<String>? = (try? listNetworkServices(includeDisabled: true)).map(Set.init)
         var firstError: Error?
         var remainingServices: [String: ServiceBackup] = [:]
 
         for service in backup.services.keys.sorted() {
             guard let snapshot = backup.services[service] else { continue }
-            if let activeServices, !activeServices.contains(service) {
+            if let knownServices, !knownServices.contains(service) {
                 continue
             }
             do {
@@ -452,15 +455,21 @@ public final class SystemProxyConfigurator: @unchecked Sendable {
         _ = try runChecked([stateCommand, service, snapshot.enabled ? "on" : "off"])
     }
 
-    private func listActiveNetworkServices() throws -> [String] {
+    private func listNetworkServices(includeDisabled: Bool) throws -> [String] {
         let output = try runChecked(["-listallnetworkservices"])
         return output.standardOutput
             .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { line in
-                !line.isEmpty
-                    && !line.hasPrefix("An asterisk")
-                    && !line.hasPrefix("*")
+            .compactMap { rawLine in
+                let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, !trimmed.hasPrefix("An asterisk") else {
+                    return nil
+                }
+                if trimmed.hasPrefix("*") {
+                    guard includeDisabled else { return nil }
+                    let name = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+                    return name.isEmpty ? nil : name
+                }
+                return trimmed
             }
     }
 

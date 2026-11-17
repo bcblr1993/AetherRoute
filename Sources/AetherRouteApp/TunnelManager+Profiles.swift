@@ -718,7 +718,7 @@ extension TunnelManager {
         let rawProfileYAML = activeProfile.yaml
         let baseProfileYAML = effectiveProfileYAML(for: activeProfile)
         let currentCustomRules = customRules
-        let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
+        let remoteRules = await ruleProviderEngine.compileActiveRules()
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
             for: baseProfileYAML,
             customRules: currentCustomRules,
@@ -1413,6 +1413,9 @@ extension TunnelManager {
         _ catalog: ProfileCatalog,
         preserveConnectedRuntimeState: Bool = false
     ) async {
+        await reloadCustomRuleProvidersFromEngine(
+            additionalProfileYAMLs: catalog.profiles.map(\.profile.yaml)
+        )
         let currentCustomRules = customRules
         let currentRemoteRules = compiledRemoteRulesCache
         let currentDomesticEnabled = isDomesticOptimizationEnabled
@@ -1434,12 +1437,18 @@ extension TunnelManager {
         preserveConnectedRuntimeState: Bool = false,
         _ operation: @escaping @Sendable () throws -> ProfileCatalog
     ) async throws {
+        let catalog = try await Task.detached(priority: .userInitiated) {
+            try operation()
+        }.value
+        await reloadCustomRuleProvidersFromEngine(
+            additionalProfileYAMLs: catalog.profiles.map(\.profile.yaml)
+        )
         let currentCustomRules = customRules
         let currentRemoteRules = compiledRemoteRulesCache
         let currentDomesticEnabled = isDomesticOptimizationEnabled
-        let projection = try await Task.detached(priority: .userInitiated) {
+        let projection = await Task.detached(priority: .userInitiated) {
             ProfileCatalogProjectionBuilder.production(
-                try operation(),
+                catalog,
                 customRules: currentCustomRules,
                 remoteRules: currentRemoteRules,
                 enableDomesticDirect: currentDomesticEnabled
@@ -1726,34 +1735,38 @@ extension TunnelManager {
     }
 
     func loadAllExternalProviders() async -> (rules: [RuleProviderMetadata], proxies: [ProxyProviderMetadata]) {
-        let rules = await RuleProviderEngine.shared.allProviders()
-        let proxies = await ProxyProviderEngine.shared.allProviders()
+        let yaml = activeProfile?.yaml ?? ""
+        guard !yaml.isEmpty else { return ([], []) }
+        let rules = await ruleProviderEngine.stagedProviders(inProfileYAML: yaml)
+        let proxies = await proxyProviderEngine.stagedProviders(inProfileYAML: yaml)
         return (rules, proxies)
     }
 
     @discardableResult
     func refreshAllExternalProviders() async -> (rules: [RuleProviderMetadata], proxies: [ProxyProviderMetadata]) {
         let yaml = activeProfile?.yaml ?? ""
+        let stagedRules: [RuleProviderMetadata]
+        let stagedProxies: [ProxyProviderMetadata]
         if !yaml.isEmpty {
-            _ = await RuleProviderEngine.shared.stageProviders(inProfileYAML: yaml, force: true)
-            _ = await ProxyProviderEngine.shared.stageProviders(inProfileYAML: yaml, force: true)
+            stagedRules = await ruleProviderEngine.stageProviders(inProfileYAML: yaml, force: true)
+            stagedProxies = await proxyProviderEngine.stageProviders(inProfileYAML: yaml, force: true)
+        } else {
+            stagedRules = []
+            stagedProxies = []
         }
-        _ = await RuleProviderEngine.shared.updateAllExpired()
-        _ = await ProxyProviderEngine.shared.refreshAll(force: true)
+        _ = await ruleProviderEngine.updateAllExpired()
 
         await reloadCustomRuleProvidersFromEngine()
         refreshActiveProfileSummary()
         if state == .connected, !isUIReviewMode {
             await reloadCustomRulesLive()
         }
-        let rules = customRuleProviders
-        let proxies = await ProxyProviderEngine.shared.allProviders()
         profileMessage = AppLocalization.inline(
             "External rule and proxy providers staged.",
             chinese: "已刷新并暂存外部规则集与代理集合。"
         )
         profileMessageIsError = false
-        return (rules, proxies)
+        return (stagedRules, stagedProxies)
     }
 
 }

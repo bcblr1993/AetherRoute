@@ -82,6 +82,7 @@ public actor ProxyProviderEngine {
     private let stagingBaseURL: URL
     private let httpFetcher: HTTPFetcher?
     private var providers: [UUID: ProxyProviderMetadata] = [:]
+    private var providerRevisions: [UUID: UInt64] = [:]
 
     public init(
         fileManager: FileManager = .default,
@@ -111,28 +112,72 @@ public actor ProxyProviderEngine {
         self.httpFetcher = httpFetcher
 
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.providers = Self.loadMetadata(fileManager: fileManager, metadataURL: dir.appendingPathComponent("providers.json"))
+        let loadedProviders = Self.loadMetadata(fileManager: fileManager, metadataURL: dir.appendingPathComponent("providers.json"))
+        Self.migrateLegacyStagedProxyFiles(
+            providers: loadedProviders,
+            directoryURL: dir,
+            stagingBaseURL: self.stagingBaseURL,
+            fileManager: fileManager
+        )
+        self.providers = loadedProviders
     }
 
-    public static func sanitizedProviderFileName(name: String) -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
-        var scalars = trimmed.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
-        if scalars.isEmpty {
-            scalars = Array("proxy-provider")
+    private nonisolated static func migrateLegacyStagedProxyFiles(
+        providers: [UUID: ProxyProviderMetadata],
+        directoryURL: URL,
+        stagingBaseURL: URL,
+        fileManager: FileManager
+    ) {
+        let stagedDir = stagingBaseURL.appendingPathComponent("providers/proxies", isDirectory: true)
+        for entry in providers.values {
+            let hashedName = sanitizedProviderFileName(name: entry.name)
+            let legacyName = RuleProviderEngine.legacySanitizedFileName(
+                name: entry.name,
+                defaultStem: "proxy-provider",
+                fileExtension: "yaml",
+                acceptedSuffixes: [".yaml", ".yml"]
+            )
+            let hashedURL = stagedDir.appendingPathComponent(hashedName, isDirectory: false)
+            let cacheURL = directoryURL.appendingPathComponent("\(entry.id.uuidString).yaml", isDirectory: false)
+            if !fileManager.fileExists(atPath: hashedURL.path),
+               let data = try? Data(contentsOf: cacheURL),
+               !data.isEmpty {
+                _ = try? RuleProviderEngine.stageFileData(
+                    data,
+                    relativeSubdirectory: "providers/proxies",
+                    fileName: hashedName,
+                    stagingBaseURL: stagingBaseURL,
+                    fileManager: fileManager
+                )
+            }
+            if legacyName != hashedName {
+                RuleProviderEngine.removeStagedFile(
+                    relativeSubdirectory: "providers/proxies",
+                    fileName: legacyName,
+                    stagingBaseURL: stagingBaseURL,
+                    fileManager: fileManager
+                )
+            }
         }
-        var base = String(scalars)
-        while base.hasPrefix(".") {
-            base.removeFirst()
+    }
+
+    nonisolated public static func sanitizedProviderFileName(name: String) -> String {
+        RuleProviderEngine.sanitizedHashedFileName(
+            name: name,
+            defaultStem: "proxy-provider",
+            fileExtension: "yaml",
+            strippedExtensions: [".yaml", ".yml"]
+        )
+    }
+
+    nonisolated public static func sanitizedIntervalSeconds(
+        _ raw: Int?,
+        defaultValue: Int = 3_600
+    ) -> Int {
+        guard let raw, raw > 0, raw <= Int(UInt32.max) else {
+            return defaultValue
         }
-        if base.isEmpty {
-            base = "proxy-provider"
-        }
-        let lowered = base.lowercased()
-        if lowered.hasSuffix(".yaml") || lowered.hasSuffix(".yml") {
-            return base
-        }
-        return "\(base).yaml"
+        return raw
     }
 
     public func stagedProxyFileURL(name: String) -> URL {
@@ -153,16 +198,26 @@ public actor ProxyProviderEngine {
 
     public func addProvider(_ provider: ProxyProviderMetadata) throws {
         try Self.validateURL(provider.url)
+        if let existing = providers[provider.id], existing.url != provider.url {
+            providerRevisions[provider.id, default: 0] &+= 1
+        }
         providers[provider.id] = provider
         saveMetadata()
     }
 
     public func removeProvider(id: UUID) {
-        if let existing = providers.removeValue(forKey: id) {
-            try? fileManager.removeItem(at: cacheFileURL(for: id))
-            try? fileManager.removeItem(at: stagedProxyFileURL(name: existing.name))
-        }
+        let removed = providers.removeValue(forKey: id)
+        providerRevisions[id, default: 0] &+= 1
         saveMetadata()
+        try? fileManager.removeItem(at: cacheFileURL(for: id))
+        if let removed, !providers.values.contains(where: { $0.name == removed.name }) {
+            RuleProviderEngine.removeStagedFile(
+                relativeSubdirectory: "providers/proxies",
+                fileName: Self.sanitizedProviderFileName(name: removed.name),
+                stagingBaseURL: stagingBaseURL,
+                fileManager: fileManager
+            )
+        }
     }
 
     public func allProviders() -> [ProxyProviderMetadata] {
@@ -181,92 +236,159 @@ public actor ProxyProviderEngine {
         return try? Data(contentsOf: url)
     }
 
-    @discardableResult
-    public func fetchAndStage(id: UUID, force: Bool = true) async throws -> ProxyProviderMetadata {
-        guard var provider = providers[id] else {
+    private func ensureActiveSnapshot(
+        id: UUID,
+        expectedRevision: UInt64,
+        expectedURL: URL
+    ) throws -> ProxyProviderMetadata {
+        guard let current = providers[id] else {
             throw ProxyProviderError.providerNotFound
         }
-        try Self.validateURL(provider.url)
+        guard providerRevisions[id, default: 0] == expectedRevision,
+              current.url == expectedURL else {
+            throw CancellationError()
+        }
+        return current
+    }
 
-        var request = URLRequest(url: provider.url)
+    private func recordFailureIfCurrent(
+        id: UUID,
+        expectedRevision: UInt64,
+        expectedURL: URL,
+        message: String,
+        failure: Error
+    ) throws -> Never {
+        var current = try ensureActiveSnapshot(
+            id: id,
+            expectedRevision: expectedRevision,
+            expectedURL: expectedURL
+        )
+        current.lastError = message
+        providers[id] = current
+        saveMetadata()
+        throw failure
+    }
+
+    @discardableResult
+    public func fetchAndStage(id: UUID, force: Bool = true) async throws -> ProxyProviderMetadata {
+        guard let initial = providers[id] else {
+            throw ProxyProviderError.providerNotFound
+        }
+        let expectedRevision = providerRevisions[id, default: 0]
+        try Self.validateURL(initial.url)
+
+        var request = URLRequest(url: initial.url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
         request.setValue("clash-verge/v2.0.0", forHTTPHeaderField: "User-Agent")
-        if !force, let etag = provider.etag {
+        if !force, let etag = initial.etag {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
 
         let (data, response): (Data, URLResponse)
         do {
             if let httpFetcher {
-                (data, response) = try await httpFetcher(provider.url)
+                (data, response) = try await httpFetcher(initial.url)
             } else {
                 (data, response) = try await URLSession.shared.data(for: request)
             }
         } catch {
-            provider.lastError = error.localizedDescription
-            providers[id] = provider
-            saveMetadata()
-            throw ProxyProviderError.downloadFailed(error.localizedDescription)
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: error.localizedDescription,
+                failure: ProxyProviderError.downloadFailed(error.localizedDescription)
+            )
         }
+
+        var current = try ensureActiveSnapshot(
+            id: id,
+            expectedRevision: expectedRevision,
+            expectedURL: initial.url
+        )
 
         guard let httpResponse = response as? HTTPURLResponse else {
             let reason = "Invalid HTTP response"
-            provider.lastError = reason
-            providers[id] = provider
-            saveMetadata()
-            throw ProxyProviderError.downloadFailed(reason)
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: reason,
+                failure: ProxyProviderError.downloadFailed(reason)
+            )
         }
 
         let usageHeader = httpResponse.value(forHTTPHeaderField: "Subscription-Userinfo")
         let parsedUsage = usageHeader.flatMap { SubscriptionUsage.parse(header: $0, reportedAt: Date()) }
 
         if httpResponse.statusCode == 304 {
-            provider.lastUpdatedAt = Date()
+            current.lastUpdatedAt = Date()
             if let parsedUsage {
-                provider.usage = parsedUsage
+                current.usage = parsedUsage
             }
-            provider.lastError = nil
-            providers[id] = provider
+            current.lastError = nil
+            providers[id] = current
             saveMetadata()
-            return provider
+            return current
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
             let reason = "HTTP \(httpResponse.statusCode)"
-            provider.lastError = reason
-            providers[id] = provider
-            saveMetadata()
-            throw ProxyProviderError.downloadFailed(reason)
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: reason,
+                failure: ProxyProviderError.downloadFailed(reason)
+            )
         }
 
         guard data.count <= Self.maximumPayloadBytes else {
-            provider.lastError = ProxyProviderError.oversizedPayload(data.count).localizedDescription
-            providers[id] = provider
-            saveMetadata()
-            throw ProxyProviderError.oversizedPayload(data.count)
+            let err = ProxyProviderError.oversizedPayload(data.count)
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: err.localizedDescription,
+                failure: err
+            )
         }
 
         guard let text = String(data: data, encoding: .utf8),
               !Self.looksLikeHTML(text) else {
-            provider.lastError = ProxyProviderError.parsingFailed.localizedDescription
-            providers[id] = provider
-            saveMetadata()
-            throw ProxyProviderError.parsingFailed
+            let err = ProxyProviderError.parsingFailed
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: err.localizedDescription,
+                failure: err
+            )
         }
 
         let summary = ProfileConfigurationInspector.inspect(yaml: text)
         let proxyCount = summary.proxyCount
         guard proxyCount > 0 || Self.containsProxiesKey(text) else {
-            provider.lastError = ProxyProviderError.parsingFailed.localizedDescription
-            providers[id] = provider
-            saveMetadata()
-            throw ProxyProviderError.parsingFailed
+            let err = ProxyProviderError.parsingFailed
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: err.localizedDescription,
+                failure: err
+            )
         }
+
+        current = try ensureActiveSnapshot(
+            id: id,
+            expectedRevision: expectedRevision,
+            expectedURL: initial.url
+        )
 
         try data.write(to: cacheFileURL(for: id), options: [.atomic])
 
-        let fileName = Self.sanitizedProviderFileName(name: provider.name)
+        let fileName = Self.sanitizedProviderFileName(name: current.name)
         _ = try RuleProviderEngine.stageFileData(
             data,
             relativeSubdirectory: "providers/proxies",
@@ -275,18 +397,37 @@ public actor ProxyProviderEngine {
             fileManager: fileManager
         )
 
-        provider.lastUpdatedAt = Date()
-        provider.proxyCount = proxyCount
+        current.lastUpdatedAt = Date()
+        current.proxyCount = proxyCount
         if let parsedUsage {
-            provider.usage = parsedUsage
+            current.usage = parsedUsage
         }
-        provider.etag = httpResponse.value(forHTTPHeaderField: "ETag")
-        provider.sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        provider.lastError = nil
-        provider.stagedRelativePath = "./providers/proxies/\(fileName)"
-        providers[id] = provider
+        current.etag = httpResponse.value(forHTTPHeaderField: "ETag")
+        current.sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        current.lastError = nil
+        current.stagedRelativePath = "./providers/proxies/\(fileName)"
+        providers[id] = current
         saveMetadata()
-        return provider
+        return current
+    }
+
+    public func stagedProviders(inProfileYAML yaml: String) -> [ProxyProviderMetadata] {
+        let specs = DomesticRoutingOptimizer.extractRemoteProxyProviders(from: yaml)
+        var results: [ProxyProviderMetadata] = []
+        var seenIDs = Set<UUID>()
+        for spec in specs {
+            guard spec.type == "http",
+                  let url = URL(string: spec.url),
+                  (try? Self.validateURL(url)) != nil else {
+                continue
+            }
+            let match = providers.values.first { $0.name == spec.name && $0.url == url }
+                ?? providers.values.first { $0.name == spec.name }
+            if let match, seenIDs.insert(match.id).inserted {
+                results.append(match)
+            }
+        }
+        return results
     }
 
     @discardableResult
@@ -304,10 +445,13 @@ public actor ProxyProviderEngine {
             var metadata = existing ?? ProxyProviderMetadata(
                 name: spec.name,
                 url: url,
-                intervalSeconds: spec.interval ?? 3_600
+                intervalSeconds: Self.sanitizedIntervalSeconds(spec.interval)
             )
+            if metadata.url != url {
+                providerRevisions[metadata.id, default: 0] &+= 1
+            }
             metadata.url = url
-            if let interval = spec.interval, interval > 0 {
+            if let interval = spec.interval, interval > 0, interval <= Int(UInt32.max) {
                 metadata.intervalSeconds = interval
             }
             providers[metadata.id] = metadata

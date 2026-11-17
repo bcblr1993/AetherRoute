@@ -290,6 +290,12 @@ public enum DomesticRoutingOptimizer {
             : sections["dns"]
         var expandedOrDroppedProviders = Set<String>()
         let (parsedRuleProviders, providerOrder) = parseRuleProvidersSection(sections["rule-providers"])
+        let effectiveRemoteRules = filterLegacyPollutedRemoteRules(
+            remoteRules,
+            parsedRuleProviders: parsedRuleProviders,
+            profileYAML: yaml,
+            providerBaseDirectoryURL: providerBaseDirectoryURL
+        )
         let stagedRuleProviders = resolveStagedRuleProviders(
             parsedRuleProviders,
             baseDirectoryURL: providerBaseDirectoryURL
@@ -297,7 +303,7 @@ public enum DomesticRoutingOptimizer {
         let optimizedRuleLines = optimizeRulesSection(
             sections["rules"],
             customRules: customRules,
-            remoteRules: remoteRules,
+            remoteRules: effectiveRemoteRules,
             enableDomesticDirect: enableDomesticDirect,
             ruleProviders: parsedRuleProviders,
             stagedRuleProviders: stagedRuleProviders,
@@ -1015,6 +1021,57 @@ public enum DomesticRoutingOptimizer {
         case "interval": def.interval = Int(clean)
         default: break
         }
+    }
+
+    private static func filterLegacyPollutedRemoteRules(
+        _ remoteRules: [String],
+        parsedRuleProviders: [String: RuleProviderDef],
+        profileYAML: String,
+        providerBaseDirectoryURL: URL?
+    ) -> [String] {
+        guard !remoteRules.isEmpty,
+              !parsedRuleProviders.isEmpty,
+              let baseDir = providerBaseDirectoryURL else {
+            return remoteRules
+        }
+        let ruleProvidersDir = baseDir.appendingPathComponent("RuleProviders", isDirectory: true)
+        let metadataURL = ruleProvidersDir.appendingPathComponent("providers.json", isDirectory: false)
+        guard FileManager.default.fileExists(atPath: metadataURL.path),
+              let data = try? Data(contentsOf: metadataURL),
+              let providers = try? JSONDecoder().decode([RuleProviderMetadata].self, from: data),
+              !providers.isEmpty else {
+            return remoteRules
+        }
+        let customIDs = RuleProviderEngine.loadUUIDSet(
+            fileManager: .default,
+            url: ruleProvidersDir.appendingPathComponent(RuleProviderEngine.customProviderIDsFilename)
+        )
+        let remoteSpecs = extractRemoteRuleProviders(from: profileYAML)
+        let pollutedProviders = providers.filter {
+            RuleProviderEngine.isLegacySubscriptionPollutedEntry(
+                $0,
+                userConfirmedCustomIDs: customIDs,
+                remoteSpecs: remoteSpecs
+            )
+        }
+        guard !pollutedProviders.isEmpty else {
+            return remoteRules
+        }
+        let pollutedIDs = Set(pollutedProviders.map(\.id))
+        let genuineProviders = providers.filter { $0.isEnabled && !pollutedIDs.contains($0.id) }
+        let pollutedCompiled = Set(
+            RuleProviderEngine.compileCachedRules(for: pollutedProviders, cacheDirectoryURL: ruleProvidersDir)
+                .map { normalizedRuleString($0) }
+        )
+        let genuineCompiled = Set(
+            RuleProviderEngine.compileCachedRules(for: genuineProviders, cacheDirectoryURL: ruleProvidersDir)
+                .map { normalizedRuleString($0) }
+        )
+        let rulesToFilter = pollutedCompiled.subtracting(genuineCompiled)
+        guard !rulesToFilter.isEmpty else {
+            return remoteRules
+        }
+        return remoteRules.filter { !rulesToFilter.contains(normalizedRuleString($0)) }
     }
 
     private static func resolveStagedRuleProviders(

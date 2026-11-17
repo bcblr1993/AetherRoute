@@ -697,6 +697,8 @@ final class TunnelManager: ObservableObject {
     let systemExtensionActivator: any SystemExtensionActivating
     let routingResourceStoreFactory:
         @Sendable () throws -> RoutingResourceStore
+    let ruleProviderEngine: RuleProviderEngine
+    let proxyProviderEngine: ProxyProviderEngine
     let diagnosticEvents = DiagnosticEventBuffer()
     var manager: NEVPNManager?
     var statusObserver: NSObjectProtocol?
@@ -814,7 +816,9 @@ final class TunnelManager: ObservableObject {
         routingResourceStoreFactory:
             @escaping @Sendable () throws -> RoutingResourceStore = {
                 try RoutingResourceStore.applicationGroup()
-            }
+            },
+        ruleProviderEngine: RuleProviderEngine = .shared,
+        proxyProviderEngine: ProxyProviderEngine = .shared
     ) {
         self.qaAutomationEnvironment = environment
         self.privacyConsentStore = privacyConsentStore
@@ -825,6 +829,8 @@ final class TunnelManager: ObservableObject {
         self.routingResourceDownloadClient = routingResourceDownloadClient
         self.systemExtensionActivator = systemExtensionActivator
         self.routingResourceStoreFactory = routingResourceStoreFactory
+        self.ruleProviderEngine = ruleProviderEngine
+        self.proxyProviderEngine = proxyProviderEngine
         localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
         localProxySettings = localProxySettingsStore.load()
         controlURLSchemePreferenceStore = ControlURLSchemePreferenceStore(defaults: userDefaults)
@@ -1267,8 +1273,27 @@ final class TunnelManager: ObservableObject {
                     }
                 }
             }
-            await reloadCustomRuleProvidersFromEngine()
-            installProfileProjection(startup.profileProjection)
+            await reloadCustomRuleProvidersFromEngine(
+                additionalProfileYAMLs: startup.profileProjection.catalog.profiles.map(\.profile.yaml)
+            )
+            let initialProjection: ProfileCatalogProjection
+            if !compiledRemoteRulesCache.isEmpty {
+                let currentCustomRules = customRules
+                let currentRemoteRules = compiledRemoteRulesCache
+                let currentDomesticEnabled = isDomesticOptimizationEnabled
+                let catalog = startup.profileProjection.catalog
+                initialProjection = await Task.detached(priority: .userInitiated) {
+                    ProfileCatalogProjectionBuilder.production(
+                        catalog,
+                        customRules: currentCustomRules,
+                        remoteRules: currentRemoteRules,
+                        enableDomesticDirect: currentDomesticEnabled
+                    )
+                }.value
+            } else {
+                initialProjection = startup.profileProjection
+            }
+            installProfileProjection(initialProjection)
             try await systemExtensionActivator.activate(
                 identifier: networkEngineMode.providerBundleIdentifier
             ) { [weak self] in
@@ -1885,7 +1910,7 @@ final class TunnelManager: ObservableObject {
         let rawProfileYAML = activeProfile.yaml
         let baseProfileYAML = activeProfile.runtimeYAML
         let currentCustomRules = customRules
-        let remoteRules = await RuleProviderEngine.shared.compileActiveRules()
+        let remoteRules = await ruleProviderEngine.compileActiveRules()
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
             for: baseProfileYAML,
             customRules: currentCustomRules,
