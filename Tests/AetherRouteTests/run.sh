@@ -106,6 +106,7 @@ xcrun --sdk macosx swiftc -sdk "$SDK_PATH" -swift-version 6 -warnings-as-errors 
   "$ROOT/Sources/AetherRouteApp/AppStartupController.swift" \
   "$ROOT/Sources/AetherRouteApp/SystemExtensionActivationCoordinator.swift" \
   "$ROOT/Sources/AetherRouteApp/IndependentDistributionController.swift" \
+  "$ROOT/Sources/AetherRouteApp/AppUpdateWindow.swift" \
   "$ROOT/Sources/AetherRouteApp/SparkleUpdaterController.swift" \
   "$ROOT/Sources/AetherRouteApp/AppLanguageController.swift" \
   "$ROOT/Sources/AetherRouteApp/AppRuntimeEnvironmentController.swift" \

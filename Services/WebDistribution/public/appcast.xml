@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 3.0.3 (Build 2026111902)</title>
-            <pubDate>Thu, 19 Nov 2026 13:10:04 +0800</pubDate>
-            <sparkle:version>2026111902</sparkle:version>
-            <sparkle:shortVersionString>3.0.3</sparkle:shortVersionString>
+            <title>Version 3.0.4 (Build 2026111905)</title>
+            <pubDate>Thu, 19 Nov 2026 16:50:20 +0800</pubDate>
+            <sparkle:version>2026111905</sparkle:version>
+            <sparkle:shortVersionString>3.0.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.0.3/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.0.4/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,33 +120,33 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 3.0.3 更新要点</span>
-  <span class="release-badge">Build 2026111902 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.0.4 更新要点</span>
+  <span class="release-badge">Build 2026111905 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">🛡️ Rust 双引擎、TUN 协议栈与透明代理深度稳定性审计修复</span>
+  <span class="section-tag tag-feature">✨ 全新原生 SwiftUI 更新弹窗</span>
   <ul>
-    <li><strong>TUN 死核根治与 FFI 关闭竞态修复</strong>：修复分片或畸形 UDP/IP 包导致 TUN runner 退出的缺陷，消除 28 秒 TCP FIN 关闭延迟与 <code>LockFreeRingBuffer</code> 跨线程引用别名 UB，改用 <code>PollSender</code> 防止突发 UDP 丢包乱序；新增 <code>ShutdownGuard</code> 与完整后台任务 <code>JoinHandle</code> 回收，杜绝重载端口占用（<code>EADDRINUSE</code>）。</li>
-    <li><strong>协议、配置与内存安全加固</strong>：封堵不可信 <code>proxy-providers</code> 读取本地路径证书/密钥，消除多处配置解析与复合规则递归 panic；合入 <code>EncryptedFileStore</code> 单缓冲原位加密与 GeoData mmap 流式索引；加固 Hysteria2、ShadowTLS、gRPC、AnyTLS、WireGuard、SSH/ECH、WebSocket、TUIC 及 mux 边界处理。</li>
-    <li><strong>透明代理并发预算与核心业务审计修复</strong>：解除透明代理 <code>makeFlow</code> 锁竞争并引入空闲 UDP LRU 淘汰防止 TCP 饿死，支持 4096 并发会话在 512 MiB 上限内稳定运行；加固订阅拉取 SSRF 防护、304 协商保护、iCloud 加密同步幂等性与系统代理局部失败回滚。</li>
+    <li><strong>视觉全面重构</strong>：以自定义 Sparkle <code>SPUUserDriver</code> 取代旧版系统更新弹窗，严格遵循 <code>AetherVisual</code> 同心圆角与语义色规范，自适应暗色与浅色外观，新增版本跃迁胶囊（当前版本 → 最新版本）、安装包体积及「Apple 公证 · Ed25519 已验签」角标。</li>
+    <li><strong>结构化更新要点与三态实时进度</strong>：自动解析 Appcast 摘要与分组更新列表，消除传统 WebView 底部大片空白；内置下载进度、实时速率、验签准备与一键重启升级三态卡片，并支持原生 Switch 开关控制后续自动下载。</li>
+    <li><strong>静默检查不打扰</strong>：保持后台定时静默检查仅在菜单栏轻提醒、不抢占焦点，前台点击即可一键聚焦原生更新窗。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">✨ 全维度隔离验收与双档性能内存预算达标</span>
+  <span class="section-tag tag-improve">🛡️ 全维度隔离验收与双档性能内存预算达标</span>
   <ul>
-    <li><strong>核心与互通门禁全绿通过</strong>：Rust 引擎单元测试（<code>610</code> passed）、双指纹 12 协议互通（<code>11/11</code> 套件）、真实站点 ECH、43 节点实机对照（42/42 通联一致，<code>ours_missing=0, ours_fail=0</code>）及远端 ARM64 完整门禁（<code>724</code> XCTests + <code>144</code> Swift Testing + <code>114</code> 透明代理测试 + <code>29</code> FlowCoreBridge 测试）全部通过。</li>
-    <li><strong>6 维 VM 矩阵与双档 UI/内存预算达标</strong>：无头 <code>macos27</code> 6 维矩阵 <code>160/160</code> 全部通过；300 秒压测下 <code>showcase</code> 切页 p50 <strong>90.2 ms</strong>（p95 124.1 ms）、<code>large</code>（500 节点 / 万条规则 / 2000 连接）切页 p50 <strong>91.0 ms</strong>（p95 121.8 ms），内存稳定维持 72–93 MB（增长 ≤ +2 MB）；TUN/透明代理网卡切换均在 0–2 秒内自动恢复。</li>
+    <li><strong>设计规范与回归门禁全绿</strong>：UI Design Tokens 零违规、中英文本地化 <code>1714</code> 键完整校验、<code>SparkleAutoUpdateDebounce</code>（<code>15/15</code>）、Fast Lane（<code>14/14</code>）及 6 维 Tart VM 矩阵全部通过。</li>
+    <li><strong>双档 UI/内存预算与实机切换达标</strong>：300 秒压测下 <code>showcase</code> 切页 p50 <strong>89.4 ms</strong>（p95 122.6 ms，内存 73–85 MB），<code>large</code> 切页 p50 <strong>94.5 ms</strong>（p95 125.5 ms，内存 73–86 MB）；TUN/透明代理网卡切换均在 0–2 秒内自动恢复。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.0.3/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.0.4/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.0.3/AetherRoute-3.0.3-build-2026111902-arm64.dmg"
-                sparkle:edSignature="8T1VsZld1YSX012/X2CSclBB/4NOBIyuum1QphNj2UcCHjOBTkdDrCizU4pARufEyW2pipEfniVIsEWAcmtBBA=="
-                length="31870496"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.0.4/AetherRoute-3.0.4-build-2026111905-arm64.dmg"
+                sparkle:edSignature="b3VGPIB3ISCQrOI0Et74nwcaGvM3AbP02iQAJQ4mUCXlmUPd76a+EcVmcwHw5zPdvv998Y0R73dhN8tvOl5iDQ=="
+                length="31929308"
                 type="application/octet-stream" />
         </item>
     </channel>

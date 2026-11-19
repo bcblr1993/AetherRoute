@@ -25,6 +25,7 @@ xcrun --sdk macosx swiftc -sdk "$SDK_PATH" -swift-version 6 -warnings-as-errors 
   -Xlinker -rpath -Xlinker "$AETHERROUTE_PRODUCTS_DIR" \
   -framework Sparkle -framework AetherRouteKit \
   "$ROOT/Sources/AetherRouteApp/AppLanguageController.swift" \
+  "$ROOT/Sources/AetherRouteApp/AppUpdateWindow.swift" \
   "$ROOT/Sources/AetherRouteApp/SparkleUpdaterController.swift" \
   "$ROOT/Tests/SparkleAutoUpdateDebounce/main.swift" \
   -o "$TEST_TEMP/sparkle-auto-update-debounce"

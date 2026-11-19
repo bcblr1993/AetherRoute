@@ -4,8 +4,35 @@ import Darwin
 import Foundation
 import Network
 import NetworkExtension
+import SwiftUI
 
 // MARK: - Standalone Compilation Shims (UI-owned types excluded from standalone target)
+
+enum AetherVisual {
+    static let portalLight = Color.blue
+    static let portalMid = Color.blue
+    static let sMicro: CGFloat = 2
+    static let s1: CGFloat = 4
+    static let sCompact: CGFloat = 6
+    static let s2: CGFloat = 8
+    static let sRow: CGFloat = 10
+    static let s3: CGFloat = 12
+    static let s4: CGFloat = 16
+    static let s5: CGFloat = 20
+    static let badgeRadius: CGFloat = 4
+    static let controlRadius: CGFloat = 6
+    static let cardRadius: CGFloat = 10
+    static let panelFill = Color(nsColor: .quaternarySystemFill)
+    static let cardFill = Color(nsColor: .tertiarySystemFill)
+    static let cardStroke = Color(nsColor: .separatorColor)
+    static func tintFill(_ tint: Color) -> Color { tint.opacity(0.14) }
+    static func tintWash(_ tint: Color) -> Color { tint.opacity(0.10) }
+}
+
+struct AetherReadableTint: ShapeStyle {
+    let color: Color
+    func resolve(in environment: EnvironmentValues) -> Color { color }
+}
 
 @MainActor
 final class MenuBarTrafficController {

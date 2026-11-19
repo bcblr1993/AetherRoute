@@ -28,8 +28,14 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     }
 
     private var updaterController: SPUStandardUpdaterController?
+    private var directUpdater: SPUUpdater?
+    private var customUserDriver: AppUpdateUserDriver?
     private var updaterStarted = false
     private var cancellables = Set<AnyCancellable>()
+
+    private var activeUpdater: SPUUpdater? {
+        directUpdater ?? updaterController?.updater
+    }
 
     // MARK: - Rapid Switching & Cooldown Protection
 
@@ -102,14 +108,33 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             configureUpdaterSubscriptions(for: updaterController.updater)
             setupSparkleWindowObserver()
         } else if startUpdater {
-            let controller = SPUStandardUpdaterController(
-                startingUpdater: consentAccepted,
-                updaterDelegate: self,
-                userDriverDelegate: self
+            let driver = AppUpdateUserDriver(
+                currentVersion: Self.currentVersion,
+                shouldShowScheduledWindow: { [weak self] immediateFocus in
+                    self?.shouldShowScheduledUpdateWindow(immediateFocus: immediateFocus) ?? immediateFocus
+                }
             )
-            self.updaterController = controller
-            self.updaterStarted = consentAccepted
-            configureUpdaterSubscriptions(for: controller.updater)
+            let updater = SPUUpdater(
+                hostBundle: Bundle.main,
+                applicationBundle: Bundle.main,
+                userDriver: driver,
+                delegate: self
+            )
+            driver.currentAutomaticDownloads = updater.automaticallyDownloadsUpdates
+            driver.onSetAutomaticDownloads = { [weak updater] enabled in
+                updater?.automaticallyDownloadsUpdates = enabled
+            }
+            self.customUserDriver = driver
+            self.directUpdater = updater
+            if consentAccepted {
+                do {
+                    try updater.start()
+                    self.updaterStarted = true
+                } catch {
+                    Self.logger.error("stage=updateCheck startUpdater failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            configureUpdaterSubscriptions(for: updater)
             setupSparkleWindowObserver()
         }
         if consentAccepted {
@@ -141,7 +166,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     }
 
     var canCheckForUpdatesEffective: Bool {
-        if let updater = updaterController?.updater {
+        if let updater = activeUpdater {
             return updater.canCheckForUpdates && !updater.sessionInProgress
         }
         return canCheckForUpdates
@@ -154,7 +179,10 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         if canCheckForUpdates {
             return true
         }
-        if updaterController?.updater.sessionInProgress == true {
+        if activeUpdater?.sessionInProgress == true {
+            return true
+        }
+        if customUserDriver?.hasVisibleWindow == true {
             return true
         }
         return !sparkleWindows().isEmpty
@@ -162,7 +190,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
 
     func handlePrivacyConsentAccepted() {
         guard isPrivacyConsentAccepted() else { return }
-        if !updaterStarted, let updater = updaterController?.updater {
+        if !updaterStarted, let updater = activeUpdater {
             do {
                 try updater.start()
                 updaterStarted = true
@@ -178,11 +206,12 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             performCheckAction(self)
             return
         }
-        if !updaterStarted, isPrivacyConsentAccepted(), let updater = updaterController?.updater {
+        if !updaterStarted, isPrivacyConsentAccepted(), let updater = activeUpdater {
             try? updater.start()
             updaterStarted = true
         }
         NSApplication.shared.activate(ignoringOtherApps: true)
+        customUserDriver?.focusWindowIfPresent()
         let existingWindows = sparkleWindows()
         for window in existingWindows {
             if window.isMiniaturized {
@@ -190,7 +219,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             }
             window.makeKeyAndOrderFront(nil)
         }
-        guard let updater = updaterController?.updater, updater.canCheckForUpdates else {
+        guard let updater = activeUpdater, updater.canCheckForUpdates else {
             return
         }
         updater.checkForUpdates()
@@ -202,7 +231,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             performBackgroundCheckAction(self)
             return
         }
-        guard let updater = updaterController?.updater, updater.canCheckForUpdates else {
+        guard let updater = activeUpdater, updater.canCheckForUpdates else {
             return
         }
         updater.checkForUpdatesInBackground()
@@ -243,7 +272,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         )
 
         automaticallyChecksForUpdates = enabled
-        if let updater = updaterController?.updater {
+        if let updater = activeUpdater {
             updater.automaticallyChecksForUpdates = enabled
         }
 

@@ -1293,12 +1293,60 @@
         }
       }
     },
+    "AetherRoute %@ is Available": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute %@ is Available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute %@ 现已发布"
+          }
+        }
+      }
+    },
+    "AetherRoute %@ is Ready": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute %@ is Ready"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute %@ 已准备就绪"
+          }
+        }
+      }
+    },
     "AetherRoute %@ is available": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "AetherRoute %@ 可以下载"
+          }
+        }
+      }
+    },
+    "AetherRoute %@ is currently the newest version available.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute %@ is currently the newest version available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前安装的 AetherRoute %@ 已是最新版本。"
           }
         }
       }
@@ -1444,6 +1492,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "AetherRoute 尚未下载或更改任何内容。"
+          }
+        }
+      }
+    },
+    "AetherRoute is Up to Date": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute is Up to Date"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AetherRoute 已是最新版本"
           }
         }
       }
@@ -1979,6 +2043,22 @@
         }
       }
     },
+    "Apple Notarized · Ed25519 Verified": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple Notarized · Ed25519 Verified"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 公证 · Ed25519 已验签"
+          }
+        }
+      }
+    },
     "Apple silicon": {
       "localizations": {
         "zh-Hans": {
@@ -2220,6 +2300,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动检查更新"
+          }
+        }
+      }
+    },
+    "Automatically download and install future updates": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically download and install future updates"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动下载并安装后续更新"
           }
         }
       }
@@ -2828,12 +2924,44 @@
         }
       }
     },
+    "Checking for Updates": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking for Updates"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查更新"
+          }
+        }
+      }
+    },
     "Checking for rule updates…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在检查规则更新…"
+          }
+        }
+      }
+    },
+    "Checking for the latest AetherRoute release…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking for the latest AetherRoute release…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查最新的 AetherRoute 版本…"
           }
         }
       }
@@ -3665,6 +3793,22 @@
         }
       }
     },
+    "Continue in Background": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue in Background"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台继续下载"
+          }
+        }
+      }
+    },
     "Copied": {
       "localizations": {
         "zh-Hans": {
@@ -4074,6 +4218,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前"
+          }
+        }
+      }
+    },
+    "Current version %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current version %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前版本 %@"
           }
         }
       }
@@ -5026,12 +5186,60 @@
         }
       }
     },
+    "Downloading AetherRoute %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading AetherRoute %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在获取 AetherRoute %@"
+          }
+        }
+      }
+    },
+    "Downloading Update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading Update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载更新"
+          }
+        }
+      }
+    },
     "Downloading and verifying routing resources…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在下载并校验路由资源…"
+          }
+        }
+      }
+    },
+    "Downloading update package…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading update package…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在下载更新包…"
           }
         }
       }
@@ -5102,6 +5310,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "每条连接显示目标、命中的规则、出口和流量。"
+          }
+        }
+      }
+    },
+    "Ed25519 signature will be verified automatically": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ed25519 signature will be verified automatically"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载完成后将自动校验 Ed25519 签名"
           }
         }
       }
@@ -5962,6 +6186,22 @@
         }
       }
     },
+    "Fixes & Stability": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixes & Stability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "核心修复与稳定性"
+          }
+        }
+      }
+    },
     "Flame": {
       "localizations": {
         "zh-Hans": {
@@ -6148,6 +6388,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "来自当前配置"
+          }
+        }
+      }
+    },
+    "Full Release Notes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full Release Notes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整更新日志"
           }
         }
       }
@@ -7098,6 +7354,22 @@
         }
       }
     },
+    "Improvements": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Improvements"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "体验与性能优化"
+          }
+        }
+      }
+    },
     "In System Settings › General › Login Items & Extensions › Network Extensions, switch on AetherRoute.": {
       "extractionState": "manual",
       "localizations": {
@@ -7252,6 +7524,22 @@
         }
       }
     },
+    "Install Update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install Update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即安装更新"
+          }
+        }
+      }
+    },
     "Installing": {
       "extractionState": "manual",
       "localizations": {
@@ -7259,6 +7547,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在安装"
+          }
+        }
+      }
+    },
+    "Installing Update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing Update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在安装更新"
+          }
+        }
+      }
+    },
+    "Installing update and relaunching AetherRoute…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installing update and relaunching AetherRoute…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在安装更新并重新启动 AetherRoute…"
           }
         }
       }
@@ -8609,6 +8929,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "新"
+          }
+        }
+      }
+    },
+    "New Features": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New Features"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新特性"
           }
         }
       }
@@ -10662,6 +10998,22 @@
         }
       }
     },
+    "Preparing Update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing Update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备更新"
+          }
+        }
+      }
+    },
     "Preparing routing rules…": {
       "localizations": {
         "en": {
@@ -11700,6 +12052,22 @@
         }
       }
     },
+    "Recommended": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recommended"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推荐更新"
+          }
+        }
+      }
+    },
     "Reconnect": {
       "localizations": {
         "zh-Hans": {
@@ -11970,6 +12338,22 @@
         }
       }
     },
+    "Remind Me Later": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remind Me Later"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后提醒"
+          }
+        }
+      }
+    },
     "Remove": {
       "localizations": {
         "zh-Hans": {
@@ -12179,6 +12563,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "解析真实地址，同时保留增强域名路由。"
+          }
+        }
+      }
+    },
+    "Restart & Update": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restart & Update"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即重启并更新"
           }
         }
       }
@@ -12959,6 +13359,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在诊断…"
+          }
+        }
+      }
+    },
+    "SHA-256 and Sparkle Ed25519 signature checks passed. Click Restart & Update to apply in seconds.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 and Sparkle Ed25519 signature checks passed. Click Restart & Update to apply in seconds."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SHA-256 与 Sparkle Ed25519 签名校验通过。点击「立即重启并更新」将在数秒内完成升级。"
           }
         }
       }
@@ -13789,6 +14205,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "分流测试命中: %@ -> %@"
+          }
+        }
+      }
+    },
+    "Skip This Version": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip This Version"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跳过此版本"
           }
         }
       }
@@ -17251,6 +17683,22 @@
         }
       }
     },
+    "Unable to Check for Updates": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to Check for Updates"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法检查更新"
+          }
+        }
+      }
+    },
     "Unavailable": {
       "localizations": {
         "zh-Hans": {
@@ -17397,12 +17845,60 @@
         }
       }
     },
+    "Update Check Failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update Check Failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查更新失败"
+          }
+        }
+      }
+    },
     "Update Now": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "立即更新"
+          }
+        }
+      }
+    },
+    "Update Ready to Install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update Ready to Install"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新已准备就绪"
+          }
+        }
+      }
+    },
+    "Update Verified & Ready to Install": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update Verified & Ready to Install"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新包已就绪并通过安全验签"
           }
         }
       }
@@ -17819,6 +18315,22 @@
         }
       }
     },
+    "Verifying signature & preparing update…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verifying signature & preparing update…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在校验签名并准备安装…"
+          }
+        }
+      }
+    },
     "Verifying the network extension": {
       "localizations": {
         "zh-Hans": {
@@ -18179,6 +18691,22 @@
         }
       }
     },
+    "What's New": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What's New"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新亮点"
+          }
+        }
+      }
+    },
     "What's New in This Version": {
       "extractionState": "manual",
       "localizations": {
@@ -18299,6 +18827,22 @@
         }
       }
     },
+    "You're Up to Date": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You're Up to Date"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已是最新版本"
+          }
+        }
+      }
+    },
     "You're all set": {
       "extractionState": "manual",
       "localizations": {
@@ -18322,6 +18866,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "你的 Mac"
+          }
+        }
+      }
+    },
+    "Your active connection stays uninterrupted during download.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your active connection stays uninterrupted during download."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载在后台进行，不会中断当前代理连接。"
           }
         }
       }

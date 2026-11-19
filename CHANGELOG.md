@@ -6,6 +6,33 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.0.4] - 2026-11-19
+
+### Added
+
+- **Native SwiftUI Software Update Window (`Sources/AetherRouteApp/AppUpdateWindow.swift`, `Sources/AetherRouteApp/SparkleUpdaterController.swift`, `Sources/AetherRouteApp/Localizable.xcstrings`)**:
+  - Replaced Sparkle's stock `SPUStandardUserDriver` alert with a custom native SwiftUI `AppUpdateUserDriver` conforming to `SPUUserDriver` and adhering strictly to `AetherVisual` design tokens (`AetherVisual` spacing/radius/fill tokens, `AetherReadableTint`, Dynamic Type text styles, zero shadows, full Dark & Light Mode support, and 35 EN + ZH-Hans localization strings).
+  - Designed a cohesive macOS Sequoia update window featuring the Silver Flight app icon, version transition pill (`current → latest`), build number & package size metadata, `Apple Notarized · Ed25519 Verified` trust badge, auto-sizing release notes container (eliminating empty WKWebView voids), native SwiftUI auto-download toggle, full changelog link, and live multi-stage progress UI (`checking`, `available`, `downloading` with bytes/percent/speed, `extracting`, `readyToInstall`, `installing`, `upToDate`, and `error`).
+  - Added `AppUpdateReleaseNotesParser` supporting both `aethernative.com` Appcast HTML (`.summary` + `.group`/`.tag`) and local Sparkle Appcast HTML (`.section`/`.section-tag`), decoding entities and separating bold lead-ins cleanly, while keeping gentle background scheduled update checks silent without stealing focus.
+
+### Changed
+
+- **Tests first (TDD) & Full Release Qualification (`3.0.4` / `2026111905`)**:
+  - **TDD & Design-Token Gates**:
+    - Added HTML release-notes parsing and custom update session lifecycle tests to `Tests/SparkleAutoUpdateDebounce/main.swift` (`15/15` scenarios PASS under Swift 6 `-warnings-as-errors`); verified `./scripts/verify_ui_design_tokens.sh` (`0` violations) and `./scripts/verify_localizations.sh` (`1530` direct literals / `1714` catalog keys).
+    - `./scripts/test_fast_lane.sh` passed all `14/14` steps in `73s` (`Core/Engine` unchanged at `54d279c`).
+  - **Isolated VM Matrix, Remote ARM64, UI/Memory Budget & Runtime Evidence (`vm:macos27`, Build `2026111905`)**:
+    - 6-dimension Tart VM matrix (`tun` & `transparent` × `rule`/`global`/`direct`): all 6 configurations PASS (including all 5 Transparent Proxy gates).
+    - Remote ARM64 full source gate (`test_remote_arm64.sh` on `macos27`): **PASS** (`AetherRouteTests.xctest` + `114` TransparentProxyTests + `29` FlowCoreBridgeTests + `28/28` MacFuncLifecycleAndV3FixTests).
+    - UI Performance & Memory Budget Gate (`vm:macos27`, `300s showcase + 300s large`, `status=passed`):
+      - `showcase` (`420` switches): `p50=89.4 ms`, `p95=122.6 ms`, `max=136.7 ms` (budget `p95<=180 ms`, `max<=300 ms`); memory `median=73 MB`, `max=85 MB`, `growth=+3 MB`.
+      - `large` (`420` switches): `p50=94.5 ms`, `p95=125.5 ms`, `max=286.8 ms`; memory `median=73 MB`, `max=86 MB`, `growth=+2 MB`.
+    - Notarized `stable` candidate DMG runtime evidence (`vm:macos27`, candidate SHA-256 `5a3b045b5d84571b653ad3091e09dc078950741729fb441ddbedf3186d50e864`):
+      - **TUN**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `4.094464s` PASS; 6-step NIC switch recovery `0/1/1/2/2/1 s` (`<= 15s`) PASS.
+      - **Transparent Proxy**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `4.137360s` PASS; 6-step NIC switch recovery `0/2/1/1/1/0 s` (`<= 15s`) PASS.
+  - **Signed & Notarized Production Release**:
+    - `AetherRoute-3.0.4-build-2026111905-arm64.dmg` (`31,929,308` bytes, SHA-256 `cba9dc5a4c92fbb25a9303a4f4b917335fc07fada228aedbd237d6022d06adda`), Developer ID signed, Apple notarized & stapled.
+
 ## [3.0.3] - 2026-11-19
 
 ### Fixed
