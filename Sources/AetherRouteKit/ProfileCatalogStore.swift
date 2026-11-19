@@ -498,6 +498,8 @@ public struct ProfileCatalogStore: Sendable {
         for source in sources {
             let canonical = ProfileRuntimeYAML.canonicalize(source.profile.yaml)
             let extracted = extractProxyEntries(fromYAML: canonical)
+            var keptEntries: [(entry: ExtractedProxyEntry, finalName: String)] = []
+            var sourceNameMap: [String: String] = [:]
             for entry in extracted {
                 if spec.deduplicateByServerPort,
                    !entry.server.isEmpty,
@@ -515,7 +517,15 @@ public struct ProfileCatalogStore: Sendable {
                     sourceName: source.profile.name,
                     seen: &seenNames
                 )
-                let rewritten = rewriteProxyEntryName(entry.lines, newName: finalName)
+                sourceNameMap[entry.name] = finalName
+                keptEntries.append((entry, finalName))
+            }
+            for (entry, finalName) in keptEntries {
+                let rewritten = rewriteProxyEntryName(
+                    entry.lines,
+                    newName: finalName,
+                    renamedDialers: sourceNameMap
+                )
                 mergedProxyBlocks.append(rewritten)
                 mergedNodeNames.append(finalName)
             }
@@ -612,7 +622,7 @@ public struct ProfileCatalogStore: Sendable {
             var server = ""
             var port = ""
             if afterDash.hasPrefix("{") {
-                let flowText = block.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+                let flowText = block.map { YAMLDocument.stripComment($0).trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
                 if let open = flowText.firstIndex(of: "{"), let close = flowText.lastIndex(of: "}") {
                     let body = String(flowText[flowText.index(after: open)..<close])
                     for field in splitTopLevelFlow(body) {
@@ -626,7 +636,7 @@ public struct ProfileCatalogStore: Sendable {
                     }
                 }
             } else {
-                if let (k, v) = splitKeyValue(afterDash) {
+                if let (k, v) = splitKeyValue(YAMLDocument.stripComment(afterDash)) {
                     switch k.lowercased() {
                     case "name": name = unquoteYAML(v)
                     case "server": server = unquoteYAML(v)
@@ -637,7 +647,7 @@ public struct ProfileCatalogStore: Sendable {
                 let baseIndent = first.prefix(while: { $0 == " " }).count
                 for line in block.dropFirst() {
                     let indent = line.prefix(while: { $0 == " " }).count
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    let trimmed = YAMLDocument.stripComment(line.trimmingCharacters(in: .whitespaces))
                     guard indent <= baseIndent + 4, let (k, v) = splitKeyValue(trimmed) else { continue }
                     switch k.lowercased() {
                     case "name": name = unquoteYAML(v)
@@ -652,7 +662,11 @@ public struct ProfileCatalogStore: Sendable {
         }
     }
 
-    private static func rewriteProxyEntryName(_ block: [String], newName: String) -> [String] {
+    private static func rewriteProxyEntryName(
+        _ block: [String],
+        newName: String,
+        renamedDialers: [String: String] = [:]
+    ) -> [String] {
         guard let first = block.first else { return block }
         let baseIndent = first.prefix(while: { $0 == " " }).count
         let leadingPad = String(repeating: " ", count: baseIndent)
@@ -661,16 +675,23 @@ public struct ProfileCatalogStore: Sendable {
         let quotedName = yamlSingleQuoted(newName)
 
         if afterDash.hasPrefix("{") {
-            let flowText = block.map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
+            let flowText = block.map { YAMLDocument.stripComment($0).trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
             if let open = flowText.firstIndex(of: "{"), let close = flowText.lastIndex(of: "}") {
                 let body = String(flowText[flowText.index(after: open)..<close])
                 var fields = splitTopLevelFlow(body)
                 var replaced = false
                 for idx in fields.indices {
-                    if let (k, _) = splitKeyValue(fields[idx]), k.lowercased() == "name" {
-                        fields[idx] = "name: \(quotedName)"
-                        replaced = true
-                        break
+                    if let (k, v) = splitKeyValue(fields[idx]) {
+                        let lowerK = k.lowercased()
+                        if lowerK == "name" {
+                            fields[idx] = "name: \(quotedName)"
+                            replaced = true
+                        } else if lowerK == "dialer-proxy" || lowerK == "connect-via" {
+                            let rawTarget = unquoteYAML(v)
+                            if let mapped = renamedDialers[rawTarget] {
+                                fields[idx] = "\(k): \(yamlSingleQuoted(mapped))"
+                            }
+                        }
                     }
                 }
                 if !replaced {
@@ -681,18 +702,34 @@ public struct ProfileCatalogStore: Sendable {
         }
 
         var updated = block
-        if let (k, _) = splitKeyValue(afterDash), k.lowercased() == "name" {
-            updated[0] = "\(leadingPad)- name: \(quotedName)"
-            return updated
+        var replacedName = false
+        if let (k, v) = splitKeyValue(YAMLDocument.stripComment(afterDash)) {
+            let lowerK = k.lowercased()
+            if lowerK == "name" {
+                updated[0] = "\(leadingPad)- name: \(quotedName)"
+                replacedName = true
+            } else if lowerK == "dialer-proxy" || lowerK == "connect-via" {
+                let rawTarget = unquoteYAML(v)
+                if let mapped = renamedDialers[rawTarget] {
+                    updated[0] = "\(leadingPad)- \(k): \(yamlSingleQuoted(mapped))"
+                }
+            }
         }
         for idx in updated.indices.dropFirst() {
             let line = updated[idx]
             let indent = line.prefix(while: { $0 == " " }).count
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if indent <= baseIndent + 4, let (k, _) = splitKeyValue(trimmed), k.lowercased() == "name" {
-                let pad = String(repeating: " ", count: indent)
+            let trimmed = YAMLDocument.stripComment(line.trimmingCharacters(in: .whitespaces))
+            guard indent <= baseIndent + 4, let (k, v) = splitKeyValue(trimmed) else { continue }
+            let lowerK = k.lowercased()
+            let pad = String(repeating: " ", count: indent)
+            if lowerK == "name" && !replacedName {
                 updated[idx] = "\(pad)name: \(quotedName)"
-                return updated
+                replacedName = true
+            } else if lowerK == "dialer-proxy" || lowerK == "connect-via" {
+                let rawTarget = unquoteYAML(v)
+                if let mapped = renamedDialers[rawTarget] {
+                    updated[idx] = "\(pad)\(k): \(yamlSingleQuoted(mapped))"
+                }
             }
         }
         return updated
@@ -907,14 +944,44 @@ public struct ProfileCatalogStore: Sendable {
             throw ProfileCatalogStoreError.cannotRemoveActiveProfile
         }
 
-        let updated = ProfileCatalog(
+        var remainingProfiles: [ManagedProfile] = []
+        remainingProfiles.reserveCapacity(current.profiles.count)
+        for item in current.profiles where item.id != id {
+            if var spec = item.mergedSpec, spec.sourceProfileIDs.contains(id) {
+                spec.sourceProfileIDs.removeAll { $0 == id }
+                let updatedSpec: MergedProfileSpec? = spec.sourceProfileIDs.isEmpty ? nil : spec
+                remainingProfiles.append(
+                    ManagedProfile(
+                        id: item.id,
+                        profile: item.profile,
+                        updatedAt: deletedAt,
+                        mergedSpec: updatedSpec
+                    )
+                )
+            } else {
+                remainingProfiles.append(item)
+            }
+        }
+
+        var updated = ProfileCatalog(
             activeProfileID: current.activeProfileID,
-            profiles: current.profiles.filter { $0.id != id }
+            profiles: remainingProfiles
         )
-        try save(updated, fileManager: fileManager)
+        try commit(
+            updated,
+            previous: current,
+            mirrorProfile: nil,
+            fileManager: fileManager
+        )
         var tombstones = loadDeletedProfiles(fileManager: fileManager)
         tombstones[id] = max(deletedAt, tombstones[id] ?? .distantPast)
         try? saveDeletedProfiles(tombstones, fileManager: fileManager)
+        // Rebuild any merged profiles whose remaining sources are still non-empty
+        for item in updated.profiles where item.mergedSpec != nil {
+            if let rebuilt = try? rebuildMergedProfile(id: item.id, updatedAt: deletedAt, fileManager: fileManager) {
+                updated = rebuilt
+            }
+        }
         return updated
     }
 
@@ -1355,8 +1422,12 @@ extension ActiveProfile {
         }
         try ProfileImportValidator.validate(data: data)
         if let nativeNodes {
-            guard try AetherNodeProfileCompiler.compile(nodes: nativeNodes)
-                    == yaml else {
+            _ = try AetherNodeProfileCompiler.compile(nodes: nativeNodes)
+            let yamlNodeNames = ProfileOverrideCompiler.nodeNames(in: yaml)
+            let nativeNodeNames = nativeNodes.map {
+                $0.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard yamlNodeNames == nativeNodeNames else {
                 throw ProfileCatalogStoreError.nativeProfileMismatch
             }
         }

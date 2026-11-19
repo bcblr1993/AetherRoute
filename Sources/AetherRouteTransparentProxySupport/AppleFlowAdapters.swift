@@ -699,6 +699,9 @@ public final class BoundedAppleUDPFlowAdapter:
             bytes += next
             count += 1
         }
+        if count == 0, !staged.isEmpty, maximumDatagrams > 0 {
+            count = 1
+        }
         let batch = Array(staged.prefix(count))
         staged.removeFirst(count)
         return batch

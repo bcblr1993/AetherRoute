@@ -250,6 +250,15 @@ final class EngineLifecycleGate: @unchecked Sendable {
         unsubmittedToLeave?.leave()
     }
 
+    /// True only when no newer generation has been admitted since `ownedGeneration`,
+    /// preventing a stale bridge from uninstalling its successor's packet-flow callback.
+    func canSafelyUninstallPacketFlow(ownedGeneration: UInt64?) -> Bool {
+        guard let ownedGeneration else { return false }
+        lock.lock()
+        defer { lock.unlock() }
+        return phase == .idle && generationCounter == ownedGeneration
+    }
+
     /// Retires an unexpectedly terminated engine generation, ensuring the gate returns to idle
     /// and does not leave a zombie generation blocking future starts.
     func retireUnexpectedlyTerminatedEngine(generation: UInt64) {

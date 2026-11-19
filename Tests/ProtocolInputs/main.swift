@@ -373,8 +373,8 @@ enum ProtocolInputCompatibilityVerifier {
             )
         case "hysteria-v1-xplus":
             return fixture(
-                "hy1://127.0.0.1:18442?protocol=wechat-video&auth=hy1-secret&peer=edge.example&obfs=xplus&obfsParam=xplus-key&upmbps=50&downmbps=200&alpn=h3#HY1-XPlus",
-                ["protocol: 'wechat-video'", "obfs: 'xplus-key'", "up: 50", "down: 200"]
+                "hy1://127.0.0.1:18442?protocol=udp&auth=hy1-secret&peer=edge.example&obfs=xplus&obfsParam=xplus-key&upmbps=50&downmbps=200&alpn=h3#HY1-XPlus",
+                ["protocol: 'udp'", "obfs: 'xplus-key'", "up: 50", "down: 200"]
             )
         case "hy2-standard":
             return fixture(

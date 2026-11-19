@@ -1064,26 +1064,28 @@ struct DNSView: View {
             return
         }
         isRunningLookup = true
-        let customHosts = tunnel.activeProfileOverrides.customHosts
+        let customHosts = tunnel.effectiveCustomHosts
         let dnsModeOverride: DNSResolutionMode? = switch tunnel.dnsRuntimePolicy.resolutionMode {
         case .inherit: nil
         case .normal: .normal
         case .fakeIP: .fakeIP
         case .redirHost: .redirHost
         }
-        let geoSiteData = tunnel.bundledGeoSiteData
+        let geoSiteData = tunnel.slicedGeoSiteData(for: summary)
 
         Task {
             let resolved = await DNSLookupInspector.resolveSystemAddresses(for: normalized)
-            let report = DNSLookupInspector.evaluate(
-                query: normalized,
-                summary: summary,
-                customHosts: customHosts,
-                dnsModeOverride: dnsModeOverride,
-                geoSiteData: geoSiteData,
-                resolvedAddresses: resolved.addresses,
-                latencyMilliseconds: resolved.latencyMilliseconds
-            )
+            let report = await Task.detached(priority: .userInitiated) {
+                DNSLookupInspector.evaluate(
+                    query: normalized,
+                    summary: summary,
+                    customHosts: customHosts,
+                    dnsModeOverride: dnsModeOverride,
+                    geoSiteData: geoSiteData,
+                    resolvedAddresses: resolved.addresses,
+                    latencyMilliseconds: resolved.latencyMilliseconds
+                )
+            }.value
             lookupReport = report
             isRunningLookup = false
         }
@@ -1190,7 +1192,9 @@ struct DNSView: View {
         let isConnected = tunnel.isConnected
 #if AETHERROUTE_INDEPENDENT
         let engineMode = tunnel.networkEngineMode.rawValue
-        let localProxyEnabled = tunnel.localProxySettings.isEnabled || tunnel.localProxySettings.allowLAN
+        let localProxyEnabled = tunnel.localProxySettings.isEnabled
+            || tunnel.localProxySettings.allowLAN
+            || tunnel.localProxySettings.setAsSystemProxy
         let localProxyPort = tunnel.localProxySettings.httpPort
 #else
         let engineMode = "tun"
@@ -1205,15 +1209,19 @@ struct DNSView: View {
         let staleProviders = NetworkDiagnosticDoctor.countStaleRuleProviders(customProviders)
         let isUIReview = tunnel.isUIReviewMode
         let shouldProbeProxy = isConnected && tunnel.routingMode != .direct
-        let loopbackEval = RouteMatchEngine.evaluate(
-            destination: "localhost:8080",
-            against: summary.allRules
-        )?.target == "DIRECT"
+        let rulesSnapshot = summary.allRules
 
         Task {
-            let localListening = localProxyEnabled
-                ? NetworkDiagnosticDoctor.probeLoopbackTCPPort(localProxyPort)
-                : false
+            let (loopbackEval, localListening) = await Task.detached(priority: .userInitiated) {
+                let loopback = RouteMatchEngine.evaluate(
+                    destination: "localhost:8080",
+                    against: rulesSnapshot
+                )?.target == "DIRECT"
+                let listening = localProxyEnabled
+                    ? NetworkDiagnosticDoctor.probeLoopbackTCPPort(localProxyPort)
+                    : false
+                return (loopback, listening)
+            }.value
             let dnsResolved = await DNSLookupInspector.resolveSystemAddresses(for: "www.apple.com")
             let domesticMs: Int?
             let proxyMs: Int?

@@ -349,6 +349,23 @@ func TestRateLimiterIsAtomicBoundedAndExpires(t *testing.T) {
 	if !limiter.Allow("third", now.Add(time.Hour)) {
 		t.Fatal("expired limiter entries were not reclaimed")
 	}
+
+	// Non-saturated one-shot entries evict LRU safely while saturated abusers stay pinned.
+	lruLimiter := newFixedWindowLimiter(2, time.Minute, 2)
+	if !lruLimiter.Allow("abuser", now) || !lruLimiter.Allow("abuser", now) {
+		t.Fatal("initial abuser window counts failed")
+	}
+	if lruLimiter.Allow("abuser", now) {
+		t.Fatal("saturated abuser was not blocked")
+	}
+	for i := 0; i < 10; i++ {
+		if !lruLimiter.Allow("idle-"+leftPadHex(i, 4), now) {
+			t.Fatalf("one-shot source %d was blocked by LRU churn", i)
+		}
+	}
+	if lruLimiter.Allow("abuser", now) {
+		t.Fatal("LRU churn evicted a saturated rate-limited abuser")
+	}
 }
 
 func TestForwardedSourceRequiresExplicitTrustAndOneIP(t *testing.T) {
@@ -365,6 +382,267 @@ func TestForwardedSourceRequiresExplicitTrustAndOneIP(t *testing.T) {
 	if sourceIdentity(request, true) != "127.0.0.1" {
 		t.Fatal("forwarding chain was accepted")
 	}
+}
+
+func TestUnauthenticatedRandomLicenseRequestsCannotExhaustIdentityLimiter(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	seed := bytes.Repeat([]byte{0x51}, ed25519.SeedSize)
+	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	attackerSeed := bytes.Repeat([]byte{0x99}, ed25519.SeedSize)
+	attackerPrivateKey := ed25519.NewKeyFromSeed(attackerSeed)
+
+	store := testStore(t)
+	validKey, _, err := store.Issue(2, nil, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := NewLocalSigner(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(testProductID, store, signer, publicKey, testUpdateEnvelope(t, seed, now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return now }
+	// Use a tight capacity so unauthenticated pollution immediately manifests if unguarded.
+	service.identityLimiter = newFixedWindowLimiter(30, time.Hour, 16)
+
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	alphabet := "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+	for i := 0; i < 40; i++ {
+		c1 := alphabet[i%len(alphabet)]
+		c2 := alphabet[(i/len(alphabet))%len(alphabet)]
+		bogusKey := "AR-" + string([]byte{c1, c2, 'A', 'A', 'A'}) + "-BBBBB-CCCCC-DDDDD-EEEEEEE"
+		bogusDevice := "00000000-0000-4000-8000-" + leftPadHex(i, 12)
+		postLicense(t, server.URL, map[string]any{
+			"schemaVersion": 1, "action": "activate", "productID": testProductID,
+			"deviceID": bogusDevice, "appVersion": "3.0.2", "appBuild": "2026111702",
+			"licenseKey": bogusKey, "signedReceipt": nil,
+		}, http.StatusForbidden)
+
+		forgedPayload, err := MarshalEntitlement(Entitlement{
+			SchemaVersion: 1,
+			ProductID:     testProductID,
+			LicenseID:     leftPadHex(i+1000, 32),
+			DeviceID:      bogusDevice,
+			State:         StateActive,
+			IssuedAt:      now,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		forgedEnvelope, err := SignPayload(attackerPrivateKey, forgedPayload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		postLicense(t, server.URL, map[string]any{
+			"schemaVersion": 1, "action": "refresh", "productID": testProductID,
+			"deviceID": bogusDevice, "appVersion": "3.0.2", "appBuild": "2026111702",
+			"licenseKey": nil, "signedReceipt": base64.StdEncoding.EncodeToString(forgedEnvelope),
+		}, http.StatusForbidden)
+	}
+
+	legitDevice := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	receipt := postLicense(t, server.URL, map[string]any{
+		"schemaVersion": 1, "action": "activate", "productID": testProductID,
+		"deviceID": legitDevice, "appVersion": "3.0.2", "appBuild": "2026111702",
+		"licenseKey": validKey, "signedReceipt": nil,
+	}, http.StatusOK)
+	entitlement, err := DecodeReceipt(receipt, publicKey, testProductID, now)
+	if err != nil || entitlement.State != StateActive {
+		t.Fatalf("legitimate user blocked after unauthenticated flood: %+v, %v", entitlement, err)
+	}
+}
+
+func TestDeviceIDCaseInsensitiveNormalizationPreventsDuplicateSlotConsumption(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	seed := bytes.Repeat([]byte{0x52}, ed25519.SeedSize)
+	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	store := testStore(t)
+	activationKey, _, err := store.Issue(1, nil, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := NewLocalSigner(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(testProductID, store, signer, publicKey, testUpdateEnvelope(t, seed, now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return now }
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	upperWithSpace := "  AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE  "
+	lowerCanonical := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+	mixedCase := "AaAaAaAa-BbBb-4CcC-8DdD-EeEeEeEeEeEe"
+
+	receiptOne := postLicense(t, server.URL, map[string]any{
+		"schemaVersion": 1, "action": "activate", "productID": testProductID,
+		"deviceID": upperWithSpace, "appVersion": "3.0.2", "appBuild": "2026111702",
+		"licenseKey": activationKey, "signedReceipt": nil,
+	}, http.StatusOK)
+	entOne, err := DecodeReceipt(receiptOne, publicKey, testProductID, now)
+	if err != nil || entOne.State != StateActive || entOne.DeviceID != lowerCanonical {
+		t.Fatalf("initial uppercase activation = %+v, %v", entOne, err)
+	}
+
+	receiptTwo := postLicense(t, server.URL, map[string]any{
+		"schemaVersion": 1, "action": "activate", "productID": testProductID,
+		"deviceID": lowerCanonical, "appVersion": "3.0.2", "appBuild": "2026111702",
+		"licenseKey": activationKey, "signedReceipt": nil,
+	}, http.StatusOK)
+	entTwo, err := DecodeReceipt(receiptTwo, publicKey, testProductID, now)
+	if err != nil || entTwo.State != StateActive {
+		t.Fatalf("same device lowercase re-activation hit deviceLimit: %+v, %v", entTwo, err)
+	}
+
+	summaries, err := store.List()
+	if err != nil || len(summaries) != 1 || summaries[0].DeviceCount != 1 {
+		t.Fatalf("expected 1 occupied device slot, got %+v, err=%v", summaries, err)
+	}
+
+	refreshed := postLicense(t, server.URL, map[string]any{
+		"schemaVersion": 1, "action": "refresh", "productID": testProductID,
+		"deviceID": upperWithSpace, "appVersion": "3.0.2", "appBuild": "2026111702",
+		"licenseKey": nil, "signedReceipt": base64.StdEncoding.EncodeToString(receiptTwo),
+	}, http.StatusOK)
+	entRefreshed, err := DecodeReceipt(refreshed, publicKey, testProductID, now)
+	if err != nil || entRefreshed.State != StateActive || entRefreshed.DeviceID != lowerCanonical {
+		t.Fatalf("case-variant refresh failed: %+v, %v", entRefreshed, err)
+	}
+
+	postLicense(t, server.URL, map[string]any{
+		"schemaVersion": 1, "action": "deactivate", "productID": testProductID,
+		"deviceID": mixedCase, "appVersion": "3.0.2", "appBuild": "2026111702",
+		"licenseKey": nil, "signedReceipt": base64.StdEncoding.EncodeToString(refreshed),
+	}, http.StatusNoContent)
+}
+
+func TestRefreshUsesReadOnlyStorePathWithoutDiskWrite(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	seed := bytes.Repeat([]byte{0x53}, ed25519.SeedSize)
+	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	store := testStore(t)
+	activationKey, summary, err := store.Issue(2, nil, now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := NewLocalSigner(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(testProductID, store, signer, publicKey, testUpdateEnvelope(t, seed, now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return now }
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+
+	deviceID := "11111111-1111-4111-8111-111111111111"
+	receipt := postLicense(t, server.URL, map[string]any{
+		"schemaVersion": 1, "action": "activate", "productID": testProductID,
+		"deviceID": deviceID, "appVersion": "3.0.2", "appBuild": "2026111702",
+		"licenseKey": activationKey, "signedReceipt": nil,
+	}, http.StatusOK)
+
+	beforeBytes, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeInfo, err := os.Stat(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeInode := beforeInfo.Sys().(*syscall.Stat_t).Ino
+
+	stateDir := filepath.Dir(store.path)
+	// Make directory read+exec only (0500) after creating lock file so any writeAtomic CreateTemp would fail with EACCES.
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(stateDir, 0o700) }()
+
+	var readCopy LicenseRecord
+	if err := store.ReadLicenseByID(summary.LicenseID, func(record *LicenseRecord) error {
+		readCopy = *record
+		return nil
+	}); err != nil || readCopy.LicenseID != summary.LicenseID || !readCopy.Devices[deviceID] {
+		t.Fatalf("ReadLicenseByID failed: %+v, err=%v", readCopy, err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 8)
+	encodedReceipt := base64.StdEncoding.EncodeToString(receipt)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			body, err := json.Marshal(map[string]any{
+				"schemaVersion": 1, "action": "refresh", "productID": testProductID,
+				"deviceID": deviceID, "appVersion": "3.0.2", "appBuild": "2026111702",
+				"licenseKey": nil, "signedReceipt": encodedReceipt,
+			})
+			if err != nil {
+				errCh <- err
+				return
+			}
+			req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/license", bytes.NewReader(body))
+			if err != nil {
+				errCh <- err
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			respData, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				errCh <- os.ErrPermission
+				return
+			}
+			if _, err := DecodeReceipt(respData, publicKey, testProductID, now); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatalf("concurrent read-only refresh failed: %v", err)
+	}
+
+	afterBytes, err := os.ReadFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInfo, err := os.Stat(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInode := afterInfo.Sys().(*syscall.Stat_t).Ino
+	if beforeInode != afterInode || !bytes.Equal(beforeBytes, afterBytes) {
+		t.Fatalf("refresh mutated persistent state file: inode %d -> %d", beforeInode, afterInode)
+	}
+}
+
+func leftPadHex(value int, width int) string {
+	const hexDigits = "0123456789abcdef"
+	buf := make([]byte, width)
+	for i := width - 1; i >= 0; i-- {
+		buf[i] = hexDigits[value&0xf]
+		value >>= 4
+	}
+	return string(buf)
 }
 
 func testStore(t *testing.T) *Store {

@@ -321,6 +321,14 @@ enum MacFuncLifecycleAndV3FixTests {
             ("testLANProxyRejectsSelfListeningPortLoopLiveAndAllowsLocalTarget", testLANProxyRejectsSelfListeningPortLoopLiveAndAllowsLocalTarget),
             ("testRefreshAllExternalProvidersKeepsGlobalCustomRulesIsolated", testRefreshAllExternalProvidersKeepsGlobalCustomRulesIsolated),
             ("testUpgradeWithLegacyPollutedProvidersJSONInCatalogCleansGlobalRulesAndPreservesUserProviders", testUpgradeWithLegacyPollutedProvidersJSONInCatalogCleansGlobalRulesAndPreservesUserProviders),
+            ("testSystemProxyUnmountedInRecoveringDisconnectedAndPortConflict", testSystemProxyUnmountedInRecoveringDisconnectedAndPortConflict),
+            ("testGlobalOverrideDialerCycleAndBypassDomainsAcrossAllPaths", testGlobalOverrideDialerCycleAndBypassDomainsAcrossAllPaths),
+            ("testActivateProfilePreflightProtectsActiveConnectionAndCopyTerminalCommand", testActivateProfilePreflightProtectsActiveConnectionAndCopyTerminalCommand),
+            ("testLiveReloadStagesRoutingResourcesBeforeReloadActiveProfile", testLiveReloadStagesRoutingResourcesBeforeReloadActiveProfile),
+            ("testRouteDataPlaneTCPProbeUsesPureTCPHTTP11AndTimesOutPromptly", testRouteDataPlaneTCPProbeUsesPureTCPHTTP11AndTimesOutPromptly),
+            ("testTunnelManagerQuietnessSuppressesNoopObjectWillChangeBroadcasts", testTunnelManagerQuietnessSuppressesNoopObjectWillChangeBroadcasts),
+            ("testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected", testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected),
+            ("testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover", testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover),
         ]
 
         var passed = 0
@@ -443,13 +451,36 @@ enum MacFuncLifecycleAndV3FixTests {
         try expect(tunnel.canActivateProfile, "canActivateProfile should be true when connected")
 
         let encodedName = target.profile.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let url = URL(string: "aetherroute://switch-profile?name=\(encodedName)")!
-        tunnel.handleIncomingExternalURL(url)
+
+        // 1. Unauthenticated external URL (missing token) must stage pending confirmation rather than mutating immediately
+        let untrustedURL = URL(string: "aetherroute://switch-profile?name=\(encodedName)")!
+        tunnel.handleIncomingExternalURL(untrustedURL)
+        try await Task.sleep(for: .milliseconds(30))
+        try expect(
+            tunnel.activeProfileID == initialProfileID,
+            "Tokenless external control URL mutated activeProfileID without user confirmation"
+        )
+        try expect(
+            tunnel.pendingControlURLRequest != nil,
+            "Expected pendingControlURLRequest for tokenless external control URL"
+        )
+        tunnel.cancelPendingControlURLAction()
+        try expect(tunnel.pendingControlURLRequest == nil, "Expected cancelPendingControlURLAction to clear pending request")
+
+        // 2. Wrong token must be rejected outright without staging confirmation
+        let badTokenURL = URL(string: "aetherroute://switch-profile?name=\(encodedName)&token=forged-token")!
+        tunnel.handleIncomingExternalURL(badTokenURL)
+        try expect(tunnel.pendingControlURLRequest == nil, "Forged token must not stage confirmation")
+        try expect(tunnel.externalSubscriptionLinkError != nil, "Forged token must report an error")
+
+        // 3. Valid secret token executes immediately while connected
+        let validURL = URL(string: "aetherroute://switch-profile?name=\(encodedName)&token=\(tunnel.controlURLSchemeToken)")!
+        tunnel.handleIncomingExternalURL(validURL)
         try await Task.sleep(for: .milliseconds(60))
 
         try expect(
             tunnel.activeProfileID != initialProfileID && tunnel.activeProfileID == target.id,
-            "handleIncomingExternalURL switch-profile failed while connected (activeProfileID=\(String(describing: tunnel.activeProfileID)))"
+            "Authenticated handleIncomingExternalURL switch-profile failed while connected (activeProfileID=\(String(describing: tunnel.activeProfileID)))"
         )
     }
 
@@ -943,7 +974,11 @@ enum MacFuncLifecycleAndV3FixTests {
             setAsSystemProxy: false,
             systemProxyBypassDomains: []
         )
-        controller.updateConfiguration(settings: settings, allowStandaloneLoopback: true)
+        controller.updateConfiguration(
+            settings: settings,
+            isTunnelConnected: true,
+            allowStandaloneLoopback: true
+        )
         defer { controller.stop() }
 
         try await waitForPortListening(httpPort)
@@ -1181,6 +1216,472 @@ enum MacFuncLifecycleAndV3FixTests {
             !optimizedProfile1.contains("DOMAIN-SUFFIX,internal.example.com,PROXY")
                 && optimizedProfile1.contains("RULE-SET,internal,DIRECT"),
             "Upgraded profile1 still shadows RULE-SET,internal,DIRECT:\n\(optimizedProfile1)"
+        )
+    }
+
+    @MainActor
+    private static func testSystemProxyUnmountedInRecoveringDisconnectedAndPortConflict() async throws {
+        let mock = MockNetworkSetupExecutor()
+        // Non-UIReview TunnelManager so real SystemProxy state transitions run against MockNetworkSetupExecutor
+        let suiteName = "com.aetherroute.macfunc.sysproxy.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { cleanupDefaults(suiteName) }
+        PrivacyConsentStore(defaults: defaults).acceptCurrentDisclosure()
+
+        let configurator = SystemProxyConfigurator(executor: mock, defaults: defaults)
+        let tunnel = TunnelManager(
+            environment: [:],
+            privacyConsentStore: PrivacyConsentStore(defaults: defaults),
+            routingModePreferenceStore: RoutingModePreferenceStore(defaults: defaults),
+            connectionIntentStore: ConnectionIntentStore(defaults: defaults),
+            systemProxyConfigurator: configurator,
+            userDefaults: defaults
+        )
+        defer { LANProxyServerController.shared.stop() }
+
+        // 1. While disconnected, enabling System Proxy must NOT call `-setwebproxy` or mark isSystemProxyActive = true
+        mock.invocations.removeAll()
+        tunnel.setSystemProxyEnabled(true)
+        try await Task.sleep(for: .milliseconds(40))
+        try expect(!tunnel.isSystemProxyActive, "isSystemProxyActive became true while disconnected")
+        let setCallsWhileDisconnected = mock.recordedInvocations.filter { $0.args.first == "-setwebproxy" }
+        try expect(
+            setCallsWhileDisconnected.isEmpty,
+            "System Proxy was mounted while disconnected: \(setCallsWhileDisconnected)"
+        )
+
+        // 2. When state becomes .connected (TUN mode), System Proxy mounts; entering .recovering MUST immediately unmount it!
+        tunnel.networkEngineMode = .tun
+        tunnel.localProxySettings = LocalProxySettings(
+            isEnabled: true,
+            httpPort: 28_890,
+            socksPort: 28_891,
+            allowLAN: false,
+            setAsSystemProxy: true
+        )
+        tunnel.state = .connected
+        try await Task.sleep(for: .milliseconds(60))
+        try expect(tunnel.isSystemProxyActive, "Expected System Proxy to activate upon .connected")
+
+        tunnel.state = .recovering
+        try await Task.sleep(for: .milliseconds(60))
+        try expect(!tunnel.isSystemProxyActive, "System Proxy remained active during .recovering blackhole window")
+
+        // 3. Port conflict (EADDRINUSE) on LANProxyServerController must roll back System Proxy and surface warning
+        let blocker = try LoopbackTCPServer()
+        defer { blocker.stop() }
+        let conflictPort = Int(blocker.port)
+        tunnel.networkEngineMode = .transparent
+        tunnel.localProxySettings = LocalProxySettings(
+            isEnabled: true,
+            httpPort: conflictPort,
+            socksPort: conflictPort,
+            allowLAN: false,
+            setAsSystemProxy: true
+        )
+        tunnel.state = .connected
+        try await Task.sleep(for: .milliseconds(120))
+        try expect(!tunnel.isSystemProxyActive, "System Proxy remained active despite EADDRINUSE port conflict")
+        try expect(
+            (tunnel.localProxySettingsMessage ?? "").contains("\(conflictPort)"),
+            "Expected port conflict warning mentioning port \(conflictPort), got \(String(describing: tunnel.localProxySettingsMessage))"
+        )
+
+        // 4. AllowLAN must NOT listen on 0.0.0.0 while disconnected/connecting/recovering; only while .connected!
+        tunnel.state = .disconnected
+        tunnel.networkEngineMode = .tun
+        tunnel.updateLocalProxySettings(allowWhileConnected: true) {
+            $0.isEnabled = true
+            $0.httpPort = 28_920
+            $0.socksPort = 28_921
+            $0.allowLAN = true
+            $0.setAsSystemProxy = false
+        }
+        try expect(
+            !LANProxyServerController.shared.isRunning,
+            "AllowLAN started listening on 0.0.0.0 while tunnel was .disconnected (bare leak)"
+        )
+        try expect(
+            !(tunnel.localProxySettingsMessage ?? "").isEmpty
+                && tunnel.localProxySettingsMessage != AppLocalization.string("LAN shared proxy is active."),
+            "AllowLAN message claimed active while tunnel was disconnected: \(String(describing: tunnel.localProxySettingsMessage))"
+        )
+
+        tunnel.state = .connected
+        try await Task.sleep(for: .milliseconds(60))
+        try expect(
+            LANProxyServerController.shared.isRunning && !LANProxyServerController.shared.isLoopbackOnly,
+            "Expected AllowLAN 0.0.0.0 listener to start upon .connected"
+        )
+
+        tunnel.state = .recovering
+        try await Task.sleep(for: .milliseconds(40))
+        try expect(
+            !LANProxyServerController.shared.isRunning,
+            "AllowLAN 0.0.0.0 listener remained active during .recovering bare-leak window"
+        )
+
+        tunnel.state = .connected
+        try await Task.sleep(for: .milliseconds(60))
+        try expect(
+            LANProxyServerController.shared.isRunning,
+            "Expected AllowLAN 0.0.0.0 listener to resume after recovering -> .connected"
+        )
+
+        tunnel.state = .disconnected
+        try await Task.sleep(for: .milliseconds(40))
+        try expect(
+            !LANProxyServerController.shared.isRunning,
+            "AllowLAN 0.0.0.0 listener remained active after .disconnected"
+        )
+    }
+
+    @MainActor
+    private static func testGlobalOverrideDialerCycleAndBypassDomainsAcrossAllPaths() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        // Raw subscription YAML with NO per-profile overrides, containing a 2-node dialer-proxy cycle!
+        let cyclicYAML = """
+        proxies:
+          - {name: HopA, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: p, dialer-proxy: HopB}
+          - {name: HopB, type: ss, server: 5.6.7.8, port: 443, cipher: aes-128-gcm, password: p, dialer-proxy: HopA}
+          - {name: CleanHK, type: ss, server: 9.9.9.9, port: 443, cipher: aes-128-gcm, password: p}
+        proxy-groups:
+          - {name: PROXY, type: select, proxies: [HopA, HopB, CleanHK]}
+        rules:
+          - MATCH,PROXY
+        """
+        let rawProfile = ActiveProfile(name: "CyclicSub", yaml: cyclicYAML, importedAt: .now, overrides: nil)
+        let managed = ManagedProfile(profile: rawProfile)
+
+        let globalOverride = ProfileOverride(
+            groups: [CustomProxyGroup(name: "GlobalHK", includeKeywords: ["HK"], groupKind: .select, parentGroup: "PROXY")],
+            customHosts: [CustomHostMapping(domain: "intranet.corp", ip: "10.20.30.40")]
+        )
+        tunnel.setGlobalProfileOverrideForTesting(globalOverride)
+        tunnel.bypassPolicy = try BypassPolicy(rules: [BypassRule.parse("*.bypass-only.example")])
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.refreshActiveProfileSummary()
+
+        let compiled = tunnel.effectiveProfileYAML(for: rawProfile)
+        try expect(
+            !compiled.contains("dialer-proxy: HopB") || !compiled.contains("dialer-proxy: HopA"),
+            "Original subscription dialer-proxy cycle was NOT stripped when per-profile overrides == nil:\n\(compiled)"
+        )
+        try expect(
+            compiled.contains("GlobalHK"),
+            "Global override group GlobalHK missing from effectiveProfileYAML:\n\(compiled)"
+        )
+        try expect(
+            tunnel.activeProfileSummary?.proxyGroups.contains(where: { $0.name == "GlobalHK" }) == true,
+            "Global override group GlobalHK missing from activeProfileSummary"
+        )
+
+        // Production projection must also apply globalOverride + cycle stripping
+        let projection = ProfileCatalogProjectionBuilder.production(
+            ProfileCatalog(activeProfileID: managed.id, profiles: [managed]),
+            globalOverride: globalOverride,
+            bypassPolicy: tunnel.bypassPolicy,
+            enableDomesticDirect: false
+        )
+        try expect(
+            projection.summary?.proxyGroups.contains(where: { $0.name == "GlobalHK" }) == true,
+            "Global override group GlobalHK missing from ProfileCatalogProjectionBuilder.production"
+        )
+
+        // Bypass domain must route DIRECT even in TUN mode & traceRoute, and global customHosts must apply in traceRoute
+        let bypassTrace = await tunnel.traceRoute(RouteTraceRequest(host: "api.bypass-only.example", port: 443, network: .tcp))
+        try expect(
+            bypassTrace.targetOutbound == "DIRECT",
+            "Expected bypassPolicy domain *.bypass-only.example to route DIRECT, got \(bypassTrace.targetOutbound)"
+        )
+        let hostTrace = await tunnel.traceRoute(RouteTraceRequest(host: "intranet.corp", port: 443, network: .tcp))
+        try expect(
+            hostTrace.resolvedHostAlias == "10.20.30.40" || hostTrace.dnsAddresses.contains("10.20.30.40"),
+            "Expected globalOverride customHosts intranet.corp -> 10.20.30.40 in traceRoute, got alias=\(String(describing: hostTrace.resolvedHostAlias))"
+        )
+    }
+
+    @MainActor
+    private static func testActivateProfilePreflightProtectsActiveConnectionAndCopyTerminalCommand() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "connected")
+        defer { cleanupDefaults(suiteName) }
+
+        let initialID = tunnel.activeProfileID
+        // Non-existent profile UUID must fail preflight without disconnecting active tunnel
+        await tunnel.activateProfile(id: UUID())
+        try expect(tunnel.state == .connected, "activateProfile(unknownID) tore down healthy connected tunnel")
+        try expect(tunnel.activeProfileID == initialID, "activateProfile(unknownID) mutated activeProfileID")
+        try expect(tunnel.profileMessageIsError, "Expected error message on failed preflight")
+
+        // Terminal proxy copy command must be enabled in Transparent Proxy mode when local proxy / System Proxy is enabled
+        tunnel.networkEngineMode = .transparent
+        tunnel.localProxySettings = LocalProxySettings(isEnabled: true, httpPort: 7890, socksPort: 7891, allowLAN: false)
+        try expect(
+            tunnel.canCopyTerminalProxyCommand,
+            "canCopyTerminalProxyCommand was false in transparent mode despite localProxySettings.isEnabled == true"
+        )
+    }
+
+    @MainActor
+    private static func testLiveReloadStagesRoutingResourcesBeforeReloadActiveProfile() async throws {
+        let tempRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MacFuncReloadStage-\(UUID().uuidString)", isDirectory: true)
+        let supportDir = tempRoot.appendingPathComponent("Support", isDirectory: true)
+        try FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let countryMMDB = Data(repeating: 0x42, count: 2_048)
+            + Data([0xAB, 0xCD, 0xEF]) + Data("MaxMind.com".utf8)
+            + Data(repeating: 0x21, count: 64)
+        let asnMMDB = Data(repeating: 0x45, count: 2_048)
+            + Data([0xAB, 0xCD, 0xEF]) + Data("MaxMind.com".utf8)
+            + Data(repeating: 0x22, count: 64)
+        let store = RoutingResourceStore(applicationSupportDirectory: supportDir)
+        _ = try store.installUserProvided(data: countryMMDB, kind: .countryMMDB)
+        _ = try store.installUserProvided(data: asnMMDB, kind: .asnMMDB)
+
+        let suiteName = "com.aetherroute.macfunc.reloadstage.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { cleanupDefaults(suiteName) }
+        PrivacyConsentStore(defaults: defaults).acceptCurrentDisclosure()
+
+        let tunnel = TunnelManager(
+            environment: ["AETHERROUTE_UI_REVIEW_STATE": "connected"],
+            privacyConsentStore: PrivacyConsentStore(defaults: defaults),
+            routingModePreferenceStore: RoutingModePreferenceStore(defaults: defaults),
+            connectionIntentStore: ConnectionIntentStore(defaults: defaults),
+            systemProxyConfigurator: SystemProxyConfigurator(executor: MockNetworkSetupExecutor(), defaults: defaults),
+            userDefaults: defaults,
+            routingResourceStoreFactory: {
+                RoutingResourceStore(applicationSupportDirectory: supportDir)
+            }
+        )
+
+        let yamlWithGeoAndASN = """
+        proxies:
+          - {name: HK-01, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: p}
+        proxy-groups:
+          - {name: PROXY, type: select, proxies: [HK-01, DIRECT]}
+        rules:
+          - GEOIP,CN,DIRECT,no-resolve
+          - IP-ASN,13335,PROXY,no-resolve
+          - MATCH,PROXY
+        """
+        let profile = ActiveProfile(name: "ReloadStageTest", yaml: yamlWithGeoAndASN, importedAt: .now)
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+
+        let prepared = try await tunnel.prepareReloadProfilePayload(
+            for: profile,
+            requestedMode: .rule
+        )
+        try expect(
+            prepared.routingResources[.countryMMDB] == countryMMDB,
+            "prepareReloadProfilePayload dropped Country.mmdb from routingResources"
+        )
+        try expect(
+            prepared.routingResources[.asnMMDB] == asnMMDB,
+            "prepareReloadProfilePayload dropped ASN.mmdb from routingResources"
+        )
+
+        let recordedState = LockedBox<(
+            events: [String],
+            installedDigests: [RoutingResourceKind: String],
+            stagedPayloads: [RoutingResourceKind: Data]
+        )>(([], [:], [:]))
+
+        let client = ProxySelectionProviderClient { rawRequest in
+            let request = try ProxySelectionProviderMessageCodec.decodeRequest(rawRequest)
+            switch request {
+            case .installedRoutingResourceDigests:
+                let digests = recordedState.withLock { state -> [RoutingResourceKind: String] in
+                    state.events.append("digests")
+                    return state.installedDigests
+                }
+                return try ProxySelectionProviderMessageCodec.encode(
+                    response: .routingResourceDigests(digests)
+                )
+            case let .stageRoutingResourceChunk(chunk):
+                recordedState.withLock { state in
+                    state.events.append("stage:\(chunk.kind.rawValue):\(chunk.chunkIndex + 1)/\(chunk.totalChunks)")
+                    var buffer = state.stagedPayloads[chunk.kind] ?? Data()
+                    buffer.append(chunk.data)
+                    state.stagedPayloads[chunk.kind] = buffer
+                    if chunk.chunkIndex + 1 == chunk.totalChunks {
+                        state.installedDigests[chunk.kind] = chunk.expectedSHA256
+                    }
+                }
+                return try ProxySelectionProviderMessageCodec.encode(
+                    response: .routingResourceChunkStaged
+                )
+            case .reloadProfile:
+                recordedState.withLock { state in
+                    state.events.append("reload")
+                }
+                return try ProxySelectionProviderMessageCodec.encode(
+                    response: .profileReloaded
+                )
+            default:
+                return try ProxySelectionProviderMessageCodec.encode(
+                    response: .failure(.invalidRequest)
+                )
+            }
+        }
+
+        // First hot reload: must query digests, stage BOTH Country.mmdb & ASN.mmdb BEFORE .reloadProfile!
+        try await tunnel.reloadActiveProfileStagingResources(prepared, via: client)
+        let firstSnapshot = recordedState.withLock { $0 }
+        try expect(
+            firstSnapshot.events.first == "digests" && firstSnapshot.events.last == "reload",
+            "Expected digests -> stage chunks -> reload order, got \(firstSnapshot.events)"
+        )
+        try expect(
+            firstSnapshot.stagedPayloads[.countryMMDB] == countryMMDB
+                && firstSnapshot.stagedPayloads[.asnMMDB] == asnMMDB,
+            "Expected Country.mmdb and ASN.mmdb bytes staged before reload"
+        )
+
+        // Second hot reload with identical SHA-256 digests: must skip staging chunks and go straight digests -> reload!
+        recordedState.withLock { $0.events.removeAll() }
+        try await tunnel.reloadActiveProfileStagingResources(prepared, via: client)
+        let secondEvents = recordedState.withLock { $0.events }
+        try expect(
+            secondEvents == ["digests", "reload"],
+            "Expected unchanged resources to skip chunk transfer on second reload, got \(secondEvents)"
+        )
+    }
+
+    @MainActor
+    private static func testRouteDataPlaneTCPProbeUsesPureTCPHTTP11AndTimesOutPromptly() async throws {
+        // Bind loopback TCP HTTP/1.1 responder that captures raw request headers.
+        let listenFD = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard listenFD >= 0 else {
+            throw TestFailure(message: "Failed to create probe test socket")
+        }
+        defer { Darwin.close(listenFD) }
+        var reuse: Int32 = 1
+        Darwin.setsockopt(listenFD, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        addr.sin_port = 0
+        let bound = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(listenFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard bound == 0, Darwin.listen(listenFD, 8) == 0 else {
+            throw TestFailure(message: "Failed to bind/listen probe test socket")
+        }
+        var actualAddr = sockaddr_in()
+        var actualLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &actualAddr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.getsockname(listenFD, $0, &actualLen)
+            }
+        }
+        let port = Int(UInt16(bigEndian: actualAddr.sin_port))
+        let requestTextBox = LockedBox<String>("")
+
+        let serverTask = Task.detached {
+            for attempt in 0..<2 {
+                var peer = sockaddr_in()
+                var peerLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+                let clientFD = withUnsafeMutablePointer(to: &peer) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.accept(listenFD, $0, &peerLen)
+                    }
+                }
+                guard clientFD >= 0 else { break }
+                if attempt == 0 {
+                    var buf = [UInt8](repeating: 0, count: 2048)
+                    let n = Darwin.recv(clientFD, &buf, buf.count, 0)
+                    if n > 0 {
+                        let req = String(decoding: buf.prefix(n), as: UTF8.self)
+                        requestTextBox.withLock { $0 = req }
+                    }
+                    let response = Array("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)
+                    _ = response.withUnsafeBytes { Darwin.send(clientFD, $0.baseAddress, $0.count, 0) }
+                    Darwin.close(clientFD)
+                } else {
+                    // Second connection intentionally hangs silently to verify bounded timeout.
+                    try? await Task.sleep(for: .milliseconds(900))
+                    Darwin.close(clientFD)
+                }
+            }
+        }
+        defer { serverTask.cancel() }
+
+        let probeURL = URL(string: "http://127.0.0.1:\(port)/generate_204?aetherroute=test")!
+        let status = try await TunnelManager.RouteDataPlaneTCPProbe.statusCode(url: probeURL, timeout: 2.0)
+        try expect(status == 204, "Expected HTTP 204 from TCP probe, got \(status)")
+        let rawRequest = requestTextBox.withLock { $0 }
+        try expect(
+            rawRequest.contains("GET /generate_204?aetherroute=test HTTP/1.1\r\n"),
+            "Expected HTTP/1.1 request line, got: \(rawRequest)"
+        )
+        try expect(
+            rawRequest.localizedCaseInsensitiveContains("Connection: close\r\n"),
+            "Pure TCP probe must send Connection: close (not keep-alive/HTTP3), got: \(rawRequest)"
+        )
+
+        let timeoutStart = ContinuousClock.now
+        var timedOut = false
+        do {
+            _ = try await TunnelManager.RouteDataPlaneTCPProbe.statusCode(url: probeURL, timeout: 0.25)
+        } catch {
+            timedOut = true
+        }
+        let timeoutElapsed = timeoutStart.duration(to: .now)
+        try expect(timedOut, "Silent socket must trigger timeout error")
+        try expect(timeoutElapsed < .seconds(1), "Probe timeout took too long: \(timeoutElapsed)")
+    }
+
+    @MainActor
+    private static func testTunnelManagerQuietnessSuppressesNoopObjectWillChangeBroadcasts() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel()
+        defer { cleanupDefaults(suiteName) }
+
+        var emissions = 0
+        let cancellable = tunnel.objectWillChange.sink { _ in
+            emissions += 1
+        }
+        defer { cancellable.cancel() }
+
+        tunnel.setConnectionQuality(.verified)
+        try expect(emissions == 1, "Initial transition unknown -> verified should emit once (got \(emissions))")
+
+        tunnel.setConnectionQuality(.verified)
+        try expect(emissions == 1, "Repeated .verified must NOT emit objectWillChange or update @Published checkedAt (got \(emissions))")
+
+        tunnel.updateAutomaticRouteRecoveryPresentation()
+        try expect(emissions == 1, "No-op updateAutomaticRouteRecoveryPresentation must NOT emit objectWillChange (got \(emissions))")
+    }
+
+    @MainActor
+    private static func testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: nil)
+        defer { cleanupDefaults(suiteName) }
+
+        tunnel.cachedExtensionDiagnosticLog = (
+            process: "tunnel",
+            text: "2026-11-18T10:00:00.000Z L [tunnel] stage=startTunnel success\n"
+        )
+        let lines = await tunnel.loadDiagnosticLogLines()
+        try expect(
+            lines.contains(where: { $0.process == "tunnel" && $0.message.contains("stage=startTunnel success") }),
+            "Disconnected View Logs must include cached extension diagnostic log lines, got \(lines.count) lines"
+        )
+    }
+
+    @MainActor
+    private static func testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover() async throws {
+        try expect(
+            ProfileSubscriptionClient.directBypassRequestTimeout <= 8,
+            "Direct subscription probe timeout must be <= 8s for fast proxy failover, got \(ProfileSubscriptionClient.directBypassRequestTimeout)"
         )
     }
 }

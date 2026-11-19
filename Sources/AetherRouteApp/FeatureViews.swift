@@ -204,31 +204,77 @@ struct DiscardChangesModifier: ViewModifier {
     }
 }
 
+@MainActor
+private final class WeakHostWindowBox {
+    weak var window: NSWindow?
+}
+
+private struct HostWindowProbeView: NSViewRepresentable {
+    let onWindowChanged: @MainActor (NSWindow?) -> Void
+
+    final class ProbeNSView: NSView {
+        var onWindowChanged: (@MainActor (NSWindow?) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            let current = window
+            onWindowChanged?(current)
+        }
+    }
+
+    func makeNSView(context: Context) -> ProbeNSView {
+        let view = ProbeNSView(frame: .zero)
+        view.onWindowChanged = onWindowChanged
+        return view
+    }
+
+    func updateNSView(_ nsView: ProbeNSView, context: Context) {
+        nsView.onWindowChanged = onWindowChanged
+        if nsView.window != nil {
+            onWindowChanged(nsView.window)
+        }
+    }
+}
+
 /// Keeps the host's traffic polling matched to what the person can actually
 /// see: every 3 s while this surface is in a frontmost visible window, every
-/// 10 s while it is visible behind another app, and not at all once it is
-/// minimized, hidden, fully covered or navigated away from.
+/// 10 s while it is visible behind another app, and not at all once its own
+/// host window is closed (`orderOut`), minimized, hidden, covered or navigated away from.
 private struct TelemetryDemandModifier: ViewModifier {
     @EnvironmentObject private var tunnel: TunnelManager
     let source: String
     /// The strongest demand this surface may ask for.
     var ceiling: TunnelManager.TelemetryDemand = .realtime
+    var onDemandChanged: ((TunnelManager.TelemetryDemand) -> Void)? = nil
     @State private var isPresented = false
     @State private var isDisplayOrSessionAsleep = false
+    @State private var hostWindowBox = WeakHostWindowBox()
 
     func body(content: Content) -> some View {
         content
+            .background {
+                HostWindowProbeView { resolvedWindow in
+                    if hostWindowBox.window !== resolvedWindow {
+                        hostWindowBox.window = resolvedWindow
+                        update()
+                    }
+                }
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            }
             .onAppear {
                 isPresented = true
                 update()
             }
             .onDisappear {
                 isPresented = false
+                onDemandChanged?(.none)
                 tunnel.setTelemetryDemand(.none, for: source)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMiniaturizeNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in update() }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didHideNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in update() }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in update() }
@@ -257,13 +303,21 @@ private struct TelemetryDemandModifier: ViewModifier {
         DispatchQueue.main.async {
             guard isPresented else { return }
             let app = NSApplication.shared
-            let hasVisibleWindow = !isDisplayOrSessionAsleep && !app.isHidden && app.windows.contains { window in
-                window.isVisible && !window.isMiniaturized && !(window is NSPanel)
+            let isOwnWindowVisible: Bool
+            if let window = hostWindowBox.window {
+                isOwnWindowVisible = !isDisplayOrSessionAsleep
+                    && !app.isHidden
+                    && window.isVisible
+                    && !window.isMiniaturized
+                    && !(window is NSPanel)
                     && window.occlusionState.contains(.visible)
+            } else {
+                isOwnWindowVisible = false
             }
             var demand: TunnelManager.TelemetryDemand =
-                !hasVisibleWindow ? .none : (app.isActive ? .realtime : .background)
+                !isOwnWindowVisible ? .none : (app.isActive ? .realtime : .background)
             if ceiling == .background && demand == .realtime { demand = .background }
+            onDemandChanged?(demand)
             tunnel.setTelemetryDemand(demand, for: source)
         }
     }
@@ -271,8 +325,11 @@ private struct TelemetryDemandModifier: ViewModifier {
 
 extension View {
     /// Declares that this surface shows live traffic, identified by `source`.
-    func telemetryDemand(source: String) -> some View {
-        modifier(TelemetryDemandModifier(source: source))
+    func telemetryDemand(
+        source: String,
+        onDemandChanged: ((TunnelManager.TelemetryDemand) -> Void)? = nil
+    ) -> some View {
+        modifier(TelemetryDemandModifier(source: source, onDemandChanged: onDemandChanged))
     }
 
     /// Keeps a slow (10 s) traffic history while this surface is visible,

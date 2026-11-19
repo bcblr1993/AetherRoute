@@ -2312,6 +2312,7 @@ private struct ProxyNodeInventory: View {
     let groups: [ProxyGroupConfigurationSummary]
 
     var body: some View {
+        let membershipByNode = precomputedMemberships()
         FeatureSection(title: AppLocalization.string("Nodes")) {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 Text(inventorySummary)
@@ -2338,11 +2339,12 @@ private struct ProxyNodeInventory: View {
                     }
                     .width(min: 88, ideal: 108, max: 136)
                     TableColumn(AppLocalization.string("In groups")) { proxy in
-                        Text(membership(of: proxy.name))
+                        let label = membershipByNode[proxy.name] ?? AppLocalization.string("In no group")
+                        Text(label)
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                            .help(membership(of: proxy.name))
+                            .help(label)
                     }
                     .width(min: 80, ideal: 96, max: 170)
                     TableColumn(AppLocalization.string("Core status")) { proxy in
@@ -2388,13 +2390,13 @@ private struct ProxyNodeInventory: View {
         )
     }
 
-    private func membership(of name: String) -> String {
-        let owners = groups
-            .filter { $0.members.contains(name) }
-            .map(\.name)
-        guard !owners.isEmpty else {
-            return AppLocalization.string("In no group")
+    private func precomputedMemberships() -> [String: String] {
+        var ownersByNode: [String: [String]] = [:]
+        for group in groups {
+            for member in group.members {
+                ownersByNode[member, default: []].append(group.name)
+            }
         }
-        return owners.joined(separator: " · ")
+        return ownersByNode.mapValues { $0.joined(separator: " · ") }
     }
 }

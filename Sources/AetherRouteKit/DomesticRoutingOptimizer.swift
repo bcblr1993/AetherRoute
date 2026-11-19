@@ -275,18 +275,24 @@ public enum DomesticRoutingOptimizer {
         customRules: [CustomRule] = [],
         remoteRules: [String] = [],
         enableDomesticDirect: Bool = true,
-        providerBaseDirectoryURL: URL? = defaultProviderBaseDirectoryURL
+        providerBaseDirectoryURL: URL? = defaultProviderBaseDirectoryURL,
+        bypassPolicy: BypassPolicy = .empty
     ) -> String {
         guard !yaml.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return yaml }
         let lines = ProfileRuntimeYAML.canonicalize(yaml).components(separatedBy: "\n")
         guard !lines.isEmpty else { return yaml }
 
+        let effectiveCustomRules = bypassPolicy.packetTunnelDomainRules + customRules
         let sections = parseTopLevelSections(from: lines)
 
         var resultLines: [String] = []
 
         let optimizedDNSLines: [String]? = enableDomesticDirect
-            ? optimizeDNSSection(sections["dns"], customRules: customRules)
+            ? optimizeDNSSection(
+                sections["dns"],
+                customRules: effectiveCustomRules,
+                extraFakeIPFilters: bypassPolicy.fakeIPFilterPatterns
+            )
             : sections["dns"]
         var expandedOrDroppedProviders = Set<String>()
         let (parsedRuleProviders, providerOrder) = parseRuleProvidersSection(sections["rule-providers"])
@@ -302,7 +308,7 @@ public enum DomesticRoutingOptimizer {
         )
         let optimizedRuleLines = optimizeRulesSection(
             sections["rules"],
-            customRules: customRules,
+            customRules: effectiveCustomRules,
             remoteRules: effectiveRemoteRules,
             enableDomesticDirect: enableDomesticDirect,
             ruleProviders: parsedRuleProviders,
@@ -375,6 +381,9 @@ public enum DomesticRoutingOptimizer {
         var output = resultLines.joined(separator: "\n")
         if !output.hasSuffix("\n") {
             output.append("\n")
+        }
+        if !enableDomesticDirect && !bypassPolicy.domains.isEmpty {
+            output = bypassPolicy.applyingPacketTunnelDomainBypass(to: output)
         }
         return output
     }
@@ -464,9 +473,13 @@ public enum DomesticRoutingOptimizer {
 
     // MARK: - DNS Section Optimization
 
-    private static func optimizeDNSSection(_ existingLines: [String]?, customRules: [CustomRule] = []) -> [String] {
+    private static func optimizeDNSSection(
+        _ existingLines: [String]?,
+        customRules: [CustomRule] = [],
+        extraFakeIPFilters: [String] = []
+    ) -> [String] {
         guard let lines = existingLines, !lines.isEmpty else {
-            return defaultDNSBlock(customRules: customRules)
+            return defaultDNSBlock(customRules: customRules, extraFakeIPFilters: extraFakeIPFilters)
         }
 
         var existingNameservers: [String] = []
@@ -666,7 +679,7 @@ public enum DomesticRoutingOptimizer {
         }
         output.append("  nameserver:")
         for ns in mergedNameservers {
-            output.append("    - \(ns)")
+            output.append("    - \(formatYAMLListScalar(ns))")
         }
 
         var mergedFallbacks: [String] = existingFallbacks
@@ -675,12 +688,12 @@ public enum DomesticRoutingOptimizer {
         }
         output.append("  fallback:")
         for fb in mergedFallbacks {
-            output.append("    - \(fb)")
+            output.append("    - \(formatYAMLListScalar(fb))")
         }
 
         var mergedFakeIP: [String] = []
         var fakeIPSet = Set<String>()
-        for domain in fakeIPFilterDomains {
+        for domain in fakeIPFilterDomains + extraFakeIPFilters {
             if !fakeIPSet.contains(domain) {
                 fakeIPSet.insert(domain)
                 mergedFakeIP.append(domain)
@@ -761,7 +774,7 @@ public enum DomesticRoutingOptimizer {
             // same as before; several become a flow list, quoted so a `#` or
             // `,` inside a resolver URL survives.
             let formattedValue = cleanValues.count == 1
-                ? cleanValues[0]
+                ? formatYAMLListScalar(cleanValues[0])
                 : "[" + cleanValues.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
                     .joined(separator: ", ") + "]"
             output.append("    \(formattedKey): \(formattedValue)")
@@ -820,11 +833,14 @@ public enum DomesticRoutingOptimizer {
         guard !unique.isEmpty else { return }
         output.append("  \(key):")
         for item in unique {
-            output.append("    - \(item)")
+            output.append("    - \(formatYAMLListScalar(item))")
         }
     }
 
-    private static func defaultDNSBlock(customRules: [CustomRule] = []) -> [String] {
+    private static func defaultDNSBlock(
+        customRules: [CustomRule] = [],
+        extraFakeIPFilters: [String] = []
+    ) -> [String] {
         var output: [String] = [
             "dns:",
             "  enable: true",
@@ -833,7 +849,7 @@ public enum DomesticRoutingOptimizer {
             "  nameserver:",
         ]
         for ns in domesticNameservers {
-            output.append("    - \(ns)")
+            output.append("    - \(formatYAMLListScalar(ns))")
         }
         output.append("  fallback:")
         output.append("    - 1.1.1.1")
@@ -841,7 +857,7 @@ public enum DomesticRoutingOptimizer {
         output.append("  fake-ip-filter:")
         var mergedFakeIP: [String] = []
         var fakeIPSet = Set<String>()
-        for domain in fakeIPFilterDomains {
+        for domain in fakeIPFilterDomains + extraFakeIPFilters {
             if !fakeIPSet.contains(domain) {
                 fakeIPSet.insert(domain)
                 mergedFakeIP.append(domain)
@@ -1179,12 +1195,23 @@ public enum DomesticRoutingOptimizer {
             if let first = def.rawLines.first,
                let colonIdx = first.firstIndex(of: ":"),
                first[first.index(after: colonIdx)...].trimmingCharacters(in: .whitespaces).hasPrefix("{") {
-                // Convert inline flow mapping into clean block lines
-                output.append("  \(def.name):")
+                let remainder = String(first[first.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                var preservedFlowPairs: [(String, String)] = []
+                for (subKey, subVal) in parseFlowPolicy(remainder) {
+                    let lowerSub = subKey.lowercased()
+                    if ["type", "url", "path", "interval"].contains(lowerSub) {
+                        continue
+                    }
+                    preservedFlowPairs.append((subKey, subVal))
+                }
+                output.append("  \(formatYAMLMappingKey(def.name)):")
                 output.append("    type: file")
-                output.append("    path: \(relativePath)")
+                output.append("    path: \(formatYAMLListScalar(relativePath))")
                 if let interval = def.interval, interval > 0 {
                     output.append("    interval: \(interval)")
+                }
+                for (subKey, subVal) in preservedFlowPairs {
+                    output.append("    \(subKey): \(subVal)")
                 }
             } else {
                 output.append(contentsOf: rewriteHTTPProviderLinesToFile(def.rawLines, relativePath: relativePath))
@@ -1568,12 +1595,37 @@ public enum DomesticRoutingOptimizer {
 
         var output: [String] = ["rules:"]
         for r in newRules {
-            output.append("  - \(r)")
+            output.append("  - \(formatYAMLListScalar(r))")
         }
         return output
     }
 
     // MARK: - Utilities
+
+    private static func formatYAMLListScalar(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return "''" }
+        let leadingUnsafe: Set<Character> = ["[", "{", "*", "&", "!", "|", ">", "%", "@", "`", "'", "\"", "?"]
+        let isBareIPv6 = !trimmed.contains("://")
+            && !trimmed.contains(",")
+            && trimmed.filter({ $0 == ":" }).count >= 2
+        let needsQuotes = (trimmed.first.map { leadingUnsafe.contains($0) } ?? false)
+            || trimmed.contains("#")
+            || trimmed.contains(": ")
+            || isBareIPv6
+        guard needsQuotes else { return trimmed }
+        return "'\(trimmed.replacingOccurrences(of: "'", with: "''"))'"
+    }
+
+    private static func formatYAMLMappingKey(_ key: String) -> String {
+        let trimmed = key.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return "''" }
+        if trimmed.contains(":") || trimmed.contains("#") || trimmed.contains(" ")
+            || trimmed.hasPrefix("[") || trimmed.hasPrefix("{") || trimmed.hasPrefix("*") {
+            return "'\(trimmed.replacingOccurrences(of: "'", with: "''"))'"
+        }
+        return trimmed
+    }
 
     private static func normalizedRuleString(_ rule: String) -> String {
         rule.filter { !$0.isWhitespace }.uppercased()

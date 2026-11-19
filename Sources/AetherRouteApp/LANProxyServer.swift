@@ -22,12 +22,16 @@ final class LANProxyServerController: ObservableObject {
     nonisolated static let maxConcurrentSessions = 256
 
     @Published private(set) var isRunning = false
+    @Published private(set) var isReady = false
     @Published private(set) var isLoopbackOnly = false
     @Published private(set) var activeHTTPPort: Int = 7_890
     @Published private(set) var activeSOCKSPort: Int = 7_891
     @Published private(set) var currentLANIP: String = "127.0.0.1"
     @Published private(set) var activeConnectionsCount: Int = 0
     @Published private(set) var statusMessage: String?
+
+    var onListenerReady: (() -> Void)?
+    var onListenerFailure: ((Int, Error) -> Void)?
 
     private static let logger = Logger(
         subsystem: "com.aetherroute.desktop",
@@ -36,6 +40,9 @@ final class LANProxyServerController: ObservableObject {
 
     private var httpListener: NWListener?
     private var socksListener: NWListener?
+    private var httpListenerReady = false
+    private var socksListenerReady = false
+    private var startGeneration: UInt64 = 0
     private var activeSessions: Set<LANProxySession> = []
     private var pathMonitor: NWPathMonitor?
     private let pathMonitorQueue = DispatchQueue(
@@ -83,11 +90,14 @@ final class LANProxyServerController: ObservableObject {
 
     func updateConfiguration(
         settings: LocalProxySettings,
+        isTunnelConnected: Bool = false,
         allowStandaloneLoopback: Bool = false
     ) {
         refreshLANIP()
-        let shouldRun = settings.allowLAN
-            || (allowStandaloneLoopback && (settings.setAsSystemProxy || settings.isEnabled))
+        let shouldRun = isTunnelConnected && (
+            settings.allowLAN
+                || (allowStandaloneLoopback && (settings.setAsSystemProxy || settings.isEnabled))
+        )
         let loopbackOnly = !settings.allowLAN
         if shouldRun {
             if isRunning && (
@@ -118,6 +128,16 @@ final class LANProxyServerController: ObservableObject {
     func start(httpPort: Int, socksPort: Int, loopbackOnly: Bool = false) {
         guard !isRunning else { return }
         refreshLANIP()
+        startGeneration &+= 1
+        let generation = startGeneration
+        httpListenerReady = false
+        socksListenerReady = false
+        isReady = false
+
+        var portsToCheck = [httpPort]
+        if httpPort != socksPort, (1...65_535).contains(socksPort) {
+            portsToCheck.append(socksPort)
+        }
 
         do {
             let httpParameters = NWParameters.tcp
@@ -158,11 +178,11 @@ final class LANProxyServerController: ObservableObject {
                 }
             }
 
-            newHTTPListener.start(queue: serverQueue)
             self.httpListener = newHTTPListener
             self.activeHTTPPort = httpPort
 
             // Optional dedicated SOCKS5 listener if different from HTTP port
+            var createdSOCKSListener: NWListener?
             if httpPort != socksPort, let socksNWPort = NWEndpoint.Port(rawValue: UInt16(socksPort)) {
                 let socksParameters = NWParameters.tcp
                 socksParameters.allowLocalEndpointReuse = true
@@ -199,28 +219,54 @@ final class LANProxyServerController: ObservableObject {
                     }
                 }
 
-                newSOCKSListener.start(queue: serverQueue)
                 self.socksListener = newSOCKSListener
+                self.activeSOCKSPort = socksPort
+                createdSOCKSListener = newSOCKSListener
+            } else {
                 self.activeSOCKSPort = socksPort
             }
 
             self.isLoopbackOnly = loopbackOnly
             self.isRunning = true
             self.statusMessage = nil
+
+            let checkPorts = portsToCheck
+            let socksListenerToStart = createdSOCKSListener
+            let queue = self.serverQueue
+            queue.async { [weak self] in
+                for checkPort in checkPorts {
+                    if Self.isPortActivelyListening(checkPort) {
+                        let conflictError = NSError(
+                            domain: NSPOSIXErrorDomain,
+                            code: Int(EADDRINUSE),
+                            userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(EADDRINUSE))]
+                        )
+                        Task { @MainActor [weak self] in
+                            guard let self, self.isRunning, self.startGeneration == generation else { return }
+                            self.reportListenerFailure(port: checkPort, type: "Prebind", error: conflictError)
+                        }
+                        return
+                    }
+                }
+                newHTTPListener.start(queue: queue)
+                socksListenerToStart?.start(queue: queue)
+            }
             Self.logger.info("stage=start lan_ip=\(self.currentLANIP, privacy: .public) http_port=\(httpPort) socks_port=\(socksPort)")
         } catch {
             Self.logger.error("stage=start failed error=\(error.localizedDescription, privacy: .public)")
-            self.statusMessage = error.localizedDescription
-            self.stop()
+            self.reportListenerFailure(port: httpPort, type: "Start", error: error)
         }
     }
 
     func stop() {
+        startGeneration &+= 1
         httpListener?.cancel()
         httpListener = nil
+        httpListenerReady = false
 
         socksListener?.cancel()
         socksListener = nil
+        socksListenerReady = false
 
         for session in activeSessions {
             session.cancel()
@@ -228,8 +274,54 @@ final class LANProxyServerController: ObservableObject {
         activeSessions.removeAll()
         activeConnectionsCount = 0
         isLoopbackOnly = false
+        isReady = false
         isRunning = false
         Self.logger.info("stage=stop completed")
+    }
+
+    /// Detects whether another process already owns an active TCP LISTEN socket on `127.0.0.1:port`
+    /// before starting `NWListener` (which uses `allowLocalEndpointReuse` for `TIME_WAIT` recovery
+    /// and could otherwise co-bind if the foreign process set `SO_REUSEPORT`).
+    nonisolated private static func isPortActivelyListening(_ port: Int) -> Bool {
+        guard (1...65_535).contains(port) else { return false }
+        let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { Darwin.close(fd) }
+
+        let flags = Darwin.fcntl(fd, F_GETFL, 0)
+        if flags >= 0 {
+            _ = Darwin.fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+        }
+
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(port).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+
+        let rc = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        if rc == 0 {
+            return true
+        }
+        guard errno == EINPROGRESS else {
+            return false
+        }
+
+        var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+        let pollRC = Darwin.poll(&pfd, 1, 40)
+        guard pollRC > 0, (pfd.revents & Int16(POLLOUT)) != 0 else {
+            return false
+        }
+        var soError: Int32 = 0
+        var len = socklen_t(MemoryLayout<Int32>.size)
+        if Darwin.getsockopt(fd, SOL_SOCKET, SO_ERROR, &soError, &len) == 0 {
+            return soError == 0
+        }
+        return false
     }
 
     private func isCurrentListener(_ listenerID: ObjectIdentifier) -> Bool {
@@ -242,6 +334,13 @@ final class LANProxyServerController: ObservableObject {
         return false
     }
 
+    private func reportListenerFailure(port: Int, type: String, error: Error) {
+        Self.logger.error("stage=listenerFailed type=\(type, privacy: .public) port=\(port) error=\(error.localizedDescription, privacy: .public)")
+        self.statusMessage = "Port \(port): \(error.localizedDescription)"
+        self.stop()
+        self.onListenerFailure?(port, error)
+    }
+
     private func handleListenerState(
         _ state: NWListener.State,
         listenerID: ObjectIdentifier,
@@ -252,10 +351,19 @@ final class LANProxyServerController: ObservableObject {
         switch state {
         case .ready:
             Self.logger.info("stage=listenerReady type=\(type, privacy: .public) port=\(port)")
+            if let httpListener, ObjectIdentifier(httpListener) == listenerID {
+                httpListenerReady = true
+            }
+            if let socksListener, ObjectIdentifier(socksListener) == listenerID {
+                socksListenerReady = true
+            }
+            let allReady = httpListenerReady && (socksListener == nil || socksListenerReady)
+            if allReady && !isReady {
+                isReady = true
+                onListenerReady?()
+            }
         case let .failed(error):
-            Self.logger.error("stage=listenerFailed type=\(type, privacy: .public) port=\(port) error=\(error.localizedDescription, privacy: .public)")
-            self.statusMessage = "Port \(port): \(error.localizedDescription)"
-            self.stop()
+            reportListenerFailure(port: port, type: type, error: error)
         case .cancelled:
             Self.logger.info("stage=listenerCancelled type=\(type, privacy: .public)")
         default:
@@ -824,6 +932,26 @@ final class LANProxySession: Hashable, @unchecked Sendable {
 
     // MARK: - Outbound Connection & Relay
 
+    private static let dnsResolutionQueue = DispatchQueue(
+        label: "com.aetherroute.desktop.lan-proxy-dns",
+        qos: .userInitiated,
+        attributes: .concurrent
+    )
+
+    enum ParsedHostLiteral: Sendable {
+        case ipv4(IPv4Address)
+        case ipv6(IPv6Address)
+    }
+
+    struct IPClassification: Sendable {
+        let endpointHost: NWEndpoint.Host
+        let canonicalAddress: String
+        let mappedIPv4Address: String?
+        let isLoopback: Bool
+        let isLinkLocal: Bool
+        let isUnspecified: Bool
+    }
+
     nonisolated static func normalizeHostString(_ host: String) -> String {
         var trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("["), trimmed.hasSuffix("]"), trimmed.count >= 2 {
@@ -839,18 +967,134 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         return trimmed
     }
 
+    /// Parses standard dotted-quad, BSD shorthand (`127.1`, `127.0.1`), octal (`0177.0.0.1`),
+    /// hex (`0x7f000001`), single-integer IPv4, IPv6, and shorthand IPv4-mapped IPv6 (`::ffff:127.1`).
+    nonisolated static func parseLiteralIP(_ normalizedHost: String) -> ParsedHostLiteral? {
+        guard !normalizedHost.isEmpty,
+              !normalizedHost.contains(where: \.isWhitespace) else {
+            return nil
+        }
+        if normalizedHost.contains(":") {
+            if let ipv6 = IPv6Address(normalizedHost) {
+                return .ipv6(ipv6)
+            }
+            if normalizedHost.hasPrefix("::ffff:") {
+                let embedded = String(normalizedHost.dropFirst("::ffff:".count))
+                if let ipv4 = parseBSDIPv4(embedded) {
+                    var mapped = Data(repeating: 0, count: 10)
+                    mapped.append(contentsOf: [0xff, 0xff])
+                    mapped.append(ipv4.rawValue)
+                    if let ipv6 = IPv6Address(mapped) {
+                        return .ipv6(ipv6)
+                    }
+                }
+            }
+            return nil
+        }
+        if let ipv4 = parseBSDIPv4(normalizedHost) {
+            return .ipv4(ipv4)
+        }
+        return nil
+    }
+
+    nonisolated private static func parseBSDIPv4(_ host: String) -> IPv4Address? {
+        // Use POSIX inet_aton first so octal (`0177.0.0.1`), hex (`0x7f000001` / `0X7f.0.0.1`),
+        // and shorthand (`127.1`) forms resolve identically to BSD getaddrinfo,
+        // rather than letting IPv4Address("0177.0.0.1") misinterpret 0177 as decimal 177.
+        if host.allSatisfy({ $0.isASCII && ($0.isHexDigit || $0 == "." || $0 == "x" || $0 == "X") }) {
+            var addr = in_addr()
+            let parsed = host.withCString { cStr in
+                Darwin.inet_aton(cStr, &addr)
+            }
+            if parsed == 1 {
+                let rawBytes = withUnsafeBytes(of: &addr.s_addr) { Data($0) }
+                return IPv4Address(rawBytes)
+            }
+        }
+        return IPv4Address(host)
+    }
+
+    nonisolated static func classifyIP(_ literal: ParsedHostLiteral) -> IPClassification {
+        switch literal {
+        case let .ipv4(ipv4):
+            let bytes = [UInt8](ipv4.rawValue)
+            let b0 = bytes.count > 0 ? bytes[0] : 0
+            let b1 = bytes.count > 1 ? bytes[1] : 0
+            let canonical = bytes.count == 4 ? "\(bytes[0]).\(bytes[1]).\(bytes[2]).\(bytes[3])" : "\(ipv4)"
+            return IPClassification(
+                endpointHost: .ipv4(ipv4),
+                canonicalAddress: canonical,
+                mappedIPv4Address: nil,
+                isLoopback: b0 == 127,
+                isLinkLocal: b0 == 169 && b1 == 254,
+                isUnspecified: b0 == 0
+            )
+        case let .ipv6(ipv6):
+            let bytes = [UInt8](ipv6.rawValue)
+            var canonical = "\(ipv6)".lowercased()
+            if let zoneIdx = canonical.firstIndex(of: "%") {
+                canonical = String(canonical[..<zoneIdx])
+            }
+            let isV4Mapped = bytes.count == 16
+                && bytes[0..<10].allSatisfy { $0 == 0 }
+                && bytes[10] == 0xff
+                && bytes[11] == 0xff
+            if isV4Mapped {
+                let b0 = bytes[12]
+                let b1 = bytes[13]
+                let mappedStr = "\(bytes[12]).\(bytes[13]).\(bytes[14]).\(bytes[15])"
+                return IPClassification(
+                    endpointHost: .ipv6(ipv6),
+                    canonicalAddress: canonical,
+                    mappedIPv4Address: mappedStr,
+                    isLoopback: b0 == 127,
+                    isLinkLocal: b0 == 169 && b1 == 254,
+                    isUnspecified: b0 == 0
+                )
+            }
+            let isAllZero = bytes.count == 16 && bytes.allSatisfy { $0 == 0 }
+            let isLinkLocalV6 = bytes.count == 16 && bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80
+            return IPClassification(
+                endpointHost: .ipv6(ipv6),
+                canonicalAddress: canonical,
+                mappedIPv4Address: nil,
+                isLoopback: ipv6.isLoopback,
+                isLinkLocal: isLinkLocalV6,
+                isUnspecified: isAllZero
+            )
+        }
+    }
+
+    nonisolated static func shouldRejectClassifiedIP(
+        _ info: IPClassification,
+        port: Int,
+        clientIsLoopback: Bool,
+        selfPorts: Set<Int>,
+        localAddresses: Set<String>
+    ) -> Bool {
+        if info.isUnspecified {
+            return true
+        }
+        let matchesLocalInterface = localAddresses.contains(info.canonicalAddress)
+            || (info.mappedIPv4Address.map { localAddresses.contains($0) } ?? false)
+        let targetIsSelfHost = info.isLoopback || info.isLinkLocal || matchesLocalInterface
+        if selfPorts.contains(port) && targetIsSelfHost {
+            return true
+        }
+        if !clientIsLoopback && (info.isLoopback || info.isLinkLocal) {
+            return true
+        }
+        return false
+    }
+
     nonisolated static func endpointIsLoopback(_ endpoint: NWEndpoint) -> Bool {
         switch endpoint {
         case let .hostPort(host, _):
             switch host {
             case let .ipv4(ipv4):
-                return ipv4.rawValue.first == 127
+                return classifyIP(.ipv4(ipv4)).isLoopback
             case let .ipv6(ipv6):
-                if ipv6.isLoopback { return true }
-                if let mapped = ipv6.asIPv4 {
-                    return mapped.rawValue.first == 127
-                }
-                return false
+                return classifyIP(.ipv6(ipv6)).isLoopback
             case let .name(name, _):
                 return isLoopbackTargetHost(name)
             @unknown default:
@@ -867,16 +1111,9 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         if host == "localhost" || host.hasSuffix(".localhost") {
             return true
         }
-        if let ipv4 = IPv4Address(host) {
-            return ipv4.rawValue.first == 127 || ipv4.rawValue == Data([0, 0, 0, 0])
-        }
-        if let ipv6 = IPv6Address(host) {
-            if ipv6.isLoopback || ipv6.rawValue == Data(repeating: 0, count: 16) {
-                return true
-            }
-            if let mapped = ipv6.asIPv4 {
-                return mapped.rawValue.first == 127 || mapped.rawValue == Data([0, 0, 0, 0])
-            }
+        if let literal = parseLiteralIP(host) {
+            let info = classifyIP(literal)
+            return info.isLoopback || info.isUnspecified
         }
         return false
     }
@@ -892,15 +1129,103 @@ final class LANProxySession: Hashable, @unchecked Sendable {
         let normalized = normalizeHostString(host)
         guard !normalized.isEmpty else { return true }
 
-        let targetIsLoopback = isLoopbackTargetHost(normalized)
-        let targetIsSelfHost = targetIsLoopback || localAddresses.contains(normalized)
-        if selfPorts.contains(port) && targetIsSelfHost {
-            return true
+        if normalized == "localhost" || normalized.hasSuffix(".localhost") {
+            if !clientIsLoopback || selfPorts.contains(port) {
+                return true
+            }
+            return false
         }
-        if !clientIsLoopback && targetIsLoopback {
+        if let literal = parseLiteralIP(normalized) {
+            let info = classifyIP(literal)
+            return shouldRejectClassifiedIP(
+                info,
+                port: port,
+                clientIsLoopback: clientIsLoopback,
+                selfPorts: selfPorts,
+                localAddresses: localAddresses
+            )
+        }
+        if selfPorts.contains(port) && localAddresses.contains(normalized) {
             return true
         }
         return false
+    }
+
+    /// Validates all DNS-resolved IP strings for a domain name. Returns empty when ANY resolved
+    /// address violates loopback, link-local, unspecified, or self-port safety rules (blocking
+    /// multi-record DNS Rebinding attacks such as `[93.184.216.34, 127.0.0.1]`).
+    nonisolated static func validateResolvedAddresses(
+        _ rawAddresses: [String],
+        port: Int,
+        clientIsLoopback: Bool,
+        selfPorts: Set<Int>,
+        localAddresses: Set<String>
+    ) -> [NWEndpoint.Host] {
+        guard (1...65_535).contains(port), !rawAddresses.isEmpty else { return [] }
+        var verified: [NWEndpoint.Host] = []
+        var seenCanonical = Set<String>()
+        for raw in rawAddresses {
+            let normalized = normalizeHostString(raw)
+            guard let literal = parseLiteralIP(normalized) else {
+                return []
+            }
+            let info = classifyIP(literal)
+            if shouldRejectClassifiedIP(
+                info,
+                port: port,
+                clientIsLoopback: clientIsLoopback,
+                selfPorts: selfPorts,
+                localAddresses: localAddresses
+            ) {
+                return []
+            }
+            if seenCanonical.insert(info.canonicalAddress).inserted {
+                verified.append(info.endpointHost)
+            }
+        }
+        return verified
+    }
+
+    nonisolated private static func resolveDomainAddressesSync(_ domain: String, port: Int) -> [String] {
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_STREAM
+        hints.ai_protocol = IPPROTO_TCP
+
+        var resultPointer: UnsafeMutablePointer<addrinfo>?
+        let status = domain.withCString { hostCStr in
+            String(port).withCString { portCStr in
+                Darwin.getaddrinfo(hostCStr, portCStr, &hints, &resultPointer)
+            }
+        }
+        guard status == 0, let first = resultPointer else {
+            return []
+        }
+        defer { Darwin.freeaddrinfo(first) }
+
+        var resolved: [String] = []
+        var cursor: UnsafeMutablePointer<addrinfo>? = first
+        while let current = cursor {
+            defer { cursor = current.pointee.ai_next }
+            guard let sockaddrPtr = current.pointee.ai_addr else { continue }
+            let addrLen = current.pointee.ai_addrlen
+            var buffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if Darwin.getnameinfo(
+                sockaddrPtr,
+                addrLen,
+                &buffer,
+                socklen_t(buffer.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            ) == 0 {
+                let ipString = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                if !ipString.isEmpty {
+                    resolved.append(ipString)
+                }
+            }
+        }
+        return resolved
     }
 
     private func connectRemote(host: String, port: Int, completion: @escaping @Sendable (Bool) -> Void) {
@@ -919,7 +1244,66 @@ final class LANProxySession: Hashable, @unchecked Sendable {
             return
         }
 
-        let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+        let normalized = Self.normalizeHostString(host)
+        if let literal = Self.parseLiteralIP(normalized) {
+            let info = Self.classifyIP(literal)
+            guard !Self.shouldRejectClassifiedIP(
+                info,
+                port: port,
+                clientIsLoopback: clientIsLoopback,
+                selfPorts: selfPorts,
+                localAddresses: localAddresses
+            ) else {
+                fireConnectCompletion(completion, result: false)
+                return
+            }
+            dialVerifiedHosts([info.endpointHost], index: 0, port: nwPort, completion: completion)
+            return
+        }
+
+        let isLoopbackClient = clientIsLoopback
+        let ports = selfPorts
+        let localIPs = localAddresses
+        let callbackQueue = queue
+        Self.dnsResolutionQueue.async { [weak self] in
+            guard let self, !self.isCancelled else {
+                self?.fireConnectCompletion(completion, result: false)
+                return
+            }
+            let rawAddresses = Self.resolveDomainAddressesSync(normalized, port: port)
+            let verifiedHosts = Self.validateResolvedAddresses(
+                rawAddresses,
+                port: port,
+                clientIsLoopback: isLoopbackClient,
+                selfPorts: ports,
+                localAddresses: localIPs
+            )
+            callbackQueue.async { [weak self] in
+                guard let self, !self.isCancelled else {
+                    self?.fireConnectCompletion(completion, result: false)
+                    return
+                }
+                guard !verifiedHosts.isEmpty else {
+                    self.fireConnectCompletion(completion, result: false)
+                    return
+                }
+                self.dialVerifiedHosts(verifiedHosts, index: 0, port: nwPort, completion: completion)
+            }
+        }
+    }
+
+    private func dialVerifiedHosts(
+        _ hosts: [NWEndpoint.Host],
+        index: Int,
+        port: NWEndpoint.Port,
+        completion: @escaping @Sendable (Bool) -> Void
+    ) {
+        guard index < hosts.count else {
+            fireConnectCompletion(completion, result: false)
+            return
+        }
+
+        let endpoint = NWEndpoint.hostPort(host: hosts[index], port: port)
         let remote = NWConnection(to: endpoint, using: .tcp)
 
         os_unfair_lock_lock(&lock)
@@ -929,15 +1313,32 @@ final class LANProxySession: Hashable, @unchecked Sendable {
             fireConnectCompletion(completion, result: false)
             return
         }
+        let previousRemote = remoteConnectionInternal
         remoteConnectionInternal = remote
         os_unfair_lock_unlock(&lock)
+        previousRemote?.stateUpdateHandler = nil
+        previousRemote?.cancel()
 
-        remote.stateUpdateHandler = { [weak self] state in
+        remote.stateUpdateHandler = { [weak self, weak remote] state in
             guard let self else { return }
+            os_unfair_lock_lock(&self.lock)
+            let isCurrent = remote != nil && self.remoteConnectionInternal === remote
+            let relayStarted = self.hasRelayStarted
+            os_unfair_lock_unlock(&self.lock)
+            guard isCurrent else { return }
+
             switch state {
             case .ready:
                 self.fireConnectCompletion(completion, result: true)
-            case .failed, .cancelled:
+            case .waiting, .failed:
+                if !relayStarted, index + 1 < hosts.count {
+                    self.dialVerifiedHosts(hosts, index: index + 1, port: port, completion: completion)
+                } else {
+                    remote?.cancel()
+                    self.fireConnectCompletion(completion, result: false)
+                    self.handleTerminalConnectionState()
+                }
+            case .cancelled:
                 self.fireConnectCompletion(completion, result: false)
                 self.handleTerminalConnectionState()
             default:

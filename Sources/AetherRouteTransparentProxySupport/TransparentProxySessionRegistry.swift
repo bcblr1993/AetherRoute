@@ -3,10 +3,28 @@ import Foundation
 public protocol TransparentProxySessionLifetime: AnyObject, Sendable {
     var sessionID: UUID { get }
 
+    /// True for datagram associations that may be evicted in LRU order when
+    /// global session or resource capacity is saturated, preventing 120s idle
+    /// UDP flows from starving newly arriving TCP or DNS flows.
+    var isEvictableUDPSession: Bool { get }
+
+    /// Monotonic uptime timestamp of the last datagram transfer (or creation).
+    var lastActivityUptimeNanoseconds: UInt64 { get }
+
+    /// Releases admission budget immediately upon eviction while retaining
+    /// native/Rust handles until their async destruction barrier finishes.
+    func reclaimAdmissionSlotForEviction()
+
     /// Idempotently starts cancellation. Implementations report termination to
     /// the registry only after native flow closure and the Rust destroy barrier
     /// have both returned.
     func cancel()
+}
+
+public extension TransparentProxySessionLifetime {
+    var isEvictableUDPSession: Bool { false }
+    var lastActivityUptimeNanoseconds: UInt64 { 0 }
+    func reclaimAdmissionSlotForEviction() {}
 }
 
 public enum TransparentProxySessionRegistryError:
@@ -46,6 +64,7 @@ public final class TransparentProxySessionRegistry: @unchecked Sendable {
     private var lifecycle: TransparentProxySessionRegistrySnapshot.Lifecycle =
         .accepting
     private var sessions: [UUID: any TransparentProxySessionLifetime] = [:]
+    private var evictingSessions: [UUID: any TransparentProxySessionLifetime] = [:]
     private var stopCompletions: [StopCompletion] = []
 
     public init(
@@ -57,23 +76,61 @@ public final class TransparentProxySessionRegistry: @unchecked Sendable {
         self.maximumSessionCount = maximumSessionCount
     }
 
+    /// Evicts the least-recently-active UDP session so a newly arriving TCP or
+    /// DNS flow is never starved by 120s idle UDP associations. The evicted
+    /// session remains tracked in `evictingSessions` until `didTerminate` so
+    /// `stopAll` continues to act as a strict destruction barrier.
+    @discardableResult
+    public func evictOldestUDPSession() -> Bool {
+        let victim = lock.withLock { () -> (any TransparentProxySessionLifetime)? in
+            guard lifecycle == .accepting else { return nil }
+            guard let oldest = sessions.values
+                .filter(\.isEvictableUDPSession)
+                .min(by: { $0.lastActivityUptimeNanoseconds < $1.lastActivityUptimeNanoseconds })
+            else {
+                return nil
+            }
+            sessions.removeValue(forKey: oldest.sessionID)
+            evictingSessions[oldest.sessionID] = oldest
+            return oldest
+        }
+        guard let victim else { return false }
+        victim.reclaimAdmissionSlotForEviction()
+        victim.cancel()
+        return true
+    }
+
     /// The session itself owns the Apple flow, so a successful insertion is
     /// the synchronous retention point required before a provider returns true.
     public func insert(
         _ session: any TransparentProxySessionLifetime
     ) throws {
+        var evictedVictim: (any TransparentProxySessionLifetime)?
         try lock.withLock {
             guard lifecycle == .accepting else {
                 throw TransparentProxySessionRegistryError.notAccepting
             }
-            guard sessions.count < maximumSessionCount else {
-                throw TransparentProxySessionRegistryError.capacityExceeded
-            }
-            guard sessions[session.sessionID] == nil else {
+            guard sessions[session.sessionID] == nil,
+                  evictingSessions[session.sessionID] == nil else {
                 throw TransparentProxySessionRegistryError
                     .duplicateSessionIdentifier
             }
+            if sessions.count >= maximumSessionCount {
+                if let oldestUDP = sessions.values
+                    .filter(\.isEvictableUDPSession)
+                    .min(by: { $0.lastActivityUptimeNanoseconds < $1.lastActivityUptimeNanoseconds }) {
+                    sessions.removeValue(forKey: oldestUDP.sessionID)
+                    evictingSessions[oldestUDP.sessionID] = oldestUDP
+                    evictedVictim = oldestUDP
+                } else {
+                    throw TransparentProxySessionRegistryError.capacityExceeded
+                }
+            }
             sessions[session.sessionID] = session
+        }
+        if let evictedVictim {
+            evictedVictim.reclaimAdmissionSlotForEviction()
+            evictedVictim.cancel()
         }
     }
 
@@ -84,10 +141,14 @@ public final class TransparentProxySessionRegistry: @unchecked Sendable {
             // Return the removed strong reference as part of the action. Its
             // deinitializer may call arbitrary cleanup code, including back
             // into this registry, and therefore must never run under `lock`.
-            guard let removed = sessions.removeValue(forKey: sessionID) else {
+            let removed = sessions.removeValue(forKey: sessionID)
+                ?? evictingSessions.removeValue(forKey: sessionID)
+            guard let removed else {
                 return .none
             }
-            guard lifecycle == .stopping, sessions.isEmpty else {
+            guard lifecycle == .stopping,
+                  sessions.isEmpty,
+                  evictingSessions.isEmpty else {
                 return .release(removed, completions: [])
             }
             lifecycle = .stopped
@@ -118,13 +179,13 @@ public final class TransparentProxySessionRegistry: @unchecked Sendable {
             case .accepting:
                 lifecycle = .stopping
                 stopCompletions.append(completion)
-                guard !sessions.isEmpty else {
+                guard !sessions.isEmpty || !evictingSessions.isEmpty else {
                     lifecycle = .stopped
                     let completions = stopCompletions
                     stopCompletions.removeAll(keepingCapacity: false)
                     return .complete(completions)
                 }
-                return .cancel(Array(sessions.values))
+                return .cancel(Array(sessions.values) + Array(evictingSessions.values))
             }
         }
 

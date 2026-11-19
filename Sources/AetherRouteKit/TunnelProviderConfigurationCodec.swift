@@ -58,9 +58,11 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         }
         do {
             // The host compiled this profile, application rules included.
+            // Align launch validation ceiling with ReloadProfilePayloadCodec (16 MiB).
             try ProfileImportValidator.validate(
                 data: profileData,
-                allowsApplicationRules: true
+                allowsApplicationRules: true,
+                maximumBytes: ReloadProfilePayloadCodec.maximumDecodedBytes
             )
         } catch {
             throw ProviderLaunchSnapshotError.invalidProfile

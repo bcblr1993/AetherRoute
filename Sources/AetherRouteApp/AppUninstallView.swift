@@ -64,7 +64,7 @@ struct AppUninstallSheet: View {
                            ? AppLocalization.string("Close")
                            : AppLocalization.string("Done")) {
                         if !report.networkRemovalFailed {
-                            AppUninstallPerformer.removeAppAndTerminate()
+                            AppUninstallPerformer.removeAppAndTerminate(deletingUserData: deletesUserData)
                         } else {
                             dismiss()
                         }
@@ -143,9 +143,9 @@ struct AppUninstallSheet: View {
             report = result
             isRunning = false
             NSApplication.shared.activate(ignoringOtherApps: true)
-            if !result.networkRemovalFailed {
+            if !result.networkRemovalFailed && result.failures.isEmpty && !result.needsRestart {
                 try? await Task.sleep(for: .milliseconds(800))
-                AppUninstallPerformer.removeAppAndTerminate()
+                AppUninstallPerformer.removeAppAndTerminate(deletingUserData: deletesUserData)
             }
         }
     }

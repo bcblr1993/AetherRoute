@@ -23,6 +23,16 @@ final class FlowEndpointCodecTests: XCTestCase {
                 port: 8_443,
                 transport: .tcp
             ),
+            FlowEndpoint(
+                host: .name("under_score.api_v2.example"),
+                port: 443,
+                transport: .tcp
+            ),
+            FlowEndpoint(
+                host: .name("_https._tcp.example"),
+                port: 443,
+                transport: .tcp
+            ),
         ]
 
         for endpoint in endpoints {
@@ -114,7 +124,6 @@ final class FlowEndpointCodecTests: XCTestCase {
             "-leading.example",
             "trailing-.example",
             "empty..label",
-            "under_score.example",
             "例子.example",
             "\(String(repeating: "a", count: 64)).example",
         ] {

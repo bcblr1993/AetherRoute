@@ -112,6 +112,8 @@ public typealias ProxySelectionSnapshot = ProxySelectionState
 /// Swift facade starts the same safe shutdown path; no process-global runtime
 /// or protocol state is used by this bridge.
 public final class FlowCoreEngine: @unchecked Sendable {
+    public static let maximumProfileBytes = 16 * 1_024 * 1_024
+    public static let maximumSafeTelemetryConnections: UInt16 = 160
     private let storage: FlowCoreEngineStorage
 
     public convenience init(
@@ -145,7 +147,7 @@ public final class FlowCoreEngine: @unchecked Sendable {
         backend: any FlowCoreABIBackend
     ) throws {
         let validated = try configuration.validated()
-        guard !profile.isEmpty, profile.count <= 8 * 1_024 * 1_024 else {
+        guard !profile.isEmpty, profile.count <= Self.maximumProfileBytes else {
             throw FlowCoreEngineError.invalidProfile
         }
         guard
@@ -623,10 +625,14 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             maximumConnections > 0,
             Int(maximumConnections) <= NetworkTelemetryCodec.maximumConnections
         else { throw FlowCoreEngineError.selectorUnavailable }
+        let boundedConnections = min(
+            maximumConnections,
+            FlowCoreEngine.maximumSafeTelemetryConnections
+        )
         return try withReadLease { engineHandle in
             let result = backend.telemetrySnapshot(
                 engine: engineHandle,
-                maximumConnections: UInt32(maximumConnections)
+                maximumConnections: UInt32(boundedConnections)
             )
             guard
                 result.status == FlowCoreABIStatus.success,

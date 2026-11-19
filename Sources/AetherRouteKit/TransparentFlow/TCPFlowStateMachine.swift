@@ -101,12 +101,14 @@ public struct TCPFlowSnapshot: Sendable, Equatable {
 public actor TCPFlowStateMachine {
     public static let defaultMaximumReadBytes = 64 * 1_024
     public static let hardMaximumReadBytes = 1_024 * 1_024
+    public static let defaultPostExchangeClientHalfCloseTimeout: Duration = .seconds(2)
 
     private let flow: any TransparentTCPFlowIO
     private let bridgeSource: any RustTCPSource
     private let bridgeSink: any RustTCPSink
     private let bridgeSourceAndSinkShareIdentity: Bool
     private let halfCloseIdleTimeout: Duration
+    private let postExchangeClientHalfCloseTimeout: Duration
     private let maximumReadBytes: Int
     private let onTermination: FlowTerminationHandler
     private let sessionID: UUID
@@ -143,6 +145,7 @@ public actor TCPFlowStateMachine {
         bridgeSink: any RustTCPSink,
         maximumReadBytes: Int = TCPFlowStateMachine.defaultMaximumReadBytes,
         halfCloseIdleTimeout: Duration = .seconds(15),
+        postExchangeClientHalfCloseTimeout: Duration = TCPFlowStateMachine.defaultPostExchangeClientHalfCloseTimeout,
         sessionID: UUID = UUID(),
         diagnosticLog: DiagnosticLog? = nil,
         onTermination: @escaping FlowTerminationHandler = { _ in }
@@ -152,10 +155,11 @@ public actor TCPFlowStateMachine {
                 maximumReadBytes
             )
         }
-        guard halfCloseIdleTimeout > .zero else {
+        guard halfCloseIdleTimeout > .zero, postExchangeClientHalfCloseTimeout > .zero else {
             throw FlowStateMachineConfigurationError.invalidHalfCloseIdleTimeout
         }
         self.halfCloseIdleTimeout = halfCloseIdleTimeout
+        self.postExchangeClientHalfCloseTimeout = postExchangeClientHalfCloseTimeout
         self.sessionID = sessionID
         self.diagnosticLog = diagnosticLog ?? Self.pumpLog
         self.flow = flow
@@ -315,6 +319,7 @@ public actor TCPFlowStateMachine {
                 fail(.invalidData("TCP bridge returned an invalid read size"), stage: .bridgeRead)
                 return
             }
+            lastTransferAt = .now
             bridgeReadBytes += UInt64(data.count)
             issueFlowWrite(data)
         }
@@ -349,7 +354,7 @@ public actor TCPFlowStateMachine {
             if error == .closed,
                bridgeInputEnded,
                flowOutputFinished || flowFinishToken != nil,
-               bridgeWrittenBytes > 0 || flowWrittenBytes > 0 {
+               flowReadBytes > 0 || bridgeWrittenBytes > 0 || flowWrittenBytes > 0 {
                 finishAfterPeerClosedPostEOF()
                 return
             }
@@ -389,15 +394,17 @@ public actor TCPFlowStateMachine {
         flowWriteToken = nil
         switch result {
         case let .failure(error):
-            if error == .closed,
-               flowInputEnded,
-               bridgeOutputFinished || bridgeFinishToken != nil,
-               flowWrittenBytes > 0 || bridgeWrittenBytes > 0 {
+            let postClientEOF = flowInputEnded
+                && (bridgeOutputFinished || bridgeFinishToken != nil)
+                && (flowWrittenBytes > 0 || bridgeWrittenBytes > 0)
+            let postBidirectionalExchange = bridgeWrittenBytes > 0 && flowWrittenBytes > 0
+            if error == .closed, postClientEOF || postBidirectionalExchange {
                 finishAfterPeerClosedPostEOF()
                 return
             }
             fail(error, stage: .flowWrite)
         case .success:
+            lastTransferAt = .now
             DiagnosticFlowOpenObserver.shared.record(.bytesClient(pendingFlowWriteBytes))
             flowWrittenBytes += UInt64(pendingFlowWriteBytes)
             pendingFlowWriteBytes = 0
@@ -480,6 +487,14 @@ public actor TCPFlowStateMachine {
         }
     }
 
+    private var effectiveHalfCloseIdleTimeout: Duration {
+        let clientHalfClosed = flowInputEnded && bridgeOutputFinished && !bridgeInputEnded
+        if clientHalfClosed && flowWrittenBytes > 0 {
+            return min(halfCloseIdleTimeout, postExchangeClientHalfCloseTimeout)
+        }
+        return halfCloseIdleTimeout
+    }
+
     private func finishIfBothDirectionsEnded() {
         guard
             flowInputEnded,
@@ -491,7 +506,7 @@ public actor TCPFlowStateMachine {
             let clientHalfClosed = flowInputEnded && bridgeOutputFinished && !bridgeInputEnded
             if (serverHalfClosed || clientHalfClosed), halfCloseTimeoutTask == nil {
                 lastTransferAt = .now
-                halfCloseTimeoutTask = Task { [weak self, timeout = halfCloseIdleTimeout] in
+                halfCloseTimeoutTask = Task { [weak self, timeout = effectiveHalfCloseIdleTimeout] in
                     var delay = timeout
                     while !Task.isCancelled {
                         do {
@@ -537,9 +552,10 @@ public actor TCPFlowStateMachine {
         guard lifecycle == .running, serverHalfClosed || clientHalfClosed else {
             return nil
         }
+        let timeout = effectiveHalfCloseIdleTimeout
         // Wait for any in-flight write to drain before counting idle time.
-        guard bridgeWriteToken == nil, flowWriteToken == nil else { return halfCloseIdleTimeout }
-        let remaining = halfCloseIdleTimeout - lastTransferAt.duration(to: .now)
+        guard bridgeWriteToken == nil, flowWriteToken == nil else { return timeout }
+        let remaining = timeout - lastTransferAt.duration(to: .now)
         if remaining > .zero { return remaining }
         terminationTrigger = "halfCloseTimeout"
         if clientHalfClosed, !serverHalfClosed {
@@ -606,8 +622,8 @@ public actor TCPFlowStateMachine {
         case .cancelled: outcome = "cancelled"; errorClass = "none"
         case .idle, .running: return
         }
-        let expiredHalfClose = terminationTrigger == "halfCloseTimeout"
-        guard outcome == "failed" || expiredHalfClose || diagnosticLog.level.recordsPerFlow else {
+        let reportableHalfCloseExpiry = terminationTrigger == "halfCloseTimeout" && outcome != "finished"
+        guard outcome == "failed" || reportableHalfCloseExpiry || diagnosticLog.level.recordsPerFlow else {
             onTermination(lifecycle)
             return
         }
@@ -620,9 +636,10 @@ public actor TCPFlowStateMachine {
             + "pendingBridgeWriteBytes=\(pendingBridgeWriteBytes) pendingFlowWriteBytes=\(pendingFlowWriteBytes)"
         if outcome == "failed" {
             diagnosticLog.failure(summary)
-        } else if expiredHalfClose {
-            // Expected idle reclamation is visible in standard diagnostics,
-            // but is not a failed session or a user-requested cancellation.
+        } else if reportableHalfCloseExpiry {
+            // Unexpected/cancelled half-close expiry (e.g. server closed first while
+            // client stayed silent) remains visible in standard diagnostics, while
+            // routine post-exchange client-EOF keep-alive reclamation stays verbose-only.
             diagnosticLog.aggregate(summary)
         } else {
             diagnosticLog.verbose(summary)

@@ -26,6 +26,9 @@ struct AllowLANTestMain {
         // Case 4: Concurrency & Throttling Limits
         testConcurrencyAndThrottlingLimits()
 
+        // Case 5: Shorthand IPv4, Link-Local, Unspecified & DNS Rebinding Protection
+        await testShorthandIPv4AndDNSRebindingProtection()
+
         // Case 6: Help Topic & Localizations
         testHelpTopicsIntegrity()
 
@@ -237,6 +240,152 @@ struct AllowLANTestMain {
 
         assert(session.isCancelled, "Session must be cancelled")
         assert(counter.value == 1, "onTerminated must be called exactly once despite concurrent cancel(), got \(counter.value)")
+    }
+
+    private static func testShorthandIPv4AndDNSRebindingProtection() async {
+        print("  -> Testing shorthand IPv4, link-local, unspecified & DNS rebinding protection...")
+        let selfPorts: Set<Int> = [7_890, 7_891]
+        let localIPs: Set<String> = ["192.168.1.50", "127.0.0.1", "::1"]
+
+        // Shorthand IPv4, hex/octal/integer IPv4 (including uppercase 0X), link-local, and unspecified must be rejected for LAN clients
+        if let upperHexLiteral = LANProxySession.parseLiteralIP("0X7f000001"),
+           let upperHexDottedLiteral = LANProxySession.parseLiteralIP("0X7f.0.0.1") {
+            assert(
+                LANProxySession.classifyIP(upperHexLiteral).isLoopback,
+                "Expected uppercase 0X7f000001 literal to classify as loopback"
+            )
+            assert(
+                LANProxySession.classifyIP(upperHexDottedLiteral).isLoopback,
+                "Expected uppercase 0X7f.0.0.1 shorthand hex literal to classify as loopback"
+            )
+        } else {
+            assertionFailure("Expected LANProxySession.parseLiteralIP to parse uppercase 0X7f000001 and 0X7f.0.0.1")
+        }
+
+        await MainActor.run {
+            let unconnectedController = LANProxyServerController.shared
+            defer { unconnectedController.stop() }
+            let allowLANWhileDisconnected = LocalProxySettings(
+                isEnabled: true,
+                httpPort: 29_890,
+                socksPort: 29_891,
+                allowLAN: true,
+                setAsSystemProxy: false
+            )
+            unconnectedController.updateConfiguration(settings: allowLANWhileDisconnected)
+            assert(
+                !unconnectedController.isRunning,
+                "LANProxyServerController must NOT listen on 0.0.0.0 when tunnel is not connected"
+            )
+            unconnectedController.updateConfiguration(
+                settings: allowLANWhileDisconnected,
+                isTunnelConnected: true
+            )
+            assert(
+                unconnectedController.isRunning && !unconnectedController.isLoopbackOnly,
+                "LANProxyServerController must start on 0.0.0.0 once isTunnelConnected == true"
+            )
+            unconnectedController.updateConfiguration(
+                settings: allowLANWhileDisconnected,
+                isTunnelConnected: false
+            )
+            assert(
+                !unconnectedController.isRunning,
+                "LANProxyServerController must stop immediately when isTunnelConnected drops to false"
+            )
+        }
+
+        for forbidden in [
+            "127.1", "127.0.1", "0177.0.0.1", "0x7f000001", "0X7f000001", "0X7f.0.0.1", "2130706433",
+            "0.0.0.0", "0", "::", "[::]", "[::ffff:0.0.0.0]",
+            "169.254.169.254", "169.254.1.1", "fe80::1", "[fe80::1%en0]", "[::ffff:169.254.169.254]",
+            "[::ffff:127.1]", "[::ffff:127.0.0.1]", "[::ffff:0X7f000001]",
+        ] {
+            assert(
+                LANProxySession.shouldRejectOutboundTarget(
+                    host: forbidden,
+                    port: 80,
+                    clientIsLoopback: false,
+                    selfPorts: selfPorts,
+                    localAddresses: localIPs
+                ),
+                "Expected non-loopback LAN client to reject forbidden target \(forbidden)"
+            )
+        }
+
+        // Unspecified (0.0.0.0 / ::) and shorthand loopback on selfPorts must even be rejected for loopback clients
+        for selfOrZero in ["0.0.0.0", "0", "::", "[::ffff:0.0.0.0]"] {
+            assert(
+                LANProxySession.shouldRejectOutboundTarget(
+                    host: selfOrZero,
+                    port: 8080,
+                    clientIsLoopback: true,
+                    selfPorts: selfPorts,
+                    localAddresses: localIPs
+                ),
+                "Expected unspecified address \(selfOrZero) to be rejected for loopback client"
+            )
+        }
+        assert(
+            LANProxySession.shouldRejectOutboundTarget(
+                host: "127.1",
+                port: 7_890,
+                clientIsLoopback: true,
+                selfPorts: selfPorts,
+                localAddresses: localIPs
+            ),
+            "Expected shorthand loopback 127.1 on self-listening port to be rejected"
+        )
+
+        // DNS Rebinding validation: if ANY resolved IP of a domain is loopback/link-local/unspecified/self-port, reject!
+        assert(
+            LANProxySession.validateResolvedAddresses(
+                ["93.184.216.34", "127.0.0.1"],
+                port: 80,
+                clientIsLoopback: false,
+                selfPorts: selfPorts,
+                localAddresses: localIPs
+            ).isEmpty,
+            "Expected multi-record DNS rebinding [public, 127.0.0.1] to be rejected completely"
+        )
+        assert(
+            LANProxySession.validateResolvedAddresses(
+                ["93.184.216.34", "::ffff:127.0.0.1"],
+                port: 443,
+                clientIsLoopback: false,
+                selfPorts: selfPorts,
+                localAddresses: localIPs
+            ).isEmpty,
+            "Expected IPv4-mapped loopback DNS rebinding to be rejected"
+        )
+        assert(
+            LANProxySession.validateResolvedAddresses(
+                ["169.254.169.254"],
+                port: 80,
+                clientIsLoopback: false,
+                selfPorts: selfPorts,
+                localAddresses: localIPs
+            ).isEmpty,
+            "Expected cloud metadata link-local DNS rebinding to be rejected"
+        )
+        assert(
+            LANProxySession.validateResolvedAddresses(
+                ["192.168.1.50"],
+                port: 7_890,
+                clientIsLoopback: false,
+                selfPorts: selfPorts,
+                localAddresses: localIPs
+            ).isEmpty,
+            "Expected domain resolving to local LAN IP on self-listening port to be rejected"
+        )
+        let validPinned = LANProxySession.validateResolvedAddresses(
+            ["93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"],
+            port: 443,
+            clientIsLoopback: false,
+            selfPorts: selfPorts,
+            localAddresses: localIPs
+        )
+        assert(validPinned.count == 2, "Expected valid external dual-stack IPs to pass and remain pinned")
     }
 
     private static func testHelpTopicsIntegrity() {

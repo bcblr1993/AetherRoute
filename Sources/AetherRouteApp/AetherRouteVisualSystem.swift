@@ -645,7 +645,7 @@ private struct AetherPageHeaderLayout: Layout {
         // wrapping the title to zero width answered with one letter per
         // line, a page taller than the window (1.5.2). Answer such probes
         // with the one-line size; only a real width wraps.
-        guard let proposedWidth = proposal.width, proposedWidth >= 1 else {
+        guard let proposedWidth = proposal.width, proposedWidth >= 1, proposedWidth.isFinite else {
             return CGSize(width: 0, height: max(title.height, actions.height))
         }
         let width = proposedWidth

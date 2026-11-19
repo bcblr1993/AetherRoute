@@ -534,7 +534,13 @@ public actor RuleProviderEngine {
                     : item.target.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 var ruleString = "\(item.type),\(item.payload),\(target)"
-                if item.noResolve && (item.type == "IP-CIDR" || item.type == "IP-CIDR6" || item.type == "GEOIP") {
+                if item.noResolve && (
+                    item.type == "IP-CIDR"
+                    || item.type == "IP-CIDR6"
+                    || item.type == "GEOIP"
+                    || item.type == "IP-ASN"
+                    || item.type == "SRC-IP-ASN"
+                ) {
                     ruleString += ",no-resolve"
                 }
 
@@ -716,7 +722,12 @@ public actor RuleProviderEngine {
             throw RuleProviderError.providerNotFound
         }
         let expectedRevision = revision(for: providerID, kind: kind)
-        try Self.validateURL(snapshot.url)
+        switch kind {
+        case .custom:
+            try Self.validateURL(snapshot.url)
+        case .stagedProfile:
+            try Self.validateUntrustedRemoteURL(snapshot.url)
+        }
         var request = URLRequest(url: snapshot.url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
@@ -726,13 +737,28 @@ public actor RuleProviderEngine {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
 
+        let maxBytes = snapshot.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
         let (data, response): (Data, URLResponse)
         do {
             if let httpFetcher {
                 (data, response) = try await httpFetcher(snapshot.url)
             } else {
-                (data, response) = try await URLSession.shared.data(for: request)
+                (data, response) = try await ProviderSafeHTTPClient.fetch(
+                    request: request,
+                    maximumBytes: maxBytes,
+                    allowInitialLocalTarget: kind == .custom,
+                    invalidURLError: { RuleProviderError.invalidURL },
+                    oversizedError: { RuleProviderError.oversizedPayload($0) }
+                )
             }
+        } catch let error as RuleProviderError {
+            _ = try activeSnapshot(
+                id: providerID,
+                kind: kind,
+                expectedRevision: expectedRevision,
+                expectedSnapshot: snapshot
+            )
+            throw error
         } catch {
             _ = try activeSnapshot(
                 id: providerID,
@@ -764,8 +790,8 @@ public actor RuleProviderEngine {
             throw RuleProviderError.downloadFailed("HTTP \(httpResponse.statusCode)")
         }
 
-        let maxBytes = current.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
-        guard data.count <= maxBytes else {
+        let effectiveMaxBytes = current.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
+        guard data.count <= effectiveMaxBytes else {
             throw RuleProviderError.oversizedPayload(data.count)
         }
 
@@ -884,6 +910,14 @@ public actor RuleProviderEngine {
         performLegacyMigration(inProfileYAMLs: yamls)
     }
 
+    nonisolated public static func validateUntrustedRemoteURL(_ url: URL) throws {
+        try ProviderURLValidator.validateUntrustedRemoteURL(
+            url,
+            invalidURL: RuleProviderError.invalidURL,
+            insecureScheme: RuleProviderError.insecureScheme
+        )
+    }
+
     /// Returns previously staged remote `http` rule-providers declared inside a profile's YAML
     /// without mixing them into the user's global custom rule-providers list.
     public func stagedProviders(inProfileYAML yaml: String) -> [RuleProviderMetadata] {
@@ -894,11 +928,10 @@ public actor RuleProviderEngine {
         for spec in specs {
             guard spec.type == "http",
                   let url = URL(string: spec.url),
-                  (try? Self.validateURL(url)) != nil else {
+                  (try? Self.validateUntrustedRemoteURL(url)) != nil else {
                 continue
             }
             let match = stagedProfileProviders.values.first { $0.name == spec.name && $0.url == url }
-                ?? stagedProfileProviders.values.first { $0.name == spec.name }
             if let match, seenIDs.insert(match.id).inserted {
                 results.append(match)
             }
@@ -916,13 +949,12 @@ public actor RuleProviderEngine {
         for spec in specs {
             guard spec.type == "http",
                   let url = URL(string: spec.url),
-                  (try? Self.validateURL(url)) != nil else {
+                  (try? Self.validateUntrustedRemoteURL(url)) != nil else {
                 continue
             }
             let format = Self.inferFormat(specFormat: spec.format, url: spec.url, path: spec.path)
             let behavior = RuleProviderBehavior(rawValue: spec.behavior) ?? .domain
             let existing = stagedProfileProviders.values.first { $0.name == spec.name && $0.url == url }
-                ?? stagedProfileProviders.values.first { $0.name == spec.name }
             var metadata = existing ?? RuleProviderMetadata(
                 name: spec.name,
                 url: url,
@@ -1011,7 +1043,7 @@ public actor RuleProviderEngine {
 
             guard !clean.isEmpty else { continue }
 
-            let parts = clean.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            let parts = Self.splitRuleTopLevelCommas(clean)
             if parts.isEmpty { continue }
 
             if behavior == .domain {
@@ -1054,6 +1086,49 @@ public actor RuleProviderEngine {
         }
 
         return items
+    }
+
+    private static func splitRuleTopLevelCommas(_ line: String) -> [String] {
+        var parts: [String] = []
+        var current = ""
+        var parenDepth = 0
+        var quote: Character?
+        for ch in line {
+            if let active = quote {
+                if ch == active { quote = nil }
+                current.append(ch)
+                continue
+            }
+            if ch == "'" || ch == "\"" {
+                quote = ch
+                current.append(ch)
+                continue
+            }
+            if ch == "(" {
+                parenDepth += 1
+                current.append(ch)
+                continue
+            }
+            if ch == ")" {
+                parenDepth = max(0, parenDepth - 1)
+                current.append(ch)
+                continue
+            }
+            if ch == "," && parenDepth == 0 {
+                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    parts.append(trimmed)
+                }
+                current.removeAll(keepingCapacity: true)
+                continue
+            }
+            current.append(ch)
+        }
+        let tail = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty {
+            parts.append(tail)
+        }
+        return parts
     }
 
     private static func normalizeDomainSuffixPayload(_ raw: String) -> String {
@@ -1324,24 +1399,67 @@ public actor RuleProviderEngine {
     }
 
     // MARK: - Cloud Sync
-    /// Exports current providers metadata for lightweight iCloud synchronization.
-    public func exportCloudSyncPayload(deviceIdentifier: String) -> Data? {
+    /// Exports current providers metadata for iCloud synchronization. When a 32-byte
+    /// `encryptionKey` is supplied, the payload is sealed inside an AES-256-GCM
+    /// `CloudSyncPayload` envelope so provider URLs and names are never stored in plaintext in KVS.
+    public func exportCloudSyncPayload(
+        deviceIdentifier: String,
+        encryptionKey: Data? = nil
+    ) -> Data? {
         let list = allProviders()
         let payload = RuleProviderSyncPayload(deviceIdentifier: deviceIdentifier, providers: list)
-        return try? JSONEncoder().encode(payload)
+        guard let plaintext = try? JSONEncoder().encode(payload) else {
+            return nil
+        }
+        guard let encryptionKey, encryptionKey.count == 32 else {
+            return plaintext
+        }
+        let symmetricKey = SymmetricKey(data: encryptionKey)
+        guard let sealed = try? AES.GCM.seal(plaintext, using: symmetricKey),
+              let combined = sealed.combined else {
+            return nil
+        }
+        let sha256 = SHA256.hash(data: combined).map { String(format: "%02x", $0) }.joined()
+        let envelope = CloudSyncPayload(
+            deviceIdentifier: deviceIdentifier,
+            encryptedData: combined,
+            sha256: sha256
+        )
+        return try? JSONEncoder().encode(envelope)
     }
 
     /// Merges remote providers from iCloud sync into local storage,
     /// reconciling duplicates by ID or URL based on update timestamps.
     @discardableResult
-    public func mergeCloudSyncPayload(_ data: Data) -> [RuleProviderMetadata] {
-        mergeCloudSyncPayloadOutcome(data).providers
+    public func mergeCloudSyncPayload(
+        _ data: Data,
+        encryptionKey: Data? = nil,
+        fallbackKey: Data? = nil
+    ) -> [RuleProviderMetadata] {
+        mergeCloudSyncPayloadOutcome(
+            data,
+            encryptionKey: encryptionKey,
+            fallbackKey: fallbackKey
+        ).providers
     }
 
     public struct CloudSyncMergeOutcome: Sendable, Equatable {
         public let providers: [RuleProviderMetadata]
         public let didChangeLocal: Bool
         public let matchesRemote: Bool
+        public let wasEncrypted: Bool
+
+        public init(
+            providers: [RuleProviderMetadata],
+            didChangeLocal: Bool,
+            matchesRemote: Bool,
+            wasEncrypted: Bool = true
+        ) {
+            self.providers = providers
+            self.didChangeLocal = didChangeLocal
+            self.matchesRemote = matchesRemote
+            self.wasEncrypted = wasEncrypted
+        }
     }
 
     private func isMigratedLegacyRemoteProvider(_ remote: RuleProviderMetadata) -> Bool {
@@ -1356,14 +1474,56 @@ public actor RuleProviderEngine {
         return stagedProfileProviders.values.contains { $0.name == remote.name && $0.url == remote.url }
     }
 
-    public func mergeCloudSyncPayloadOutcome(_ data: Data) -> CloudSyncMergeOutcome {
-        guard let payload = try? JSONDecoder().decode(RuleProviderSyncPayload.self, from: data) else {
+    private static func decodeCloudSyncRuleProviders(
+        _ data: Data,
+        encryptionKey: Data?,
+        fallbackKey: Data?
+    ) -> (payload: RuleProviderSyncPayload, wasEncrypted: Bool)? {
+        if let envelope = try? JSONDecoder().decode(CloudSyncPayload.self, from: data) {
+            let actualSHA = SHA256.hash(data: envelope.encryptedData).map { String(format: "%02x", $0) }.joined()
+            guard actualSHA.caseInsensitiveCompare(envelope.sha256) == .orderedSame,
+                  let box = try? AES.GCM.SealedBox(combined: envelope.encryptedData) else {
+                return nil
+            }
+            for candidateKey in [encryptionKey, fallbackKey].compactMap({ $0 }) where candidateKey.count == 32 {
+                if let opened = try? AES.GCM.open(box, using: SymmetricKey(data: candidateKey)),
+                   let decoded = try? JSONDecoder().decode(RuleProviderSyncPayload.self, from: opened) {
+                    return (decoded, true)
+                }
+            }
+            return nil
+        }
+        // Backward-compatible read fallback for legacy unencrypted KVS payloads.
+        if let legacy = try? JSONDecoder().decode(RuleProviderSyncPayload.self, from: data) {
+            return (legacy, false)
+        }
+        return nil
+    }
+
+    public func mergeCloudSyncPayloadOutcome(
+        _ data: Data,
+        encryptionKey: Data? = nil,
+        fallbackKey: Data? = nil
+    ) -> CloudSyncMergeOutcome {
+        guard let (payload, wasEncrypted) = Self.decodeCloudSyncRuleProviders(
+            data,
+            encryptionKey: encryptionKey,
+            fallbackKey: fallbackKey
+        ) else {
             let current = allProviders()
-            return CloudSyncMergeOutcome(providers: current, didChangeLocal: false, matchesRemote: current.isEmpty)
+            return CloudSyncMergeOutcome(
+                providers: current,
+                didChangeLocal: false,
+                matchesRemote: true,
+                wasEncrypted: true
+            )
         }
 
         var changed = false
         for remote in payload.providers {
+            guard (try? Self.validateURL(remote.url)) != nil else {
+                continue
+            }
             if isMigratedLegacyRemoteProvider(remote) {
                 continue
             }
@@ -1380,7 +1540,12 @@ public actor RuleProviderEngine {
             } else if let matchByURL = providers.values.first(where: { $0.url == remote.url }) {
                 let existingTime = matchByURL.lastUpdatedAt?.timeIntervalSince1970 ?? 0
                 let remoteTime = remote.lastUpdatedAt?.timeIntervalSince1970 ?? 0
-                if remoteTime > existingTime {
+                // Deterministic UUID tie-breaker when both devices registered the same URL
+                // with identical (or nil) timestamps, preventing infinite KVS ping-pong.
+                let remoteWins = remoteTime != existingTime
+                    ? (remoteTime > existingTime)
+                    : (remote.id.uuidString < matchByURL.id.uuidString)
+                if remoteWins {
                     providers.removeValue(forKey: matchByURL.id)
                     providerRevisions[matchByURL.id, default: 0] &+= 1
                     providerRevisions[remote.id, default: 0] &+= 1
@@ -1402,7 +1567,8 @@ public actor RuleProviderEngine {
         return CloudSyncMergeOutcome(
             providers: merged,
             didChangeLocal: changed,
-            matchesRemote: localByID == remoteByID
+            matchesRemote: wasEncrypted && (localByID == remoteByID),
+            wasEncrypted: wasEncrypted
         )
     }
 }
@@ -1426,96 +1592,5 @@ public struct RuleProviderSyncPayload: Codable, Sendable, Equatable {
         self.updatedAtUnixMilliseconds = updatedAtUnixMilliseconds
         self.deviceIdentifier = deviceIdentifier
         self.providers = providers
-    }
-}
-
-enum ProviderURLValidator {
-    static func validate(
-        _ url: URL,
-        invalidURL: @autoclosure () -> Error,
-        insecureScheme: @autoclosure () -> Error
-    ) throws {
-        guard let scheme = url.scheme?.lowercased(), !scheme.isEmpty else {
-            throw insecureScheme()
-        }
-        guard scheme == "https" || scheme == "http" else {
-            throw insecureScheme()
-        }
-        guard let rawHost = url.host?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawHost.isEmpty else {
-            throw invalidURL()
-        }
-        if scheme == "https" {
-            return
-        }
-        guard isLoopbackOrPrivateHost(rawHost) else {
-            throw insecureScheme()
-        }
-    }
-
-    static func isLoopbackOrPrivateHost(_ rawHost: String) -> Bool {
-        var host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        while host.hasSuffix(".") {
-            host.removeLast()
-        }
-        if host.hasPrefix("[") && host.hasSuffix("]") && host.count >= 2 {
-            host = String(host.dropFirst().dropLast())
-        }
-        guard !host.isEmpty else { return false }
-
-        if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") {
-            return true
-        }
-
-        var addr4 = in_addr()
-        if host.withCString({ inet_pton(AF_INET, $0, &addr4) }) == 1 {
-            return isLoopbackOrPrivateIPv4(UInt32(bigEndian: addr4.s_addr))
-        }
-
-        // Strip optional IPv6 zone ID (e.g. %en0) for link-local parsing.
-        let ipv6Host = host.split(separator: "%", maxSplits: 1).first.map(String.init) ?? host
-        var addr6 = in6_addr()
-        if ipv6Host.withCString({ inet_pton(AF_INET6, $0, &addr6) }) == 1 {
-            return withUnsafeBytes(of: addr6) { bytes in
-                guard bytes.count == 16 else { return false }
-                let isLoopback = bytes[0..<15].allSatisfy { $0 == 0 } && bytes[15] == 1
-                let isUnspecified = bytes.allSatisfy { $0 == 0 }
-                let isULA = (bytes[0] & 0xFE) == 0xFC // fc00::/7
-                let isLinkLocal = bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80 // fe80::/10
-                if isLoopback || isULA || isLinkLocal {
-                    return true
-                }
-                if isUnspecified {
-                    return false
-                }
-                let isIPv4Mapped = bytes[0..<10].allSatisfy { $0 == 0 } && bytes[10] == 0xFF && bytes[11] == 0xFF
-                if isIPv4Mapped {
-                    let v4 = (UInt32(bytes[12]) << 24)
-                        | (UInt32(bytes[13]) << 16)
-                        | (UInt32(bytes[14]) << 8)
-                        | UInt32(bytes[15])
-                    return isLoopbackOrPrivateIPv4(v4)
-                }
-                return false
-            }
-        }
-        return false
-    }
-
-    private static func isLoopbackOrPrivateIPv4(_ ip: UInt32) -> Bool {
-        let firstOctet = (ip >> 24) & 0xFF
-        if firstOctet == 127 || firstOctet == 10 {
-            return true
-        }
-        if (ip & 0xFFF0_0000) == 0xAC10_0000 { // 172.16.0.0/12
-            return true
-        }
-        if (ip & 0xFFFF_0000) == 0xC0A8_0000 { // 192.168.0.0/16
-            return true
-        }
-        if (ip & 0xFFFF_0000) == 0xA9FE_0000 { // 169.254.0.0/16
-            return true
-        }
-        return false
     }
 }

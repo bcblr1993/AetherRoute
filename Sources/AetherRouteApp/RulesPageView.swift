@@ -127,13 +127,16 @@ struct RulesView: View {
     var body: some View {
         Group {
             if let summary = tunnel.activeProfileSummary {
-                let useFullRules = !searchText.isEmpty
-                    || selectedAction != .all
-                    || showsAllProfileRules
-                    || (highlightedRuleID.map { $0 >= summary.rules.count } ?? false)
-                let displayedRules = filteredRules(
-                    from: useFullRules ? summary.allRules : summary.rules
+                let showsProfileRules = selectedSection == .all || selectedSection == .profileRules
+                let useFullRules = showsProfileRules && (
+                    !searchText.isEmpty
+                        || selectedAction != .all
+                        || showsAllProfileRules
+                        || (highlightedRuleID.map { $0 >= summary.rules.count } ?? false)
                 )
+                let displayedRules = showsProfileRules
+                    ? filteredRules(from: useFullRules ? summary.allRules : summary.rules)
+                    : []
 
                 ScrollViewReader { scrollProxy in
                     ScrollView {
@@ -803,14 +806,20 @@ struct RulesView: View {
                             .frame(maxWidth: .infinity)
                             .padding(AetherVisual.s5)
                     } else {
+                        let destinationRuleTargets: [String: CustomRuleTarget] = Dictionary(
+                            tunnel.customRules.map { ("\($0.kind.rawValue)|\($0.value)", $0.target) },
+                            uniquingKeysWith: { first, _ in first }
+                        )
                         // Lazy: a profile can carry thousands of rules, and
                         // only the rows on screen should be built.
                         LazyVStack(spacing: 0) {
                             ForEach(displayedRules) { rule in
                                 Divider().padding(.leading, AetherVisual.s4)
                                 let existingOverrideTarget = rule.overrideCustomRuleKind.flatMap { kind -> CustomRuleTarget? in
-                                    guard let criteria = rule.criteria else { return nil }
-                                    return tunnel.destinationRule(kind: kind, value: criteria)?.target
+                                    guard let criteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                                        return nil
+                                    }
+                                    return destinationRuleTargets["\(kind.rawValue)|\(criteria)"]
                                 }
                                 RuleRow(
                                     rule: rule,

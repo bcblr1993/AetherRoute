@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -246,6 +247,23 @@ enum AppLocalization {
         controller.reset()
         precondition(controller.uploadBytesPerSecond == 0, "Controller reset upload")
         precondition(controller.downloadBytesPerSecond == 0, "Controller reset download")
+
+        // ---------------------------------------------------------
+        // 6. Suppress redundant objectWillChange when formatted rate text is unchanged
+        // ---------------------------------------------------------
+        print("6. Testing objectWillChange suppression for unchanged formatted rates...")
+        var changeCount = 0
+        let cancellable = controller.objectWillChange.sink { _ in
+            changeCount += 1
+        }
+        controller.updateTelemetry(upload: 1024, download: 2048) // 1.0 KB/s, 2.0 KB/s
+        precondition(changeCount == 1, "Initial displayable change must emit objectWillChange once (got \(changeCount))")
+        controller.updateTelemetry(upload: 1040, download: 2060) // still 1.0 KB/s, 2.0 KB/s
+        precondition(controller.uploadBytesPerSecond == 1040 && controller.downloadBytesPerSecond == 2060, "Raw byte rates should still update")
+        precondition(changeCount == 1, "Same formatted rate text must suppress objectWillChange (got \(changeCount))")
+        controller.updateTelemetry(upload: 1536, download: 2060) // 1.5 KB/s
+        precondition(changeCount == 2, "Visible rate text change must emit objectWillChange (got \(changeCount))")
+        _ = cancellable
 
         print("All menu bar real-time traffic gate tests passed successfully! 🚀")
     }

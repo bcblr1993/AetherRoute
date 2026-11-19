@@ -340,3 +340,296 @@ private struct IPv4Address {
         }
     }
 }
+
+/// Bounded O(1) ring buffer for Packet Tunnel egress packets with poison-packet
+/// isolation. Prevents O(N) front-insertions and 500Hz infinite livelocks when
+/// `NEPacketTunnelFlow.writePackets` rejects a malformed or unsupported packet
+/// (such as an IPv6 packet on an IPv4-only utun interface).
+public struct PacketTunnelOutputRingBuffer: Sendable {
+    public struct WriteSlice: Sendable {
+        public let packets: [Data]
+        public let protocols: [NSNumber]
+        public let isSinglePacketIsolation: Bool
+    }
+
+    public enum WriteDisposition: Equatable, Sendable {
+        case continueImmediately
+        case retryAfterBackoff
+        case drained
+    }
+
+    public static let maximumIPPacketBytes = 65_535
+    private static let ipv4Protocol = NSNumber(value: AF_INET)
+    private static let ipv6Protocol = NSNumber(value: AF_INET6)
+
+    public let capacity: Int
+    public let maxBatchRetries: Int
+
+    private var packetRing: [Data?]
+    private var protocolRing: [NSNumber?]
+    private var head: Int = 0
+    public private(set) var count: Int = 0
+    public private(set) var isFlushScheduled: Bool = false
+    private var retryAttempt: Int = 0
+    private var isolatingRemainingCount: Int = 0
+    public private(set) var droppedPoisonPacketCount: UInt64 = 0
+    public private(set) var droppedDisabledIPv6PacketCount: UInt64 = 0
+
+    public init(capacity: Int = 4_096, maxBatchRetries: Int = 2) {
+        let safeCapacity = max(1, capacity)
+        self.capacity = safeCapacity
+        self.maxBatchRetries = max(0, maxBatchRetries)
+        self.packetRing = Array(repeating: nil, count: safeCapacity)
+        self.protocolRing = Array(repeating: nil, count: safeCapacity)
+    }
+
+    /// Enqueues an outgoing IP packet. Returns `true` when the caller must
+    /// schedule `flushPendingPackets()` on the packet output queue.
+    public mutating func enqueue(
+        packet: Data,
+        ipVersion: UInt8,
+        enableIPv6: Bool
+    ) -> Bool {
+        guard !packet.isEmpty, packet.count <= Self.maximumIPPacketBytes else {
+            return false
+        }
+        guard ipVersion == 4 || ipVersion == 6 else {
+            return false
+        }
+        if ipVersion == 6 && !enableIPv6 {
+            droppedDisabledIPv6PacketCount &+= 1
+            return false
+        }
+        let proto = ipVersion == 6 ? Self.ipv6Protocol : Self.ipv4Protocol
+
+        if count == capacity {
+            // Drop oldest packet in O(1) under extreme high-water mark.
+            packetRing[head] = nil
+            protocolRing[head] = nil
+            head = (head + 1) % capacity
+            count -= 1
+            retryAttempt = 0
+            if isolatingRemainingCount > 0 {
+                isolatingRemainingCount -= 1
+            }
+        }
+
+        let tail = (head + count) % capacity
+        packetRing[tail] = packet
+        protocolRing[tail] = proto
+        count += 1
+
+        if !isFlushScheduled {
+            isFlushScheduled = true
+            return true
+        }
+        return false
+    }
+
+    /// Peeks the next write slice without removing it from the ring buffer.
+    public mutating func nextWriteSlice(maxBatchSize: Int = 32) -> WriteSlice? {
+        guard count > 0 else {
+            isFlushScheduled = false
+            retryAttempt = 0
+            isolatingRemainingCount = 0
+            return nil
+        }
+        let isIsolating = isolatingRemainingCount > 0
+        let sliceCount = isIsolating ? 1 : min(count, max(1, maxBatchSize))
+        var packets: [Data] = []
+        var protocols: [NSNumber] = []
+        packets.reserveCapacity(sliceCount)
+        protocols.reserveCapacity(sliceCount)
+        for offset in 0..<sliceCount {
+            let idx = (head + offset) % capacity
+            if let pkt = packetRing[idx], let proto = protocolRing[idx] {
+                packets.append(pkt)
+                protocols.append(proto)
+            }
+        }
+        guard !packets.isEmpty else {
+            clear()
+            return nil
+        }
+        return WriteSlice(
+            packets: packets,
+            protocols: protocols,
+            isSinglePacketIsolation: isIsolating || packets.count == 1
+        )
+    }
+
+    /// Commits or retries the peeked slice after `packetFlow.writePackets`.
+    public mutating func completeWriteSlice(
+        succeeded: Bool,
+        sliceCount: Int
+    ) -> WriteDisposition {
+        let effectiveSliceCount = min(max(0, sliceCount), count)
+        guard effectiveSliceCount > 0 else {
+            isFlushScheduled = false
+            retryAttempt = 0
+            isolatingRemainingCount = 0
+            return .drained
+        }
+
+        if succeeded {
+            consumeFromHead(effectiveSliceCount)
+            retryAttempt = 0
+            if isolatingRemainingCount > 0 {
+                isolatingRemainingCount = max(0, isolatingRemainingCount - effectiveSliceCount)
+            }
+            if count == 0 {
+                isFlushScheduled = false
+                return .drained
+            }
+            return .continueImmediately
+        }
+
+        // Write failed (`writePackets` returned false).
+        if isolatingRemainingCount > 0 || effectiveSliceCount == 1 {
+            if retryAttempt < maxBatchRetries {
+                retryAttempt += 1
+                isFlushScheduled = true
+                return .retryAfterBackoff
+            }
+            // Retries exhausted on this single packet -> isolate and drop poison packet!
+            consumeFromHead(1)
+            droppedPoisonPacketCount &+= 1
+            retryAttempt = 0
+            if isolatingRemainingCount > 0 {
+                isolatingRemainingCount -= 1
+            }
+            if count == 0 {
+                isFlushScheduled = false
+                return .drained
+            }
+            return .continueImmediately
+        } else {
+            if retryAttempt < maxBatchRetries {
+                retryAttempt += 1
+                isFlushScheduled = true
+                return .retryAfterBackoff
+            }
+            // Multi-packet batch failed repeatedly: switch to single-packet isolation
+            // across this batch so valid packets are delivered and only the poison packet is dropped.
+            isolatingRemainingCount = effectiveSliceCount
+            retryAttempt = 0
+            isFlushScheduled = true
+            return .continueImmediately
+        }
+    }
+
+    public mutating func clear() {
+        for i in 0..<count {
+            let idx = (head + i) % capacity
+            packetRing[idx] = nil
+            protocolRing[idx] = nil
+        }
+        head = 0
+        count = 0
+        isFlushScheduled = false
+        retryAttempt = 0
+        isolatingRemainingCount = 0
+    }
+
+    private mutating func consumeFromHead(_ k: Int) {
+        let clamped = min(k, count)
+        for _ in 0..<clamped {
+            packetRing[head] = nil
+            protocolRing[head] = nil
+            head = (head + 1) % capacity
+            count -= 1
+        }
+        if count == 0 {
+            head = 0
+        }
+    }
+}
+
+/// FIFO async operation gate used by Network Extension providers to serialize
+/// callback-based multi-step operations (such as `.reloadProfile`) without
+/// blocking their control message DispatchQueue.
+public final class AsyncSerialOperationGate: @unchecked Sendable {
+    private final class CompletionOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var callback: (@Sendable () -> Void)?
+
+        init(_ callback: @escaping @Sendable () -> Void) {
+            self.callback = callback
+        }
+
+        func finish() {
+            lock.lock()
+            let cb = callback
+            callback = nil
+            lock.unlock()
+            cb?()
+        }
+    }
+
+    private let lock = NSLock()
+    private var isRunning = false
+    private var waiters: [@Sendable (@escaping @Sendable () -> Void) -> Void] = []
+
+    public init() {}
+
+    public func enqueue(
+        _ operation: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void
+    ) {
+        let shouldStartImmediately: Bool = {
+            lock.lock()
+            defer { lock.unlock() }
+            if isRunning {
+                waiters.append(operation)
+                return false
+            }
+            isRunning = true
+            return true
+        }()
+
+        if shouldStartImmediately {
+            startOperation(operation)
+        }
+    }
+
+    public func run(
+        _ operation: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void
+    ) async {
+        await withCheckedContinuation { continuation in
+            enqueue { done in
+                operation {
+                    done()
+                    continuation.resume()
+                }
+            }
+        }
+    }
+
+    private func startOperation(
+        _ operation: @escaping @Sendable (@escaping @Sendable () -> Void) -> Void
+    ) {
+        let once = CompletionOnce { [weak self] in
+            self?.advance()
+        }
+        operation {
+            once.finish()
+        }
+    }
+
+    private func advance() {
+        let next: (@Sendable (@escaping @Sendable () -> Void) -> Void)? = {
+            lock.lock()
+            defer { lock.unlock() }
+            if waiters.isEmpty {
+                isRunning = false
+                return nil
+            }
+            return waiters.removeFirst()
+        }()
+
+        if let next {
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                self?.startOperation(next)
+            }
+        }
+    }
+}

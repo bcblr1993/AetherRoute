@@ -308,6 +308,17 @@ public enum NetworkDiagnosticDoctor {
         )
     }
 
+    /// Asynchronous off-MainActor wrapper around `probeLoopbackTCPPort` so UI
+    /// diagnostic runs never block `@MainActor` on `Darwin.poll`.
+    public static func probeLoopbackTCPPortAsync(
+        _ port: Int,
+        timeoutMilliseconds: Int = 350
+    ) async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            probeLoopbackTCPPort(port, timeoutMilliseconds: timeoutMilliseconds)
+        }.value
+    }
+
     /// Non-blocking POSIX TCP loopback probe for `127.0.0.1:<port>`.
     public static func probeLoopbackTCPPort(
         _ port: Int,

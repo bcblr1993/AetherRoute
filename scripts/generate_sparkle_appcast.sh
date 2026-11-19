@@ -6,8 +6,8 @@ DMG_PATH=${1:-}
 RELEASE_URL=${2:-}
 NOTES=${3:-}
 
-if [ -z "$DMG_PATH" ]; then
-  echo "usage: $0 /path/to/AetherRoute.dmg [release_download_url] [release_notes_html]" >&2
+if [ -z "$DMG_PATH" ] || [ -z "$NOTES" ]; then
+  echo "usage: $0 /path/to/AetherRoute-<version>-build-<build>-arm64.dmg [release_download_url] <release_notes_html_or_file>" >&2
   exit 1
 fi
 
@@ -16,30 +16,38 @@ if [ ! -f "$DMG_PATH" ]; then
   exit 1
 fi
 
-PRIV_KEY="$ROOT/Config/sparkle_ed25519_priv.key"
-PUB_KEY="$ROOT/Config/sparkle_ed25519_pub.key"
+DMG_BASENAME=$(basename "$DMG_PATH")
+if ! printf '%s\n' "$DMG_BASENAME" | grep -Eq '^AetherRoute-[0-9]+\.[0-9]+(\.[0-9]+)?-build-[0-9]+'; then
+  echo "DMG filename does not match required pattern 'AetherRoute-<version>-build-<build>-...': $DMG_BASENAME" >&2
+  exit 1
+fi
+
+PRIV_KEY=${AETHERROUTE_SPARKLE_PRIV_KEY:-"$ROOT/Config/sparkle_ed25519_priv.key"}
+PUB_KEY=${AETHERROUTE_SPARKLE_PUB_KEY:-"$ROOT/Config/sparkle_ed25519_pub.key"}
 
 if [ ! -f "$PRIV_KEY" ] || [ ! -f "$PUB_KEY" ]; then
   echo "Sparkle Ed25519 keys not found. Run scripts/generate_sparkle_key.sh first." >&2
   exit 1
 fi
 
-OUTPUT_APPCAST="$ROOT/appcast.xml"
-WEB_APPCAST="$ROOT/Services/WebDistribution/public/appcast.xml"
+OUTPUT_APPCAST=${AETHERROUTE_OUTPUT_APPCAST:-"$ROOT/appcast.xml"}
+WEB_APPCAST=${AETHERROUTE_WEB_APPCAST:-"$ROOT/Services/WebDistribution/public/appcast.xml"}
 
-# Try finding Sparkle's official sign_update binary
+# Try finding Sparkle's official sign_update binary when using standard keys
 SIGN_UPDATE_BIN=""
-for candidate in \
-  "$ROOT/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
-  "$ROOT/build/Debug/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
-  "$ROOT/.build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
-  "$ROOT/.build/xcode/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
-do
-  if [ -x "$candidate" ]; then
-    SIGN_UPDATE_BIN="$candidate"
-    break
-  fi
-done
+if [ -z "${AETHERROUTE_SPARKLE_PRIV_KEY:-}" ]; then
+  for candidate in \
+    "$ROOT/build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+    "$ROOT/build/Debug/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+    "$ROOT/.build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update" \
+    "$ROOT/.build/xcode/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
+  do
+    if [ -x "$candidate" ]; then
+      SIGN_UPDATE_BIN="$candidate"
+      break
+    fi
+  done
+fi
 
 PRECOMPUTED_SIG=""
 if [ -n "$SIGN_UPDATE_BIN" ]; then
@@ -54,8 +62,8 @@ import Foundation
 import CryptoKit
 
 let args = CommandLine.arguments
-guard args.count >= 5 else {
-    print("Invalid arguments passed to generator")
+guard args.count >= 7 else {
+    fputs("Error: Invalid arguments passed to Sparkle appcast generator\n", stderr)
     exit(1)
 }
 
@@ -63,35 +71,35 @@ let dmgPath = args[1]
 let privKeyPath = args[2]
 let pubKeyPath = args[3]
 let appcastPath = args[4]
-let customReleaseURL = args.count > 5 && !args[5].isEmpty ? args[5] : nil
-let customNotes = args.count > 6 && !args[6].isEmpty ? args[6] : nil
+let customReleaseURL = !args[5].isEmpty ? args[5] : nil
+let notesInput = args[6].trimmingCharacters(in: .whitespacesAndNewlines)
 let precomputedSig = args.count > 7 && !args[7].isEmpty ? args[7] : nil
+
+guard !notesInput.isEmpty else {
+    fputs("Error: Release notes HTML or file path is required and cannot be empty\n", stderr)
+    exit(1)
+}
 
 let dmgURL = URL(fileURLWithPath: dmgPath)
 let dmgFilename = dmgURL.lastPathComponent
 
-// Extract version and build from filename or default
-// Expected naming: AetherRoute-<version>-build-<build>-...
-var version = "1.0.0"
-var build = "2026091105"
-
-let regex = try! NSRegularExpression(pattern: "AetherRoute-([0-9.]+)-build-([0-9]+)")
+let regex = try! NSRegularExpression(pattern: #"^AetherRoute-([0-9]+\.[0-9]+(?:\.[0-9]+)?)-build-([0-9]+)"#)
 let nameRange = NSRange(dmgFilename.startIndex..<dmgFilename.endIndex, in: dmgFilename)
-if let match = regex.firstMatch(in: dmgFilename, range: nameRange) {
-    if let vRange = Range(match.range(at: 1), in: dmgFilename) {
-        version = String(dmgFilename[vRange])
-    }
-    if let bRange = Range(match.range(at: 2), in: dmgFilename) {
-        build = String(dmgFilename[bRange])
-    }
+guard let match = regex.firstMatch(in: dmgFilename, range: nameRange),
+      let vRange = Range(match.range(at: 1), in: dmgFilename),
+      let bRange = Range(match.range(at: 2), in: dmgFilename) else {
+    fputs("Error: Could not extract version and build from DMG filename '\(dmgFilename)'\n", stderr)
+    exit(1)
 }
+let version = String(dmgFilename[vRange])
+let build = String(dmgFilename[bRange])
 
 let rawPriv = try String(contentsOfFile: privKeyPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 let rawPub = try String(contentsOfFile: pubKeyPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
 
 guard let privData = Data(base64Encoded: rawPriv),
       let privateKey = try? Curve25519.Signing.PrivateKey(rawRepresentation: privData) else {
-    print("Error: Invalid private key")
+    fputs("Error: Invalid private key\n", stderr)
     exit(1)
 }
 
@@ -100,7 +108,7 @@ let dmgLength = dmgData.count
 
 guard let pubData = Data(base64Encoded: rawPub),
       let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: pubData) else {
-    print("Error: Invalid public key")
+    fputs("Error: Invalid public key\n", stderr)
     exit(1)
 }
 
@@ -108,14 +116,14 @@ let finalSig: String
 if let precomputedSig = precomputedSig, !precomputedSig.isEmpty {
     guard let precomputedData = Data(base64Encoded: precomputedSig),
           publicKey.isValidSignature(precomputedData, for: dmgData) else {
-        print("Error: Precomputed Sparkle sign_update signature failed public key verification")
+        fputs("Error: Precomputed Sparkle sign_update signature failed public key verification\n", stderr)
         exit(1)
     }
     finalSig = precomputedSig
 } else {
     let signature = try privateKey.signature(for: dmgData)
     guard publicKey.isValidSignature(signature, for: dmgData) else {
-        print("Error: CryptoKit signature verification failed")
+        fputs("Error: CryptoKit signature verification failed\n", stderr)
         exit(1)
     }
     finalSig = signature.base64EncodedString()
@@ -127,6 +135,18 @@ let rfc822Formatter = DateFormatter()
 rfc822Formatter.locale = Locale(identifier: "en_US_POSIX")
 rfc822Formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss Z"
 let pubDate = rfc822Formatter.string(from: Date())
+
+func xmlEscapeAttribute(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "&", with: "&amp;")
+        .replacingOccurrences(of: "\"", with: "&quot;")
+        .replacingOccurrences(of: "<", with: "&lt;")
+        .replacingOccurrences(of: ">", with: "&gt;")
+}
+
+func escapeCDATA(_ value: String) -> String {
+    value.replacingOccurrences(of: "]]>", with: "]]]]><![CDATA[>")
+}
 
 func wrapWithAppleStyle(content: String, version: String, build: String) -> String {
     if content.contains("<style>") {
@@ -261,40 +281,34 @@ func wrapWithAppleStyle(content: String, version: String, build: String) -> Stri
 """
 }
 
-var rawNotesContent = customNotes
-if let notesPath = customNotes, FileManager.default.fileExists(atPath: notesPath) {
-    if let fileContent = try? String(contentsOfFile: notesPath, encoding: .utf8) {
-        rawNotesContent = fileContent
+let rawNotesContent: String
+let looksLikeFilePath = !notesInput.contains("<") && (
+    notesInput.hasPrefix("/") ||
+    notesInput.hasPrefix("./") ||
+    notesInput.hasPrefix("../") ||
+    notesInput.hasSuffix(".html") ||
+    notesInput.hasSuffix(".md") ||
+    notesInput.hasSuffix(".txt")
+)
+if FileManager.default.fileExists(atPath: notesInput) {
+    rawNotesContent = try String(contentsOfFile: notesInput, encoding: .utf8)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !rawNotesContent.isEmpty else {
+        fputs("Error: Release notes file is empty: \(notesInput)\n", stderr)
+        exit(1)
     }
+} else if looksLikeFilePath {
+    fputs("Error: Release notes file not found: \(notesInput)\n", stderr)
+    exit(1)
+} else {
+    rawNotesContent = notesInput
 }
 
-let defaultNotesContent = """
-<div class="section">
-  <span class="section-tag tag-feature">🚀 核心功能：全面兼容 Shadowsocks 混淆插件</span>
-  <ul>
-    <li><strong>内置混淆插件安全放行</strong>：全面支持 <code>plugin: obfs</code> / <code>plugin-opts</code>、<code>v2ray-plugin</code> 及 <code>shadow-tls</code>。升级预检白名单准入机制，彻底解决导入 Clash Verge 等主流客户端混淆订阅时触发的误报拦截。</li>
-    <li><strong>内存级协议转换防护</strong>：严格保持对外部可执行文件、未知命令及脚本注入的拦截，所有受支持插件均由纯 Rust 内存协议转换引擎安全驱动。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-fix">🐞 稳定性与长稳加固</span>
-  <ul>
-    <li><strong>控制面与系统扩展超时防护</strong>：优化宿主 App 与系统扩展通信超时机制及冷启动 DNS 边界，杜绝瞬时假死。</li>
-    <li><strong>短连接与 UDP 吞吐优化</strong>：增加短连接流关闭主动短路与 UDP 微批处理写机制，规避内核套接字写缓冲耗尽。</li>
-    <li><strong>流量图表重绘节流</strong>：流量波形刷新率优化至 12 FPS，显著减少堆内存分配与界面渲染开销。</li>
-  </ul>
-</div>
-<div class="section">
-  <span class="section-tag tag-improve">✨ 严苛真机与多环境验证</span>
-  <ul>
-    <li><strong>全量隔离环境验收通过</strong>：Apple Silicon 隔离环境全量测试门禁、空闲长连接复用与网络切换自愈 100% 通过。</li>
-    <li><strong>UI 卡顿与内存预算双 Profile 达标</strong>：常规流与万条规则/500节点重载切页 p95 均保持在 132 ms 左右，内存占用平稳控制在 66-84 MB 预算内。</li>
-  </ul>
-</div>
-"""
-
-let releaseNotesHTML = wrapWithAppleStyle(content: rawNotesContent ?? defaultNotesContent, version: version, build: build)
-
+let releaseNotesHTML = escapeCDATA(
+    wrapWithAppleStyle(content: rawNotesContent, version: version, build: build)
+)
+let safeDownloadURL = xmlEscapeAttribute(downloadURL)
+let safeSig = xmlEscapeAttribute(finalSig)
 
 let appcastXML = """
 <?xml version="1.0" encoding="utf-8"?>
@@ -315,8 +329,8 @@ let appcastXML = """
 \(releaseNotesHTML)
             ]]></description>
             <enclosure
-                url="\(downloadURL)"
-                sparkle:edSignature="\(finalSig)"
+                url="\(safeDownloadURL)"
+                sparkle:edSignature="\(safeSig)"
                 length="\(dmgLength)"
                 type="application/octet-stream" />
         </item>
@@ -324,6 +338,7 @@ let appcastXML = """
 </rss>
 """
 
+_ = try XMLDocument(xmlString: appcastXML, options: [])
 try appcastXML.write(toFile: appcastPath, atomically: true, encoding: .utf8)
 print("Successfully generated appcast.xml:")
 print("  Version: \(version) (Build \(build))")
@@ -333,8 +348,9 @@ print("  Ed25519: \(finalSig)")
 print("  Saved to: \(appcastPath)")
 SWIFT_CODE
 
+xmllint --noout "$OUTPUT_APPCAST"
+
 if [ -f "$WEB_APPCAST" ] && [ "$OUTPUT_APPCAST" != "$WEB_APPCAST" ]; then
   cp "$OUTPUT_APPCAST" "$WEB_APPCAST"
   echo "Synchronized appcast to: $WEB_APPCAST"
 fi
-

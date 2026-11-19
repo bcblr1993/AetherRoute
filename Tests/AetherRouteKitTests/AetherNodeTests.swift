@@ -425,13 +425,18 @@ final class AetherNodeTests: XCTestCase {
         XCTAssertEqual(ssrNode.ssrObfsParam, "cloudflare.com")
         XCTAssertEqual(ssrNode.ssrProtocolParam, "32:user")
 
-        let hy1URI = "hysteria://hy1.example:443?protocol=wechat-video&auth=hy1-secret&peer=hy1.example&upmbps=40&downmbps=200&alpn=h3&obfs=xplus&obfsParam=xplus-key#Hy1-Node"
+        let hy1URI = "hysteria://hy1.example:443?protocol=udp&auth=hy1-secret&peer=hy1.example&upmbps=40&downmbps=200&alpn=h3&obfs=xplus&obfsParam=xplus-key#Hy1-Node"
         let hy1Node = try AetherNodeURIParser.parse(hy1URI)
         XCTAssertEqual(hy1Node.protocolID, .hysteria)
-        XCTAssertEqual(hy1Node.hysteriaProtocol, "wechat-video")
+        XCTAssertEqual(hy1Node.hysteriaProtocol, "udp")
         XCTAssertEqual(hy1Node.password, "hy1-secret")
         XCTAssertEqual(hy1Node.obfuscation, "xplus")
         XCTAssertEqual(hy1Node.obfuscationPassword, "xplus-key")
+
+        for unsupportedHy1Protocol in ["wechat-video", "faketcp"] {
+            let unsupportedURI = "hysteria://hy1.example:443?protocol=\(unsupportedHy1Protocol)&auth=hy1-secret&peer=hy1.example&upmbps=40&downmbps=200#Hy1-Bad"
+            XCTAssertThrowsError(try AetherNodeURIParser.parse(unsupportedURI))
+        }
 
         let tuicV4URI = "tuic://tuic-v4-token@tuic4.example:443?sni=tuic4.example&version=4&congestion_control=bbr&udp_relay_mode=quic#TUIC-v4"
         let tuicV4Node = try AetherNodeURIParser.parse(tuicV4URI)

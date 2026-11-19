@@ -357,8 +357,8 @@ public final class MenuBarTrafficController: ObservableObject {
     public static let storageKey = "AetherRouteMenuBarTrafficEnabled"
 
     @Published public private(set) var isEnabled: Bool
-    @Published public private(set) var uploadBytesPerSecond: UInt64 = 0
-    @Published public private(set) var downloadBytesPerSecond: UInt64 = 0
+    public private(set) var uploadBytesPerSecond: UInt64 = 0
+    public private(set) var downloadBytesPerSecond: UInt64 = 0
     public var onEnabledChanged: ((Bool) -> Void)?
 
     private let defaults: UserDefaults
@@ -380,14 +380,22 @@ public final class MenuBarTrafficController: ObservableObject {
 
     public func updateTelemetry(upload: UInt64, download: UInt64) {
         guard isEnabled else { return }
-        if uploadBytesPerSecond != upload || downloadBytesPerSecond != download {
-            uploadBytesPerSecond = upload
-            downloadBytesPerSecond = download
+        guard uploadBytesPerSecond != upload || downloadBytesPerSecond != download else { return }
+        let displayChanged =
+            MenuBarTrafficFormatter.rateComponents(uploadBytesPerSecond)
+                != MenuBarTrafficFormatter.rateComponents(upload)
+            || MenuBarTrafficFormatter.rateComponents(downloadBytesPerSecond)
+                != MenuBarTrafficFormatter.rateComponents(download)
+        if displayChanged {
+            objectWillChange.send()
         }
+        uploadBytesPerSecond = upload
+        downloadBytesPerSecond = download
     }
 
     public func reset() {
         if uploadBytesPerSecond != 0 || downloadBytesPerSecond != 0 {
+            objectWillChange.send()
             uploadBytesPerSecond = 0
             downloadBytesPerSecond = 0
         }

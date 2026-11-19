@@ -112,6 +112,13 @@ test "$APP_CHANNEL" = stable || {
   exit 1
 }
 
+FORBIDDEN_BUNDLE_FILES=$(find "$APP" -type f \( -iname '*.aetherroute' -o -iname '*.yaml' -o -iname '*.yml' -o -iname '*.conf' \) ! -path '*/Metadata.appintents/*.ssu.yaml' 2>/dev/null || true)
+if [ -n "$FORBIDDEN_BUNDLE_FILES" ]; then
+  echo "FATAL: Forbidden profile or configuration file bundled inside AetherRoute.app:" >&2
+  echo "$FORBIDDEN_BUNDLE_FILES" >&2
+  exit 1
+fi
+
 echo "==> Preparing pristine production DMG staging layout (Zero test notes)"
 rm -f "$STAGE/测试版本说明.txt" "$STAGE/README.txt" "$STAGE/.DS_Store"
 ln -s /Applications "$STAGE/Applications"
@@ -140,14 +147,22 @@ hdiutil verify "$FINAL_LOCAL_DMG" >/dev/null
 
 echo "==> Signing DMG with Developer ID"
 attempt=1
+dmg_signed=0
 while [ "$attempt" -le 5 ]; do
   if codesign --force --timestamp=http://timestamp.apple.com/ts01 --sign "$IDENTITY" "$FINAL_LOCAL_DMG"; then
+    dmg_signed=1
     break
   fi
   echo "Timestamp busy; retrying codesign ($attempt/5)..." >&2
   attempt=$((attempt + 1))
-  sleep 3
+  if [ "$attempt" -le 5 ]; then
+    sleep 3
+  fi
 done
+if [ "$dmg_signed" -ne 1 ]; then
+  echo "FATAL: Failed to sign DMG after 5 attempts: $FINAL_LOCAL_DMG" >&2
+  exit 1
+fi
 
 echo "==> Submitting DMG to Apple Notarization (profile: $NOTARY_PROFILE)..."
 NOTARY_RESULT="$TEMPORARY/dmg-notary-result.json"

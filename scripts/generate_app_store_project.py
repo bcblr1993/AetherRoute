@@ -51,7 +51,8 @@ def derive(spec, output, team, version, build, identity, profiles):
         if name in roles:
             role, filename = roles[name]
             ent = plistlib.loads((ROOT / 'Config' / filename).read_bytes())
-            ent.pop('com.apple.security.temporary-exception.mach-lookup.global-name', None)
+            for ent_key in [k for k in ent if k.startswith('com.apple.security.temporary-exception.')]:
+                ent.pop(ent_key, None)
             # Match the shipping Developer ID host: KVS is not granted by its
             # production profile or by the desktop Store application identifier.
             ent.pop('com.apple.developer.ubiquity-kvstore-identifier', None)

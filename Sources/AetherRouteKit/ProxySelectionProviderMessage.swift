@@ -12,6 +12,39 @@ public struct ProxySelectionState: Sendable, Equatable {
     }
 }
 
+/// One bounded binary chunk used to stage a verified routing database
+/// (`Country.mmdb`, `GeoSite.dat`, `ASN.mmdb`) from the user-context host app
+/// into the root-context Network System Extension container prior to hot reload.
+public struct RoutingResourceTransferChunk: Codable, Equatable, Sendable {
+    public static let maximumChunkDataBytes = 512 * 1_024
+
+    public let transferID: UUID
+    public let kind: RoutingResourceKind
+    public let expectedSHA256: String
+    public let totalBytes: Int
+    public let chunkIndex: UInt32
+    public let totalChunks: UInt32
+    public let data: Data
+
+    public init(
+        transferID: UUID,
+        kind: RoutingResourceKind,
+        expectedSHA256: String,
+        totalBytes: Int,
+        chunkIndex: UInt32,
+        totalChunks: UInt32,
+        data: Data
+    ) {
+        self.transferID = transferID
+        self.kind = kind
+        self.expectedSHA256 = expectedSHA256
+        self.totalBytes = totalBytes
+        self.chunkIndex = chunkIndex
+        self.totalChunks = totalChunks
+        self.data = data
+    }
+}
+
 public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case snapshot(group: String)
     case select(group: String, member: String)
@@ -35,6 +68,10 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     /// Evaluates a simulated connection against the active routing table and
     /// live group selections inside the running provider.
     case traceRoute(RouteTraceRequest)
+    /// Streams one bounded chunk of a routing database into the running extension.
+    case stageRoutingResourceChunk(RoutingResourceTransferChunk)
+    /// Queries SHA-256 digests of usable routing databases currently installed in the extension.
+    case installedRoutingResourceDigests
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -59,6 +96,8 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case recentLog(Data)
     case diagnosticLogLevelApplied
     case traceRoute(RouteTraceResult)
+    case routingResourceChunkStaged
+    case routingResourceDigests([RoutingResourceKind: String])
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -277,6 +316,26 @@ public enum ProxySelectionProviderMessageCodec {
             group = try JSONEncoder().encode(traceRequest)
             member = Data()
             reserved = [0, 0, 0]
+        case let .stageRoutingResourceChunk(chunk):
+            guard !chunk.data.isEmpty,
+                  chunk.data.count <= RoutingResourceTransferChunk.maximumChunkDataBytes,
+                  chunk.totalChunks > 0,
+                  chunk.chunkIndex < chunk.totalChunks,
+                  chunk.totalBytes > 0,
+                  chunk.totalBytes <= chunk.kind.maximumBytes else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            operation = 14
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            group = try encoder.encode(chunk)
+            member = Data()
+            reserved = [0, 0, 0]
+        case .installedRoutingResourceDigests:
+            operation = 15
+            group = Data()
+            member = Data()
+            reserved = [0, 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -451,6 +510,38 @@ public enum ProxySelectionProviderMessageCodec {
                 throw ProxySelectionProviderMessageError.malformed
             }
             return .traceRoute(traceRequest)
+        case 14:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                memberLength == 0,
+                groupLength > 0,
+                Int(groupLength) <= maximumMessageBytes - requestHeaderBytes
+            else { throw ProxySelectionProviderMessageError.malformed }
+            let payload = Data(bytes[groupStart..<memberStart])
+            guard let chunk = try? PropertyListDecoder().decode(
+                RoutingResourceTransferChunk.self,
+                from: payload
+            ),
+            !chunk.data.isEmpty,
+            chunk.data.count <= RoutingResourceTransferChunk.maximumChunkDataBytes,
+            chunk.totalChunks > 0,
+            chunk.chunkIndex < chunk.totalChunks,
+            chunk.totalBytes > 0,
+            chunk.totalBytes <= chunk.kind.maximumBytes else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            return .stageRoutingResourceChunk(chunk)
+        case 15:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                groupLength == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .installedRoutingResourceDigests
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -611,6 +702,26 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(UInt32(payload.count), to: &output)
             output.append(payload)
             return output
+        case .routingResourceChunkStaged:
+            var output = Data(responseMagic)
+            output.append(13)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
+        case let .routingResourceDigests(digests):
+            let rawMap = Dictionary(uniqueKeysWithValues: digests.map { ($0.key.rawValue, $0.value) })
+            let payload = try JSONEncoder().encode(rawMap)
+            guard responseHeaderBytes + payload.count <= maximumMessageBytes else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            var output = Data(responseMagic)
+            output.append(14)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(UInt32(payload.count), to: &output)
+            output.append(payload)
+            return output
         }
     }
 
@@ -678,7 +789,7 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes,
                 routingMode(code: bytes[5]) != nil
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 7, 8, 11:
+        case 7, 8, 11, 13:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
@@ -698,7 +809,7 @@ public enum ProxySelectionProviderMessageCodec {
                 memberCount <= UInt32(maximumRecentLogKilobytes) * 1_024,
                 data.count == responseHeaderBytes + Int(memberCount)
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 12:
+        case 12, 14:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
@@ -710,6 +821,23 @@ public enum ProxySelectionProviderMessageCodec {
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 14 {
+            let payload = Data(bytes[responseHeaderBytes...])
+            guard let rawMap = try? JSONDecoder().decode([String: String].self, from: payload) else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            var decoded: [RoutingResourceKind: String] = [:]
+            for (rawKey, digest) in rawMap {
+                guard let kind = RoutingResourceKind(rawValue: rawKey) else {
+                    throw ProxySelectionProviderMessageError.malformed
+                }
+                decoded[kind] = digest
+            }
+            return .routingResourceDigests(decoded)
+        }
+        if bytes[4] == 13 {
+            return .routingResourceChunkStaged
+        }
         if bytes[4] == 12 {
             let payload = Data(bytes[responseHeaderBytes...])
             guard let result = try? JSONDecoder().decode(RouteTraceResult.self, from: payload) else {
@@ -970,6 +1098,7 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
     public let dnsPolicy: DNSRuntimePolicy
     public let proxySelections: [String: String]
     public let diagnosticLogLevel: DiagnosticLogLevel?
+    public let routingResources: [RoutingResourceKind: Data]?
 
     public init(
         profileYAML: String,
@@ -977,7 +1106,8 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
         bypassPolicy: BypassPolicy,
         dnsPolicy: DNSRuntimePolicy,
         proxySelections: [String: String],
-        diagnosticLogLevel: DiagnosticLogLevel? = nil
+        diagnosticLogLevel: DiagnosticLogLevel? = nil,
+        routingResources: [RoutingResourceKind: Data]? = nil
     ) {
         self.profileYAML = profileYAML
         self.routingMode = routingMode
@@ -985,6 +1115,7 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
         self.dnsPolicy = dnsPolicy
         self.proxySelections = proxySelections
         self.diagnosticLogLevel = diagnosticLogLevel
+        self.routingResources = routingResources?.isEmpty == true ? nil : routingResources
     }
 
     enum CodingKeys: String, CodingKey {
@@ -994,6 +1125,7 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
         case dnsPolicy
         case proxySelections
         case diagnosticLogLevel
+        case routingResources
     }
 
     public init(from decoder: Decoder) throws {
@@ -1004,6 +1136,7 @@ public struct ReloadProfilePayload: Codable, Equatable, Sendable {
         dnsPolicy = try container.decode(DNSRuntimePolicy.self, forKey: .dnsPolicy)
         proxySelections = try container.decode([String: String].self, forKey: .proxySelections)
         diagnosticLogLevel = try container.decodeIfPresent(DiagnosticLogLevel.self, forKey: .diagnosticLogLevel)
+        routingResources = try container.decodeIfPresent([RoutingResourceKind: Data].self, forKey: .routingResources)
     }
 }
 
@@ -1013,6 +1146,25 @@ public enum ReloadProfilePayloadCodec {
     private static let compressedMagic = Data([0x41, 0x52, 0x5A, 0x31]) // "ARZ1"
 
     public static func encode(_ payload: ReloadProfilePayload) throws -> Data {
+        do {
+            return try encodeSingle(payload)
+        } catch ProxySelectionProviderMessageError.tooLarge where payload.routingResources != nil {
+            // Large routing databases are staged via `.stageRoutingResourceChunk`;
+            // strip inline copies if they exceed the single-message reload frame.
+            let stripped = ReloadProfilePayload(
+                profileYAML: payload.profileYAML,
+                routingMode: payload.routingMode,
+                bypassPolicy: payload.bypassPolicy,
+                dnsPolicy: payload.dnsPolicy,
+                proxySelections: payload.proxySelections,
+                diagnosticLogLevel: payload.diagnosticLogLevel,
+                routingResources: nil
+            )
+            return try encodeSingle(stripped)
+        }
+    }
+
+    private static func encodeSingle(_ payload: ReloadProfilePayload) throws -> Data {
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
         let data = try encoder.encode(payload)

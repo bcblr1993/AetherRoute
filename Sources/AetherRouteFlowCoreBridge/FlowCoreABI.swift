@@ -667,9 +667,11 @@ final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
                     ? nil
                     : payload.bytes.assumingMemoryBound(to: UInt8.self),
                 payload_length: payload.length,
-                remote_endpoint: endpoint.bytes.assumingMemoryBound(
-                    to: UInt8.self
-                ),
+                remote_endpoint: endpoint.length == 0
+                    ? nil
+                    : endpoint.bytes.assumingMemoryBound(
+                        to: UInt8.self
+                    ),
                 remote_endpoint_length: endpoint.length
             )
         }

@@ -14,6 +14,7 @@ public struct ProxyProviderMetadata: Codable, Sendable, Equatable, Identifiable 
     public var sha256: String?
     public var lastError: String?
     public var stagedRelativePath: String?
+    public var isStagedFromProfile: Bool
 
     public init(
         id: UUID = UUID(),
@@ -26,7 +27,8 @@ public struct ProxyProviderMetadata: Codable, Sendable, Equatable, Identifiable 
         etag: String? = nil,
         sha256: String? = nil,
         lastError: String? = nil,
-        stagedRelativePath: String? = nil
+        stagedRelativePath: String? = nil,
+        isStagedFromProfile: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -39,6 +41,28 @@ public struct ProxyProviderMetadata: Codable, Sendable, Equatable, Identifiable 
         self.sha256 = sha256
         self.lastError = lastError
         self.stagedRelativePath = stagedRelativePath
+        self.isStagedFromProfile = isStagedFromProfile
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, url, intervalSeconds, lastUpdatedAt, proxyCount
+        case usage, etag, sha256, lastError, stagedRelativePath, isStagedFromProfile
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.url = try container.decode(URL.self, forKey: .url)
+        self.intervalSeconds = try container.decode(Int.self, forKey: .intervalSeconds)
+        self.lastUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .lastUpdatedAt)
+        self.proxyCount = try container.decode(Int.self, forKey: .proxyCount)
+        self.usage = try container.decodeIfPresent(SubscriptionUsage.self, forKey: .usage)
+        self.etag = try container.decodeIfPresent(String.self, forKey: .etag)
+        self.sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
+        self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        self.stagedRelativePath = try container.decodeIfPresent(String.self, forKey: .stagedRelativePath)
+        self.isStagedFromProfile = try container.decodeIfPresent(Bool.self, forKey: .isStagedFromProfile) ?? false
     }
 }
 
@@ -196,6 +220,16 @@ public actor ProxyProviderEngine {
         )
     }
 
+    /// Strictly validates proxy-provider URLs extracted from untrusted subscriptions:
+    /// requires HTTPS and blocks loopback, RFC1918, link-local, ULA, and `.local` hosts.
+    nonisolated public static func validateUntrustedRemoteURL(_ url: URL) throws {
+        try ProviderURLValidator.validateUntrustedRemoteURL(
+            url,
+            invalidURL: ProxyProviderError.invalidURL,
+            insecureScheme: ProxyProviderError.insecureScheme
+        )
+    }
+
     public func addProvider(_ provider: ProxyProviderMetadata) throws {
         try Self.validateURL(provider.url)
         if let existing = providers[provider.id], existing.url != provider.url {
@@ -275,7 +309,11 @@ public actor ProxyProviderEngine {
             throw ProxyProviderError.providerNotFound
         }
         let expectedRevision = providerRevisions[id, default: 0]
-        try Self.validateURL(initial.url)
+        if initial.isStagedFromProfile {
+            try Self.validateUntrustedRemoteURL(initial.url)
+        } else {
+            try Self.validateURL(initial.url)
+        }
 
         var request = URLRequest(url: initial.url)
         request.httpMethod = "GET"
@@ -290,8 +328,22 @@ public actor ProxyProviderEngine {
             if let httpFetcher {
                 (data, response) = try await httpFetcher(initial.url)
             } else {
-                (data, response) = try await URLSession.shared.data(for: request)
+                (data, response) = try await ProviderSafeHTTPClient.fetch(
+                    request: request,
+                    maximumBytes: Self.maximumPayloadBytes,
+                    allowInitialLocalTarget: !initial.isStagedFromProfile,
+                    invalidURLError: { ProxyProviderError.invalidURL },
+                    oversizedError: { ProxyProviderError.oversizedPayload($0) }
+                )
             }
+        } catch let error as ProxyProviderError {
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: error.localizedDescription,
+                failure: error
+            )
         } catch {
             try recordFailureIfCurrent(
                 id: id,
@@ -367,6 +419,23 @@ public actor ProxyProviderEngine {
             )
         }
 
+        do {
+            try ProfileImportValidator.validate(
+                data: data,
+                allowsApplicationRules: false,
+                maximumBytes: Self.maximumPayloadBytes
+            )
+        } catch {
+            let err = ProxyProviderError.parsingFailed
+            try recordFailureIfCurrent(
+                id: id,
+                expectedRevision: expectedRevision,
+                expectedURL: initial.url,
+                message: error.localizedDescription,
+                failure: err
+            )
+        }
+
         let summary = ProfileConfigurationInspector.inspect(yaml: text)
         let proxyCount = summary.proxyCount
         guard proxyCount > 0 || Self.containsProxiesKey(text) else {
@@ -418,11 +487,10 @@ public actor ProxyProviderEngine {
         for spec in specs {
             guard spec.type == "http",
                   let url = URL(string: spec.url),
-                  (try? Self.validateURL(url)) != nil else {
+                  (try? Self.validateUntrustedRemoteURL(url)) != nil else {
                 continue
             }
             let match = providers.values.first { $0.name == spec.name && $0.url == url }
-                ?? providers.values.first { $0.name == spec.name }
             if let match, seenIDs.insert(match.id).inserted {
                 results.append(match)
             }
@@ -437,16 +505,17 @@ public actor ProxyProviderEngine {
         for spec in specs {
             guard spec.type == "http",
                   let url = URL(string: spec.url),
-                  (try? Self.validateURL(url)) != nil else {
+                  (try? Self.validateUntrustedRemoteURL(url)) != nil else {
                 continue
             }
             let existing = providers.values.first { $0.name == spec.name && $0.url == url }
-                ?? providers.values.first { $0.name == spec.name }
             var metadata = existing ?? ProxyProviderMetadata(
                 name: spec.name,
                 url: url,
-                intervalSeconds: Self.sanitizedIntervalSeconds(spec.interval)
+                intervalSeconds: Self.sanitizedIntervalSeconds(spec.interval),
+                isStagedFromProfile: true
             )
+            metadata.isStagedFromProfile = true
             if metadata.url != url {
                 providerRevisions[metadata.id, default: 0] &+= 1
             }

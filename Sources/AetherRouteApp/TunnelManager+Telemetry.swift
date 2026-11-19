@@ -117,7 +117,9 @@ extension TunnelManager {
                     await self.refreshTelemetry()
                 }
                 if step.checksRouteHealth {
-                    await self.refreshAutomaticRouteHealth()
+                    if let healthy = await self.refreshAutomaticRouteHealth() {
+                        schedule.recordRouteHealthOutcome(healthy: healthy)
+                    }
                 }
             }
         }
@@ -147,15 +149,19 @@ extension TunnelManager {
             runtimeEnvironmentResetTask?.cancel()
             runtimeEnvironmentResetTask = nil
             stopTelemetryPolling()
+            Self.refreshProbeSession()
             Self.runtimeLogger.info("stage=handleRuntimeEnvironmentEvent sleep entered")
+            Self.diagnosticLog.lifecycle("stage=handleRuntimeEnvironmentEvent sleep entered")
         case .systemDidWake:
             isSystemSleeping = false
             lastSystemWakeAt = Date()
             lastNetworkChangeAt = lastSystemWakeAt
             automaticRouteFailureCounts.removeAll()
+            Self.refreshProbeSession()
             Self.runtimeLogger.info(
                 "stage=handleRuntimeEnvironmentEvent wake entered gracePeriod=\(self.wakeGracePeriodDuration, privacy: .public)"
             )
+            Self.diagnosticLog.lifecycle("stage=handleRuntimeEnvironmentEvent wake entered")
         case .networkPathChanged:
             if isSystemSleeping {
                 Self.runtimeLogger.info(
@@ -164,6 +170,7 @@ extension TunnelManager {
                 return
             }
             lastNetworkChangeAt = Date()
+            Self.refreshProbeSession()
             if isInWakeGracePeriod {
                 automaticRouteFailureCounts.removeAll()
             }
@@ -265,7 +272,7 @@ extension TunnelManager {
         else { return }
         let now = Date()
         let action = AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
-            connectionWasReady: readinessVerifiedConnectionID == providerConnectionID,
+            connectionWasReady: providerConnectionID != nil && readinessVerifiedConnectionID == providerConnectionID,
             isInGracePeriod: isInWakeGracePeriod,
             secondsSinceNetworkChange: lastNetworkChangeAt.map { now.timeIntervalSince($0) },
             secondsSinceLastReconnect: lastNetworkRecoveryReconnectAt.map { now.timeIntervalSince($0) },
@@ -292,13 +299,14 @@ extension TunnelManager {
     /// refreshes the delegated automatic child (or explicitly automatic
     /// selector) before retrying the parent route. Manual selections are
     /// intentionally excluded and therefore never fall back.
-    func refreshAutomaticRouteHealth() async {
-        guard !isSystemSleeping else { return }
-        guard routingMode != .direct else { return }
+    @discardableResult
+    func refreshAutomaticRouteHealth() async -> Bool? {
+        guard !isSystemSleeping else { return nil }
+        guard routingMode != .direct else { return nil }
         guard state == .connected,
               !Task.isCancelled,
               proxyLatencyRequests.isEmpty,
-              !automaticReadinessGroupNames.isEmpty else { return }
+              !automaticReadinessGroupNames.isEmpty else { return nil }
 
         let client = ProxySelectionProviderClient { [weak self] data in
             guard let self else {
@@ -311,8 +319,9 @@ extension TunnelManager {
             )
         }
 
+        var allHealthy = true
         for group in automaticReadinessGroupNames.sorted() {
-            guard state == .connected, !Task.isCancelled else { return }
+            guard state == .connected, !Task.isCancelled else { return nil }
             var responsiveLatency: ProxyLatencyState?
             var recoveryAttempted = false
             for attempt in 0..<TunnelStartupTimingPolicy
@@ -328,7 +337,7 @@ extension TunnelManager {
                                 .automaticRouteFailureConfirmationDelayMilliseconds
                         ))
                     } catch {
-                        return
+                        return nil
                     }
                 }
                 do {
@@ -357,7 +366,7 @@ extension TunnelManager {
                         }
                     }
                 } catch is CancellationError {
-                    return
+                    return nil
                 } catch {
                     // A missing or late reply consumes this bounded attempt.
                 }
@@ -392,6 +401,9 @@ extension TunnelManager {
                         Self.runtimeLogger.info(
                             "stage=automaticRouteHealth childRescan responsive=\(responsiveCount, privacy: .public)"
                         )
+                        Self.diagnosticLog.aggregate(
+                            "stage=automaticRouteHealth childRescan responsive=\(responsiveCount)"
+                        )
                     case .reselectExplicitGroup:
                         guard let summary = activeProfileSummary?.proxyGroups
                             .first(where: { $0.name == group }) else {
@@ -410,6 +422,7 @@ extension TunnelManager {
                         Self.runtimeLogger.info(
                             "stage=automaticRouteHealth explicitReselection success"
                         )
+                        Self.diagnosticLog.aggregate("stage=automaticRouteHealth explicitReselection success")
                         if let member = selected.selectedMember {
                             await recordAutomaticProxySwitch(
                                 group: group,
@@ -422,23 +435,28 @@ extension TunnelManager {
                         break
                     }
                 } catch is CancellationError {
-                    return
+                    return nil
                 } catch {
                     Self.runtimeLogger.error(
                         "stage=automaticRouteHealth recoveryScan unavailable"
                     )
+                    Self.diagnosticLog.failure("stage=automaticRouteHealth recoveryScan unavailable")
                 }
             }
 
             if responsiveLatency != nil {
                 let recovered = (automaticRouteFailureCounts[group] ?? 0) > 0
-                automaticRouteFailureCounts[group] = nil
+                if automaticRouteFailureCounts[group] != nil {
+                    automaticRouteFailureCounts[group] = nil
+                }
                 updateAutomaticRouteRecoveryPresentation()
                 if recovered {
                     Self.runtimeLogger.info(
                         "stage=automaticRouteHealth recovered"
                     )
+                    Self.diagnosticLog.aggregate("stage=automaticRouteHealth recovered")
                 }
+                setConnectionQuality(.verified)
                 Self.runtimeLogger.debug(
                     "stage=automaticRouteHealth success attemptsMax=\(TunnelStartupTimingPolicy.automaticRouteFailoverAttemptCount, privacy: .public)"
                 )
@@ -450,6 +468,7 @@ extension TunnelManager {
                 continue
             }
 
+            allHealthy = false
             let previousFailures = automaticRouteFailureCounts[group] ?? 0
             let failures = previousFailures == Int.max
                 ? Int.max
@@ -460,6 +479,7 @@ extension TunnelManager {
                 Self.runtimeLogger.error(
                     "stage=automaticRouteHealth failed consecutive=\(failures, privacy: .public)"
                 )
+                Self.diagnosticLog.failure("stage=automaticRouteHealth failed consecutive=\(failures)")
             } else {
                 Self.runtimeLogger.info(
                     "stage=automaticRouteHealth failed consecutive=\(failures, privacy: .public)"
@@ -478,7 +498,7 @@ extension TunnelManager {
             // Keep monitoring even when the first readiness probe never passed.
             let now = Date()
             switch AutomaticRouteHealthRecoveryPolicy.exhaustionAction(
-                connectionWasReady: readinessVerifiedConnectionID == providerConnectionID,
+                connectionWasReady: providerConnectionID != nil && readinessVerifiedConnectionID == providerConnectionID,
                 isInGracePeriod: isInWakeGracePeriod,
                 secondsSinceNetworkChange: lastNetworkChangeAt.map {
                     now.timeIntervalSince($0)
@@ -489,10 +509,11 @@ extension TunnelManager {
                 consecutiveProviderUnresponsiveCount: consecutiveProviderUnresponsiveCount
             ) {
             case .continueMonitoring:
-                connectionQuality = .degraded
+                setConnectionQuality(.degraded)
                 Self.runtimeLogger.error(
                     "stage=automaticRouteHealth degraded action=continueMonitoring"
                 )
+                Self.diagnosticLog.failure("stage=automaticRouteHealth degraded action=continueMonitoring")
             case .reconnectProvider:
                 lastNetworkRecoveryReconnectAt = now
                 consecutiveProviderUnresponsiveCount = 0
@@ -501,19 +522,24 @@ extension TunnelManager {
                 Self.runtimeLogger.error(
                     "stage=automaticRouteHealth degraded action=reconnectProvider"
                 )
+                Self.diagnosticLog.failure("stage=automaticRouteHealth degraded action=reconnectProvider")
                 // Not awaited here: disconnecting stops telemetry polling,
                 // which cancels the task this health check runs on.
                 Task { @MainActor [weak self] in
                     await self?.reconnect(isAutomatic: true)
                 }
-                return
+                return false
             }
         }
+        return allHealthy
     }
 
     func updateAutomaticRouteRecoveryPresentation() {
-        isAutomaticRouteRecovering = automaticRouteFailureCounts.values
+        let recovering = automaticRouteFailureCounts.values
             .contains(where: { $0 > 0 })
+        if isAutomaticRouteRecovering != recovering {
+            isAutomaticRouteRecovering = recovering
+        }
     }
 
     func installReviewTelemetry() {

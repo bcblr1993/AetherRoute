@@ -89,7 +89,11 @@ extension TunnelManager {
         defer {
             isSwitchingNetworkEngine = false
             if case .failed = state {} else {
-                lastObservedProviderStatus = manager?.connection.status
+                if shouldReconnect {
+                    // Force updateState() to observe a fresh transition into .connected
+                    // so a new providerConnectionID is minted and readiness/failover run.
+                    lastObservedProviderStatus = nil
+                }
                 updateState()
             }
         }
@@ -115,13 +119,11 @@ extension TunnelManager {
         cancelConnectionReadiness()
         cancelAutomaticReconnect(reason: "switchingEngine")
         stopTelemetryPolling()
-        let stoppedStandaloneLoopback = previousMode == .transparent && mode == .tun
-        if stoppedStandaloneLoopback {
-            LANProxyServerController.shared.updateConfiguration(
-                settings: localProxySettings,
-                allowStandaloneLoopback: false
-            )
-        }
+        LANProxyServerController.shared.updateConfiguration(
+            settings: localProxySettings,
+            isTunnelConnected: false,
+            allowStandaloneLoopback: false
+        )
         let previousManager = manager
         var launchPayload: Data?
         do {
@@ -134,15 +136,6 @@ extension TunnelManager {
                 },
                 prepare: { [self] restoringPrevious in
                     let targetMode = restoringPrevious ? previousMode : mode
-                    if restoringPrevious,
-                       targetMode == .transparent,
-                       stoppedStandaloneLoopback,
-                       localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
-                        LANProxyServerController.shared.updateConfiguration(
-                            settings: localProxySettings,
-                            allowStandaloneLoopback: true
-                        )
-                    }
                     launchPayload = try await prepareNetworkEngineReconnect(
                         mode: targetMode,
                         routingMode: currentRoutingMode
@@ -169,12 +162,6 @@ extension TunnelManager {
             sessionNetworkEngineMode = effectiveMode
             if outcome == .switched {
                 userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
-            } else if effectiveMode == .transparent,
-                      localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
-                LANProxyServerController.shared.updateConfiguration(
-                    settings: localProxySettings,
-                    allowStandaloneLoopback: true
-                )
             }
             state = .connected
             startTelemetryPollingIfNeeded()
@@ -191,15 +178,13 @@ extension TunnelManager {
             }
             networkEngineMode = previousMode
             systemExtensionApprovalRequired = false
-            if stoppedStandaloneLoopback,
-               previousMode == .transparent,
-               !isApplicationTerminating,
-               localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
-                LANProxyServerController.shared.updateConfiguration(
-                    settings: localProxySettings,
-                    allowStandaloneLoopback: true
-                )
-            }
+            networkEngineMessage = nil
+            networkEngineMessageIsError = false
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                isTunnelConnected: false,
+                allowStandaloneLoopback: false
+            )
             if let previousManager {
                 if manager !== previousManager {
                     installManager(previousManager)
@@ -218,15 +203,11 @@ extension TunnelManager {
             }
             networkEngineMode = previousMode
             systemExtensionApprovalRequired = false
-            if stoppedStandaloneLoopback,
-               previousMode == .transparent,
-               !isApplicationTerminating,
-               localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
-                LANProxyServerController.shared.updateConfiguration(
-                    settings: localProxySettings,
-                    allowStandaloneLoopback: true
-                )
-            }
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                isTunnelConnected: false,
+                allowStandaloneLoopback: false
+            )
             if let previousManager {
                 if manager !== previousManager {
                     installManager(previousManager)
@@ -281,6 +262,11 @@ extension TunnelManager {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: timeout)
         while clock.now < deadline {
+            if (try? engineReconnect.checkActive()) == nil
+                || disconnectionAttemptID != nil
+                || !userIntendsToConnect {
+                return false
+            }
             if manager?.connection.status == targetStatus { return true }
             do {
                 try await Task.sleep(for: .milliseconds(100))
@@ -489,15 +475,15 @@ extension TunnelManager {
             let validated = try updated.validated()
             if !isUIReviewMode {
                 try localProxySettingsStore.save(validated)
-                let tunnelOwnsLoopback = networkEngineMode == .tun
-                    && !validated.allowLAN
-                    && (state == .connected || state == .connecting || state == .recovering || state == .disconnecting)
+                installLANProxyCallbacks()
+                let isConnected = state == .connected
+                let allowStandalone = isConnected && networkEngineMode == .transparent
                 LANProxyServerController.shared.updateConfiguration(
                     settings: validated,
-                    allowStandaloneLoopback: !tunnelOwnsLoopback
+                    isTunnelConnected: isConnected,
+                    allowStandaloneLoopback: allowStandalone
                 )
-                if validated.setAsSystemProxy {
-                    isSystemProxyActive = true
+                if validated.setAsSystemProxy && isConnected {
                     applySystemProxyIfNeeded(settings: validated)
                 } else {
                     isSystemProxyActive = false
@@ -506,12 +492,26 @@ extension TunnelManager {
             }
             localProxySettings = validated
             if validated.setAsSystemProxy {
-                localProxySettingsMessage = AppLocalization.inline(
-                    "macOS System Proxy is pointing to 127.0.0.1:\(validated.httpPort) / :\(validated.socksPort).",
-                    chinese: "已接管 macOS 系统代理（127.0.0.1:\(validated.httpPort) / :\(validated.socksPort)）。"
-                )
+                if state == .connected {
+                    localProxySettingsMessage = AppLocalization.inline(
+                        "macOS System Proxy is pointing to 127.0.0.1:\(validated.httpPort) / :\(validated.socksPort).",
+                        chinese: "已接管 macOS 系统代理（127.0.0.1:\(validated.httpPort) / :\(validated.socksPort)）。"
+                    )
+                } else {
+                    localProxySettingsMessage = AppLocalization.inline(
+                        "System Proxy will activate automatically when connected.",
+                        chinese: "系统代理将在连接成功后自动接管。"
+                    )
+                }
             } else if validated.allowLAN {
-                localProxySettingsMessage = AppLocalization.string("LAN shared proxy is active.")
+                if state == .connected {
+                    localProxySettingsMessage = AppLocalization.string("LAN shared proxy is active.")
+                } else {
+                    localProxySettingsMessage = AppLocalization.inline(
+                        "LAN shared proxy will start automatically when connected.",
+                        chinese: "局域网共享代理将在连接成功后自动开启。"
+                    )
+                }
             } else if validated.isEnabled {
                 localProxySettingsMessage = AppLocalization.string("The loopback proxy will start with the next TUN connection.")
             } else {
@@ -736,9 +736,14 @@ extension TunnelManager {
         let previousProviderStatus = lastObservedProviderStatus
         if isSwitchingNetworkEngine {
             // A reconnect is a new session, not uninterrupted connectivity.
-            state = .connecting
+            // Do NOT mutate `lastObservedProviderStatus` while switching, and
+            // preserve `.disconnecting` if the user cancelled mid-switch.
+            if disconnectionAttemptID != nil || !userIntendsToConnect {
+                state = status == .disconnected || status == .invalid ? .disconnected : .disconnecting
+            } else {
+                state = .connecting
+            }
             connectedSince = nil
-            lastObservedProviderStatus = status
             Self.runtimeLogger.info(
                 "stage=updateState switchingNetworkEngine transientStatus=\(status.rawValue, privacy: .public)"
             )

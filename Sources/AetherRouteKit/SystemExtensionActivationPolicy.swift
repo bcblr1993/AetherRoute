@@ -72,4 +72,25 @@ public enum SystemExtensionActivationPolicy {
         guard !hasActiveEnabled else { return false }
         return matching.contains(where: \.isUninstalling)
     }
+
+    public static func shouldSilentlyUpgradeSibling(
+        expected: Version,
+        installations: [Installation]
+    ) -> Bool {
+        guard !expected.identifier.isEmpty,
+              !expected.build.isEmpty,
+              !expected.release.isEmpty,
+              !canReuse(expected: expected, installations: installations) else {
+            return false
+        }
+        let hasActiveEnabledOtherVersion = installations.contains {
+            $0.version.identifier == expected.identifier
+                && $0.isEnabled
+                && !$0.isAwaitingUserApproval
+                && !$0.isUninstalling
+                && $0.version != expected
+        }
+        return hasActiveEnabledOtherVersion
+            && !requiresRebootBeforeReinstall(expected: expected, installations: installations)
+    }
 }

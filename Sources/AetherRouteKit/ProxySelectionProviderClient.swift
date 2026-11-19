@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Host-side client for the bounded provider-message protocol. The transport
@@ -15,10 +16,10 @@ public struct ProxySelectionProviderClient: Sendable {
     public func snapshot(group: String) async throws -> ProxySelectionState {
         switch try await send(.snapshot(group: group)) {
         case let .snapshot(snapshot): snapshot
-        case .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -54,10 +55,10 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -76,10 +77,10 @@ public struct ProxySelectionProviderClient: Sendable {
             )
         ) {
         case let .latency(state): state
-        case .snapshot, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -110,20 +111,20 @@ public struct ProxySelectionProviderClient: Sendable {
             .telemetry(maximumConnections: maximumConnections)
         ) {
         case let .telemetry(snapshot): snapshot
-        case .snapshot, .latency, .diagnostics, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
     public func diagnostics() async throws -> ProviderDiagnosticSnapshot {
         switch try await send(.diagnostics) {
         case let .diagnostics(snapshot): snapshot
-        case .snapshot, .latency, .telemetry, .routingMode, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -136,7 +137,7 @@ public struct ProxySelectionProviderClient: Sendable {
             return applied
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
-        case .snapshot, .latency, .telemetry, .diagnostics, .networkReset, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
+        default:
             throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
@@ -145,10 +146,10 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.resetNetwork) {
         case .networkReset:
             return
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -156,10 +157,72 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.reloadProfile(payload)) {
         case .profileReloaded:
             return
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        }
+    }
+
+    /// Queries SHA-256 digests of usable routing databases currently installed in the running extension.
+    public func installedRoutingResourceDigests() async throws -> [RoutingResourceKind: String] {
+        switch try await send(.installedRoutingResourceDigests) {
+        case let .routingResourceDigests(digests):
+            return digests
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        }
+    }
+
+    /// Stages missing or updated routing databases into the running root-context extension
+    /// over bounded IPC chunks prior to `.reloadProfile`, skipping any database whose
+    /// SHA-256 already matches in the extension's container.
+    public func stageRoutingResources(
+        _ resources: [RoutingResourceKind: Data],
+        chunkSize: Int = 256 * 1_024
+    ) async throws {
+        guard !resources.isEmpty else { return }
+        let clampedChunkSize = min(
+            max(16 * 1_024, chunkSize),
+            RoutingResourceTransferChunk.maximumChunkDataBytes
+        )
+        let installed = (try? await installedRoutingResourceDigests()) ?? [:]
+
+        for kind in RoutingResourceKind.allCases {
+            guard let data = resources[kind], !data.isEmpty else { continue }
+            let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            if installed[kind]?.lowercased() == sha256 {
+                continue
+            }
+            let totalBytes = data.count
+            let totalChunks = UInt32((totalBytes + clampedChunkSize - 1) / clampedChunkSize)
+            let transferID = UUID()
+
+            for index in 0..<Int(totalChunks) {
+                try Task.checkCancellation()
+                let start = index * clampedChunkSize
+                let end = min(start + clampedChunkSize, totalBytes)
+                let slice = Data(data[start..<end])
+                let chunk = RoutingResourceTransferChunk(
+                    transferID: transferID,
+                    kind: kind,
+                    expectedSHA256: sha256,
+                    totalBytes: totalBytes,
+                    chunkIndex: UInt32(index),
+                    totalChunks: totalChunks,
+                    data: slice
+                )
+                switch try await send(.stageRoutingResourceChunk(chunk)) {
+                case .routingResourceChunkStaged:
+                    break
+                case let .failure(failure):
+                    throw ProxySelectionProviderClientError.providerFailure(failure)
+                default:
+                    throw ProxySelectionProviderClientError.unexpectedResponse
+                }
+            }
         }
     }
 
@@ -171,10 +234,10 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.closeConnections(payload)) {
         case let .connectionsClosed(count):
             return count
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset, .profileReloaded, .recentLog, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -183,11 +246,10 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.recentLog(maximumKilobytes: maximumKilobytes)) {
         case let .recentLog(data):
             return String(decoding: data, as: UTF8.self)
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset,
-             .profileReloaded, .connectionsClosed, .diagnosticLogLevelApplied, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -196,11 +258,10 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.setDiagnosticLogLevel(level)) {
         case .diagnosticLogLevelApplied:
             return
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset,
-             .profileReloaded, .connectionsClosed, .recentLog, .traceRoute:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 
@@ -208,11 +269,10 @@ public struct ProxySelectionProviderClient: Sendable {
         switch try await send(.traceRoute(request)) {
         case let .traceRoute(result):
             return result
-        case .snapshot, .latency, .telemetry, .diagnostics, .routingMode, .networkReset,
-             .profileReloaded, .connectionsClosed, .recentLog, .diagnosticLogLevelApplied:
-            throw ProxySelectionProviderClientError.unexpectedResponse
         case let .failure(failure):
             throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
         }
     }
 

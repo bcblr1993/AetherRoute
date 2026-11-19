@@ -54,6 +54,6 @@ require_literal "$UNINSTALL_PERFORMER" 'AppUninstaller.finalizeUninstall('
 require_literal "$UNINSTALL_PERFORMER" 'Darwin.exit(EXIT_SUCCESS)'
 require_literal "$UNINSTALL_PERFORMER" 'await tunnel.tearDownForUninstall()'
 require_literal "$TUNNEL" 'func tearDownForUninstall() async'
-require_literal "$UNINSTALL_VIEW" 'AppUninstallPerformer.removeAppAndTerminate()'
+require_literal "$UNINSTALL_VIEW" 'AppUninstallPerformer.removeAppAndTerminate(deletingUserData: deletesUserData)'
 
 echo "application termination signal guard passed"

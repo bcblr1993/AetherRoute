@@ -100,6 +100,7 @@ final class AetherRouteApplicationDelegate: NSObject, NSApplicationDelegate, NSM
             self.terminationReplyPending = false
             if !disconnected {
                 tunnel.isApplicationTerminating = false
+                tunnel.resumeAfterCancelledApplicationTermination()
                 AppWindowManager.shared.isTerminating = false
             }
             (sender ?? NSApplication.shared).reply(toApplicationShouldTerminate: disconnected)
@@ -416,8 +417,8 @@ struct AetherRouteApp: App {
     @StateObject private var language: AppLanguageController
     @StateObject private var appearance: AppAppearanceController
     @StateObject private var dockVisibility: AppDockVisibilityController
-    @StateObject private var menuBarIconController: AppMenuBarIconController
-    @StateObject private var menuBarTrafficController: MenuBarTrafficController
+    private let menuBarIconController: AppMenuBarIconController
+    private let menuBarTrafficController: MenuBarTrafficController
     @StateObject private var startup: AppStartupController
     @StateObject private var tunnel: TunnelManager
     @StateObject private var automation: AppAutomationController
@@ -432,8 +433,8 @@ struct AetherRouteApp: App {
         _appearance = StateObject(wrappedValue: AppAppearanceController())
         let dockVisibility = AppDockVisibilityController.shared
         _dockVisibility = StateObject(wrappedValue: dockVisibility)
-        _menuBarIconController = StateObject(wrappedValue: AppMenuBarIconController.shared)
-        _menuBarTrafficController = StateObject(wrappedValue: MenuBarTrafficController.shared)
+        menuBarIconController = AppMenuBarIconController.shared
+        menuBarTrafficController = MenuBarTrafficController.shared
         _startup = StateObject(wrappedValue: AppStartupController.shared)
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] != nil {
@@ -1293,11 +1294,7 @@ private struct MenuBarContent: View {
                 .accessibilityIdentifier("menu-other-shells-pac")
 #if AETHERROUTE_INDEPENDENT
                 if !tunnel.canCopyTerminalProxyCommand {
-                    Text(
-                        tunnel.networkEngineMode == .tun
-                            ? AppLocalization.string("Turn on the local proxy in Settings › Network.")
-                            : AppLocalization.string("Switch to TUN to use the local proxy.")
-                    )
+                    Text(AppLocalization.string("Turn on the local proxy in Settings › Network."))
                 }
 #endif
                 Button(AppLocalization.string("Copy Clear Command"), systemImage: "terminal.fill") {
@@ -1309,7 +1306,7 @@ private struct MenuBarContent: View {
                 Button(AppLocalization.string("Check for Updates…"), systemImage: "arrow.triangle.2.circlepath") {
                     SparkleUpdaterController.shared.checkForUpdates()
                 }
-                .disabled(!SparkleUpdaterController.shared.canCheckForUpdates)
+                .disabled(!SparkleUpdaterController.shared.canCheckOrFocusUpdateSession)
 #endif
                 Divider()
                 Button(AppLocalization.string("Quit"), systemImage: "power") {
@@ -1715,21 +1712,28 @@ private struct MenuNodeSelectorPane: View {
                         .foregroundStyle(AetherVisual.secondaryText)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 } else {
+                    let summariesByName = proxySummaryByName
+                    let unsupportedSet = unsupported
+                    let currentSelected = selectedMember
+                    let isRequestPending = tunnel.proxySelectionRequests.contains(group.name)
+                    let isSelectStrategy = group.strategy.lowercased() == "select"
+                    let isFastestLocked = group.name != "GLOBAL" && tunnel.proxySelectionMode(for: group.name) == .fastest
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredMembers, id: \.self) { member in
-                                let proxy = proxySummaryByName[member]
+                                let proxy = summariesByName[member]
+                                let isMemberUnsupported = unsupportedSet.contains(member)
                                 MenuNodeRow(
                                     groupName: group.name,
                                     member: member,
                                     protocolName: proxy?.protocolName,
                                     transportName: proxy?.transportName,
-                                    isSelected: member == selectedMember,
-                                    isUnsupported: unsupported.contains(member),
+                                    isSelected: member == currentSelected,
+                                    isUnsupported: isMemberUnsupported,
                                     latencyStore: tunnel.latencyStore,
                                     tunnel: tunnel
                                 ) {
-                                    if member == selectedMember {
+                                    if member == currentSelected {
                                         onClose()
                                         return
                                     }
@@ -1743,9 +1747,9 @@ private struct MenuNodeSelectorPane: View {
                                         selecting = false
                                     }
                                 }
-                                .disabled(selecting || tunnel.proxySelectionRequests.contains(group.name)
-                                    || group.strategy.lowercased() != "select" || unsupported.contains(member)
-                                    || (group.name != "GLOBAL" && tunnel.proxySelectionMode(for: group.name) == .fastest))
+                                .disabled(selecting || isRequestPending
+                                    || !isSelectStrategy || isMemberUnsupported
+                                    || isFastestLocked)
                             }
                         }
                     }
@@ -2099,12 +2103,26 @@ private struct MenuLiveTrafficValue: View {
 /// upload filled its own sparkline and looked like a spike. It animates only
 /// while the panel is open; closed, it rests on the last 30 seconds.
 private struct MenuTrafficGraph: View {
-    /// Like Overview's graph, the waveform is its own observing leaf, so a
-    /// frame redraws this view and not the panel.
-    @ObservedObject var model: NetworkTelemetryViewModel
+    let model: NetworkTelemetryViewModel
     let isLive: Bool
 
-    /// Half Overview's rate: smooth at this width, cheaper in the menu bar.
+    var body: some View {
+        Group {
+            if isLive {
+                MenuLiveTrafficGraph(model: model)
+            } else {
+                MenuPausedTrafficGraph(history: model.history)
+            }
+        }
+        .accessibilityIdentifier("menu-traffic-graph")
+    }
+}
+
+private struct MenuLiveTrafficGraph: View {
+    /// Like Overview's graph, the waveform is its own observing leaf, and only
+    /// mounts while `isMenuVisible` is true so a closed popover never wakes on ticks.
+    @ObservedObject var model: NetworkTelemetryViewModel
+
     private static let frameInterval: TimeInterval = 1.0 / 12
     private static let entryLag = TimeInterval(
         TunnelStartupTimingPolicy.activeTelemetryPollingIntervalSeconds
@@ -2112,9 +2130,9 @@ private struct MenuTrafficGraph: View {
 
     var body: some View {
         let lastSample = model.history.samples.last?.date
-        let scaleSamples = model.history.visible(at: windowEnd(at: .now, lastSample: lastSample))
+        let scaleSamples = model.history.visible(at: windowEnd(at: .now))
         VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
-            Text(peakRate(scaleSamples).map {
+            Text(MenuPausedTrafficGraph.peakRate(scaleSamples).map {
                 String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
             } ?? " ")
             .font(.caption2.monospacedDigit())
@@ -2124,7 +2142,7 @@ private struct MenuTrafficGraph: View {
             TimelineView(
                 .animation(
                     minimumInterval: Self.frameInterval,
-                    paused: !isLive || !model.history.hasActiveTraffic
+                    paused: !model.history.hasActiveTraffic
                 )
             ) { context in
                 let now = windowEnd(at: context.date, lastSample: lastSample)
@@ -2137,16 +2155,37 @@ private struct MenuTrafficGraph: View {
                 )
             }
         }
-        .accessibilityIdentifier("menu-traffic-graph")
     }
 
-    private func windowEnd(at date: Date, lastSample: Date?) -> Date {
-        isLive
-            ? date.addingTimeInterval(-Self.entryLag)
-            : (lastSample ?? date)
+    private func windowEnd(at date: Date, lastSample _: Date? = nil) -> Date {
+        date.addingTimeInterval(-Self.entryLag)
+    }
+}
+
+private struct MenuPausedTrafficGraph: View {
+    let history: TrafficHistory
+
+    var body: some View {
+        let anchor = history.samples.last?.date ?? .now
+        let samples = history.visible(at: anchor)
+        VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
+            Text(Self.peakRate(samples).map {
+                String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+            } ?? " ")
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(AetherVisual.secondaryText)
+            .aetherLiveValue()
+
+            AetherTrafficMiniGraph(
+                downloadSamples: samples.map(\.download),
+                uploadSamples: samples.map(\.upload),
+                samplePositions: samples.map { TrafficHistory.position(of: $0, at: anchor) },
+                height: 36
+            )
+        }
     }
 
-    private func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
+    static func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
         let peak = samples.map { max($0.download, $0.upload) }.max() ?? 0
         guard samples.count > 1, peak >= 1 else { return nil }
         return formattedRate(UInt64(peak))
@@ -2231,8 +2270,24 @@ private struct MenuMemoryFooter: View {
 }
 
 private struct MenuMemoryProportionBar: View {
-    @ObservedObject var model: NetworkTelemetryViewModel
+    let model: NetworkTelemetryViewModel
     let isLive: Bool
+
+    var body: some View {
+        if isLive {
+            MenuLiveMemoryProportionBar(model: model)
+        } else {
+            Color.clear
+                .frame(height: AetherVisual.s1)
+                .background(AetherVisual.neutralFill, in: Capsule())
+                .clipShape(Capsule())
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+private struct MenuLiveMemoryProportionBar: View {
+    @ObservedObject var model: NetworkTelemetryViewModel
 
     var body: some View {
         let coreBytes = model.snapshot.memoryBytes
@@ -2242,7 +2297,7 @@ private struct MenuMemoryProportionBar: View {
         let appShare: CGFloat = total > 0 ? CGFloat(Double(appBytes) / Double(total)) : 0
 
         Canvas { context, size in
-            guard total > 0, isLive else { return }
+            guard total > 0 else { return }
             let coreWidth = max(coreBytes > 0 ? 4 : 0, size.width * coreShare)
             let gap = coreWidth > 0 && appBytes > 0 ? AetherVisual.sMicro : 0
             if coreWidth > 0 {
@@ -3139,14 +3194,34 @@ private struct SettingsView: View {
             .accessibilityIdentifier("control-url-scheme-toggle")
 
             if tunnel.controlURLSchemePreferences.allowControlURLScheme {
-                Text(
-                    AppLocalization.inline(
-                        "Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=...",
-                        chinese: "支持命令：aetherroute://connect、disconnect、toggle、set-mode?mode=rule|global|direct|tun|transparent、switch-profile?name=..."
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    Text(
+                        AppLocalization.inline(
+                            "Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=... (append ?token=<secret> for silent script execution; links without a token require confirmation).",
+                            chinese: "支持命令：aetherroute://connect、disconnect、toggle、set-mode?mode=rule|global|direct|tun|transparent、switch-profile?name=...（脚本静默调用请附带 ?token=<密钥>，未携带令牌的外部链接将弹窗确认）。"
+                        )
                     )
-                )
-                .font(.caption.monospaced())
-                .foregroundStyle(AetherVisual.secondaryText)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(AetherVisual.secondaryText)
+
+                    HStack(spacing: AetherVisual.s2) {
+                        AetherCopyButton(
+                            title: Text(AppLocalization.inline("Copy Token", chinese: "复制令牌")),
+                            systemImage: "key.fill"
+                        ) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(tunnel.controlURLSchemeToken, forType: .string)
+                            return true
+                        }
+                        Button {
+                            _ = tunnel.regenerateControlURLSchemeToken()
+                        } label: {
+                            Text(AppLocalization.inline("Regenerate Token", chinese: "重置令牌"))
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                    }
+                }
             }
 
         } header: {

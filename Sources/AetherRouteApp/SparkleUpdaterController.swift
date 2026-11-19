@@ -28,6 +28,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     }
 
     private var updaterController: SPUStandardUpdaterController?
+    private var updaterStarted = false
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Rapid Switching & Cooldown Protection
@@ -43,6 +44,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     private let notificationAction: ((String) -> Void)?
     private let userDefaults: UserDefaults
     private let startupDelay: Duration
+    private let isPrivacyConsentAccepted: () -> Bool
 
     override convenience init() {
         self.init(
@@ -55,7 +57,10 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             performBackgroundCheckAction: nil,
             notificationAction: nil,
             userDefaults: .standard,
-            startupDelay: .seconds(3)
+            startupDelay: .seconds(3),
+            isPrivacyConsentAccepted: {
+                PrivacyConsentStore(defaults: .standard).hasAcceptedCurrentDisclosure
+            }
         )
     }
 
@@ -69,7 +74,8 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         performBackgroundCheckAction: (@MainActor (SparkleUpdaterController) -> Void)? = nil,
         notificationAction: ((String) -> Void)? = nil,
         userDefaults: UserDefaults = .standard,
-        startupDelay: Duration = .seconds(3)
+        startupDelay: Duration = .seconds(3),
+        isPrivacyConsentAccepted: @escaping () -> Bool = { true }
     ) {
         self.updaterController = updaterController
         self.debounceDuration = debounceDuration
@@ -80,6 +86,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         self.notificationAction = notificationAction
         self.userDefaults = userDefaults
         self.startupDelay = startupDelay
+        self.isPrivacyConsentAccepted = isPrivacyConsentAccepted
         super.init()
 #if DEBUG
         // Isolated screenshot review only: pretend a newer release exists.
@@ -89,20 +96,25 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         }
 #endif
 
+        let consentAccepted = isPrivacyConsentAccepted()
         if let updaterController {
+            self.updaterStarted = true
             configureUpdaterSubscriptions(for: updaterController.updater)
             setupSparkleWindowObserver()
         } else if startUpdater {
             let controller = SPUStandardUpdaterController(
-                startingUpdater: true,
+                startingUpdater: consentAccepted,
                 updaterDelegate: self,
                 userDriverDelegate: self
             )
             self.updaterController = controller
+            self.updaterStarted = consentAccepted
             configureUpdaterSubscriptions(for: controller.updater)
             setupSparkleWindowObserver()
         }
-        scheduleStartupSilentCheck()
+        if consentAccepted {
+            scheduleStartupSilentCheck()
+        }
     }
 
     private func configureUpdaterSubscriptions(for updater: SPUUpdater) {
@@ -135,10 +147,48 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         return canCheckForUpdates
     }
 
+    /// Remains enabled while an update dialog session is active so the user can
+    /// always re-focus the Sparkle window from the menu bar or App menu after
+    /// switching away to copy an administrator password.
+    var canCheckOrFocusUpdateSession: Bool {
+        if canCheckForUpdates {
+            return true
+        }
+        if updaterController?.updater.sessionInProgress == true {
+            return true
+        }
+        return !sparkleWindows().isEmpty
+    }
+
+    func handlePrivacyConsentAccepted() {
+        guard isPrivacyConsentAccepted() else { return }
+        if !updaterStarted, let updater = updaterController?.updater {
+            do {
+                try updater.start()
+                updaterStarted = true
+            } catch {
+                Self.logger.error("stage=updateCheck startUpdaterAfterConsent failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        scheduleStartupSilentCheck()
+    }
+
     func checkForUpdates() {
         if let performCheckAction {
             performCheckAction(self)
             return
+        }
+        if !updaterStarted, isPrivacyConsentAccepted(), let updater = updaterController?.updater {
+            try? updater.start()
+            updaterStarted = true
+        }
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let existingWindows = sparkleWindows()
+        for window in existingWindows {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
         }
         guard let updater = updaterController?.updater, updater.canCheckForUpdates else {
             return
@@ -147,6 +197,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     }
 
     func checkForUpdatesInBackground() {
+        guard isPrivacyConsentAccepted() else { return }
         if let performBackgroundCheckAction {
             performBackgroundCheckAction(self)
             return
@@ -158,6 +209,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     }
 
     func scheduleStartupSilentCheck() {
+        guard isPrivacyConsentAccepted() else { return }
         if notificationAction == nil {
             guard NSClassFromString("XCTestCase") == nil else { return }
             guard ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_WINDOW"] == nil,
@@ -176,6 +228,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
                 return
             }
             guard let self, !Task.isCancelled else { return }
+            guard self.isPrivacyConsentAccepted() else { return }
             guard self.automaticallyChecksForUpdates else { return }
             guard self.canCheckForUpdatesEffective else { return }
             Self.logger.info("stage=updateCheck executing startup silent background check")
@@ -225,6 +278,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             }
 
             guard let self, !Task.isCancelled else { return }
+            guard self.isPrivacyConsentAccepted() else { return }
             guard self.automaticallyChecksForUpdates else { return }
 
             let currentTime = self.now()
@@ -280,14 +334,27 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
         elevateSparkleWindowIfNeeded(window)
     }
 
+    private func sparkleWindows() -> [NSWindow] {
+        let sparkleBundle = Bundle(for: SPUUpdater.self)
+        return NSApplication.shared.windows.filter { window in
+            guard let controller = window.windowController else { return false }
+            return Bundle(for: type(of: controller)) == sparkleBundle
+        }
+    }
+
     private func elevateSparkleWindowIfNeeded(_ window: NSWindow) {
-        guard window.level != .floating,
-              let controller = window.windowController,
+        guard let controller = window.windowController,
               Bundle(for: type(of: controller)) == Bundle(for: SPUUpdater.self)
         else { return }
 
-        window.level = .floating
-        window.hidesOnDeactivate = true
+        if window.level != .floating {
+            window.level = .floating
+        }
+        // Keep the update window visible when switching to a password manager
+        // or system authentication prompt (hidesOnDeactivate = true hid it
+        // with no way back while LSUIElement hid the Dock icon).
+        window.hidesOnDeactivate = false
+        window.collectionBehavior.insert(.moveToActiveSpace)
     }
 
     deinit {
@@ -303,6 +370,7 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             return
         }
 
+        guard isPrivacyConsentAccepted() else { return }
         guard NSClassFromString("XCTestCase") == nil else { return }
         guard ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_WINDOW"] == nil,
               ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW"] == nil,
@@ -315,11 +383,15 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             Self.logger.info("stage=updateNotify version \(version, privacy: .public) already notified, skipping")
             return
         }
-        userDefaults.set(version, forKey: Self.lastNotifiedUpdateVersionKey)
-        Self.logger.info("stage=updateNotify posting local notification for version \(version, privacy: .public)")
 
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
-            guard granted, error == nil else { return }
+        // Never silently trigger a system notification permission dialog from
+        // a background appcast poll; deliver only if already authorized.
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            guard let controller = self else { return }
+            let isAuthorized = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            guard isAuthorized else { return }
+
             let content = UNMutableNotificationContent()
             content.title = AppLocalization.string("AetherRoute Update Available")
             content.body = String(
@@ -337,6 +409,13 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
             UNUserNotificationCenter.current().add(request) { addError in
                 if let addError {
                     Self.logger.error("stage=updateNotify error scheduling notification: \(addError.localizedDescription, privacy: .public)")
+                } else {
+                    Task { @MainActor in
+                        controller.userDefaults.set(
+                            version,
+                            forKey: Self.lastNotifiedUpdateVersionKey
+                        )
+                    }
                 }
             }
         }
@@ -411,11 +490,15 @@ extension SparkleUpdaterController: SPUStandardUserDriverDelegate {
         true
     }
 
+    nonisolated func shouldShowScheduledUpdateWindow(immediateFocus: Bool) -> Bool {
+        immediateFocus
+    }
+
     nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(
         _ update: SUAppcastItem,
         andInImmediateFocus immediateFocus: Bool
     ) -> Bool {
-        true
+        shouldShowScheduledUpdateWindow(immediateFocus: immediateFocus)
     }
 }
 
@@ -427,7 +510,7 @@ struct CheckForUpdatesCommandButton: View {
         Button(AppLocalization.string("Check for Updates…")) {
             controller.checkForUpdates()
         }
-        .disabled(!controller.canCheckForUpdates)
+        .disabled(!controller.canCheckOrFocusUpdateSession)
     }
 }
 #else
@@ -447,6 +530,8 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
     }
 
     var canCheckForUpdatesEffective: Bool { false }
+    var canCheckOrFocusUpdateSession: Bool { false }
+    func handlePrivacyConsentAccepted() {}
     func checkForUpdates() {}
     func checkForUpdatesInBackground() {}
     func setAutomaticallyChecksForUpdates(_ enabled: Bool) {}

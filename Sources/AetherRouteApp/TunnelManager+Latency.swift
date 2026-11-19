@@ -652,7 +652,7 @@ extension TunnelManager {
                   self.latencyRuntimeEpoch == epoch,
                   memberName.uppercased() != "DIRECT" else { return }
             let endpoints = self.activeProfile
-                .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+                .map { ProfileNamedEndpointInspector.inspect(yaml: self.effectiveProfileYAML(for: $0)) } ?? [:]
             measurement = await Self.probeDirectMemberLatency(
                 member: memberName,
                 endpoints: endpoints,
@@ -701,7 +701,7 @@ extension TunnelManager {
               runToken == currentLatencyRunToken,
               latencyRuntimeEpoch == epoch else { return }
         let endpoints = activeProfile
-            .map { ProfileNamedEndpointInspector.inspect(yaml: $0.yaml) } ?? [:]
+            .map { ProfileNamedEndpointInspector.inspect(yaml: effectiveProfileYAML(for: $0)) } ?? [:]
         let excludeVirtual = shouldExcludeVirtualInterfaces
         let maxConcurrent = 12
 

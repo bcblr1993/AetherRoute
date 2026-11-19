@@ -166,4 +166,66 @@ final class ProfileSettingsMigrationTests: XCTestCase {
                 + ProxySelectionStore.profileDigest(yaml: yaml + "\u{0}automatic-selection\u{0}Proxy")
         )
     }
+
+    func testMigrationPrunesObsoleteSourceProfileSettingsByDefault() throws {
+        let old = profile(nodes: ["HK 01", "JP 02", "Traffic 10GB"], streamingMembers: ["JP 02", "HK 01"])
+        let new = profile(nodes: ["HK 01", "JP 02", "Traffic 9GB"], streamingMembers: ["JP 02", "HK 01"])
+        let (selections, preferences, dns) = stores()
+        try selections.mergeSelections(["Proxy": "JP 02"], profileYAML: old)
+        try preferences.mergeSelections(["Proxy": "HK 01"], profileYAML: old)
+        defaults.set("failover", forKey: ProxySelectionPreferenceKeys.mode(profileYAML: old, group: "Proxy"))
+        defaults.set(true, forKey: ProxySelectionPreferenceKeys.legacyAutomatic(profileYAML: old, group: "Proxy"))
+        let policy = DNSRuntimePolicy(resolutionMode: .fakeIP, ipv6: .disabled, respectsRules: .enabled)
+        try dns.save(policy, forProfileYAML: old)
+
+        _ = ProfileSettingsMigration.migrate(
+            fromYAML: old,
+            toYAML: new,
+            selectionStore: selections,
+            preferenceStore: preferences,
+            dnsStore: dns,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(try selections.selections(forProfileYAML: new), ["Proxy": "JP 02"])
+        XCTAssertEqual(try selections.selections(forProfileYAML: old), [:])
+        XCTAssertEqual(try preferences.selections(forProfileYAML: old), [:])
+        XCTAssertNil(try dns.loadIfPresent(forProfileYAML: old))
+        XCTAssertNil(defaults.object(forKey: ProxySelectionPreferenceKeys.mode(profileYAML: old, group: "Proxy")))
+        XCTAssertNil(defaults.object(forKey: ProxySelectionPreferenceKeys.legacyAutomatic(profileYAML: old, group: "Proxy")))
+    }
+
+    func testRemoveSettingsCleansAllStoresAndDefaultsForRemovedProfile() throws {
+        let removed = profile(nodes: ["HK 01", "JP 02"])
+        let retained = profile(nodes: ["US 01", "SG 02"])
+        let (selections, preferences, dns) = stores()
+        try selections.mergeSelections(["Proxy": "JP 02"], profileYAML: removed)
+        try selections.mergeSelections(["Proxy": "US 01"], profileYAML: retained)
+        try preferences.mergeSelections(["Proxy": "HK 01"], profileYAML: removed)
+        try preferences.mergeSelections(["Proxy": "SG 02"], profileYAML: retained)
+        defaults.set("failover", forKey: ProxySelectionPreferenceKeys.mode(profileYAML: removed, group: "Proxy"))
+        defaults.set(true, forKey: ProxySelectionPreferenceKeys.legacyAutomatic(profileYAML: removed, group: "Proxy"))
+        defaults.set("fastest", forKey: ProxySelectionPreferenceKeys.mode(profileYAML: retained, group: "Proxy"))
+        let policy = DNSRuntimePolicy(resolutionMode: .fakeIP, ipv6: .disabled, respectsRules: .enabled)
+        try dns.save(policy, forProfileYAML: removed)
+        try dns.save(.inherited, forProfileYAML: retained)
+
+        ProfileSettingsMigration.removeSettings(
+            forYAML: removed,
+            selectionStore: selections,
+            preferenceStore: preferences,
+            dnsStore: dns,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(try selections.selections(forProfileYAML: removed), [:])
+        XCTAssertEqual(try preferences.selections(forProfileYAML: removed), [:])
+        XCTAssertNil(try dns.loadIfPresent(forProfileYAML: removed))
+        XCTAssertNil(defaults.object(forKey: ProxySelectionPreferenceKeys.mode(profileYAML: removed, group: "Proxy")))
+        XCTAssertNil(defaults.object(forKey: ProxySelectionPreferenceKeys.legacyAutomatic(profileYAML: removed, group: "Proxy")))
+        XCTAssertEqual(try selections.selections(forProfileYAML: retained), ["Proxy": "US 01"])
+        XCTAssertEqual(try preferences.selections(forProfileYAML: retained), ["Proxy": "SG 02"])
+        XCTAssertEqual(try dns.loadIfPresent(forProfileYAML: retained), .inherited)
+        XCTAssertEqual(defaults.string(forKey: ProxySelectionPreferenceKeys.mode(profileYAML: retained, group: "Proxy")), "fastest")
+    }
 }

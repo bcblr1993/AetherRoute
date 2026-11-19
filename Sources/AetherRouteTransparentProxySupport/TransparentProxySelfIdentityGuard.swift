@@ -48,11 +48,14 @@ public struct TransparentProxySelfIdentityGuard: Sendable {
     /// Why a disposition was chosen. Bounded and free of addresses, ports and
     /// payload, so it is safe for the diagnostic log.
     public enum Reason: String, Equatable, Sendable {
-        /// Signing identifier equals this extension's own. Primary self match.
+        /// Signing identifier, PID, and code-signature anchor all match this extension.
         case signingIdentifierMatchedSelf
-        /// Signing identifier was unavailable but the audit token resolved to
-        /// this process. Secondary self match.
+        /// Signing identifier was unavailable, and PID + code-signature anchor resolved to this process.
         case auditTokenMatchedSelf
+        /// Another process attempted to claim this extension's signing identifier.
+        case spoofedSelfSigningIdentifier
+        /// PID matched, but code-signature / Team ID anchor verification failed.
+        case codeSignatureAnchorMismatch
         /// A named source process that is not this extension.
         case signingIdentifierDiffers
         /// No signing identifier, but the audit token named another process.
@@ -147,27 +150,50 @@ public struct TransparentProxySelfIdentityGuard: Sendable {
     func evaluate(signingIdentifier: String, auditToken: Data?) -> Evaluation {
         let sourcePID = resolveProcessIdentifier(from: auditToken)
         let tokenByteCount = auditToken?.count ?? 0
+        let selfPID = currentProcessIdentifier()
+        let signingMatchesSelf = !signingIdentifier.isEmpty
+            && selfSigningIdentifiers.contains(signingIdentifier)
 
-        // 1. Primary signal. A non-empty signing identifier that matches this
-        //    extension is verified self egress.
-        if !signingIdentifier.isEmpty,
-           selfSigningIdentifiers.contains(signingIdentifier) {
+        // 1. Self-bypass strictly requires:
+        //    (a) a kernel-supplied audit token whose PID equals `currentProcessIdentifier()`,
+        //    (b) if `signingIdentifier` is non-empty, it must match our own extension ID, and
+        //    (c) code-signature / Team ID anchor verification on the audit token must succeed.
+        //    This completely blocks local processes using `codesign -s - -i <BundleID>`
+        //    from spoofing `sourceAppSigningIdentifier` to bypass the global proxy.
+        if sourcePID > 0, selfPID > 0, sourcePID == selfPID {
+            if !signingIdentifier.isEmpty, !signingMatchesSelf {
+                return finish(
+                    .proxy,
+                    .signingIdentifierDiffers,
+                    signingIdentifier: signingIdentifier,
+                    auditTokenByteCount: tokenByteCount,
+                    sourceProcessIdentifier: sourcePID
+                )
+            }
+            guard let auditToken,
+                  identityVerifier.verifySelfCodeIdentity(for: auditToken) else {
+                return finish(
+                    .proxy,
+                    .codeSignatureAnchorMismatch,
+                    signingIdentifier: signingIdentifier,
+                    auditTokenByteCount: tokenByteCount,
+                    sourceProcessIdentifier: sourcePID
+                )
+            }
             return finish(
                 .bypass,
-                .signingIdentifierMatchedSelf,
+                signingMatchesSelf ? .signingIdentifierMatchedSelf : .auditTokenMatchedSelf,
                 signingIdentifier: signingIdentifier,
                 auditTokenByteCount: tokenByteCount,
                 sourceProcessIdentifier: sourcePID
             )
         }
 
-        // 2. Secondary signal. Used when the platform gave no signing
-        //    identifier but did give a usable audit token.
-        let selfPID = currentProcessIdentifier()
-        if sourcePID > 0, selfPID > 0, sourcePID == selfPID {
+        // 2. Spoofed self signing identifier (missing audit token or different PID).
+        if signingMatchesSelf {
             return finish(
-                .bypass,
-                .auditTokenMatchedSelf,
+                .proxy,
+                .spoofedSelfSigningIdentifier,
                 signingIdentifier: signingIdentifier,
                 auditTokenByteCount: tokenByteCount,
                 sourceProcessIdentifier: sourcePID
@@ -265,12 +291,28 @@ protocol TransparentProxyFlowIdentityVerifying: Sendable {
     var auditTokenByteCount: Int { get }
 
     func processIdentifier(from auditToken: Data) throws -> pid_t
+    func verifySelfCodeIdentity(for auditToken: Data) -> Bool
 }
 
-struct SecurityTransparentProxyFlowIdentityVerifier:
-    TransparentProxyFlowIdentityVerifying
+extension TransparentProxyFlowIdentityVerifying {
+    func verifySelfCodeIdentity(for auditToken: Data) -> Bool {
+        true
+    }
+}
+
+final class SecurityTransparentProxyFlowIdentityVerifier:
+    TransparentProxyFlowIdentityVerifying,
+    @unchecked Sendable
 {
     let auditTokenByteCount = MemoryLayout<audit_token_t>.size
+
+    private let cacheLock = NSLock()
+    private var verifiedSelfAuditToken: Data?
+    private let selfAnchor: SelfCodeSignatureAnchor?
+
+    init() {
+        self.selfAnchor = Self.captureOwnSignatureAnchor()
+    }
 
     func processIdentifier(from auditToken: Data) throws -> pid_t {
         guard auditToken.count == auditTokenByteCount else {
@@ -290,6 +332,72 @@ struct SecurityTransparentProxyFlowIdentityVerifier:
             throw IdentityError.invalidProcessIdentifier
         }
         return pid
+    }
+
+    func verifySelfCodeIdentity(for auditToken: Data) -> Bool {
+        guard auditToken.count == auditTokenByteCount else { return false }
+        if cacheLock.withLock({ verifiedSelfAuditToken == auditToken }) {
+            return true
+        }
+        guard let anchor = selfAnchor else { return false }
+
+        let attributes = [
+            kSecGuestAttributeAudit as String: auditToken as NSData
+        ] as CFDictionary
+        var guestCode: SecCode?
+        guard SecCodeCopyGuestWithAttributes(
+            nil,
+            attributes,
+            SecCSFlags(rawValue: 0),
+            &guestCode
+        ) == errSecSuccess, let guestCode else {
+            return false
+        }
+
+        guard SecCodeCheckValidity(
+            guestCode,
+            SecCSFlags(rawValue: kSecCSStrictValidate),
+            anchor.designatedRequirement
+        ) == errSecSuccess else {
+            return false
+        }
+
+        var guestStaticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(
+            guestCode,
+            SecCSFlags(rawValue: 0),
+            &guestStaticCode
+        ) == errSecSuccess, let guestStaticCode else {
+            return false
+        }
+
+        var rawInfo: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            guestStaticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &rawInfo
+        ) == errSecSuccess,
+              let info = rawInfo as? [String: Any] else {
+            return false
+        }
+
+        let guestTeamID = (info[kSecCodeInfoTeamIdentifier as String] as? String) ?? ""
+        if !anchor.teamIdentifier.isEmpty {
+            guard guestTeamID == anchor.teamIdentifier else {
+                return false
+            }
+        }
+        if let expectedCDHash = anchor.cdHash {
+            let guestCDHash = info[kSecCodeInfoUnique as String] as? Data
+            guard guestCDHash == expectedCDHash else {
+                return false
+            }
+        }
+
+        cacheLock.withLock {
+            verifiedSelfAuditToken = auditToken
+        }
+        return true
     }
 
     /// One-time startup self check. Confirms this running extension satisfies
@@ -338,6 +446,57 @@ struct SecurityTransparentProxyFlowIdentityVerifier:
         )
     }
 
+    private struct SelfCodeSignatureAnchor: @unchecked Sendable {
+        let designatedRequirement: SecRequirement
+        let teamIdentifier: String
+        let cdHash: Data?
+    }
+
+    private static func captureOwnSignatureAnchor() -> SelfCodeSignatureAnchor? {
+        let defaultFlags = SecCSFlags(rawValue: 0)
+        var currentCode: SecCode?
+        guard SecCodeCopySelf(defaultFlags, &currentCode) == errSecSuccess,
+              let currentCode else {
+            return nil
+        }
+        var currentStaticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(currentCode, defaultFlags, &currentStaticCode) == errSecSuccess,
+              let currentStaticCode else {
+            return nil
+        }
+        var requirement: SecRequirement?
+        guard SecCodeCopyDesignatedRequirement(
+            currentStaticCode,
+            defaultFlags,
+            &requirement
+        ) == errSecSuccess, let requirement else {
+            return nil
+        }
+        guard SecCodeCheckValidity(
+            currentCode,
+            SecCSFlags(rawValue: kSecCSStrictValidate),
+            requirement
+        ) == errSecSuccess else {
+            return nil
+        }
+        var rawInfo: CFDictionary?
+        guard SecCodeCopySigningInformation(
+            currentStaticCode,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &rawInfo
+        ) == errSecSuccess,
+              let info = rawInfo as? [String: Any] else {
+            return nil
+        }
+        let teamID = (info[kSecCodeInfoTeamIdentifier as String] as? String) ?? ""
+        let cdHash = info[kSecCodeInfoUnique as String] as? Data
+        return SelfCodeSignatureAnchor(
+            designatedRequirement: requirement,
+            teamIdentifier: teamID,
+            cdHash: cdHash
+        )
+    }
+
     private func requireSuccess(
         _ status: OSStatus,
         resultPresent: Bool = true
@@ -352,5 +511,13 @@ struct SecurityTransparentProxyFlowIdentityVerifier:
         case invalidProcessIdentifier
         case missingSecurityObject
         case securityFrameworkFailure(OSStatus)
+    }
+}
+
+private extension NSLock {
+    func withLock<Value>(_ operation: () throws -> Value) rethrows -> Value {
+        lock()
+        defer { unlock() }
+        return try operation()
     }
 }

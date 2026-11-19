@@ -141,7 +141,7 @@ final class DNSRuntimePolicyTests: XCTestCase {
         XCTAssertFalse(explicit.effectivePacketTunnelAllowsIPv6(
             for: dns, profileAllowsIPv6: true
         ))
-        XCTAssertTrue(DNSRuntimePolicy(ipv6: .enabled).effectivePacketTunnelAllowsIPv6(
+        XCTAssertFalse(DNSRuntimePolicy(ipv6: .enabled).effectivePacketTunnelAllowsIPv6(
             for: dns, profileAllowsIPv6: false
         ))
     }

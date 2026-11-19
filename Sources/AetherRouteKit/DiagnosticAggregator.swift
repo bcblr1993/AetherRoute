@@ -93,9 +93,15 @@ public final class DiagnosticAggregator: @unchecked Sendable {
         source.schedule(deadline: .now() + interval, repeating: interval)
         source.setEventHandler { [weak self] in self?.emit() }
         lock.lock()
+        if timer != nil {
+            lock.unlock()
+            source.resume()
+            source.cancel()
+            return
+        }
         timer = source
-        lock.unlock()
         source.resume()
+        lock.unlock()
     }
 
     public func stop() {

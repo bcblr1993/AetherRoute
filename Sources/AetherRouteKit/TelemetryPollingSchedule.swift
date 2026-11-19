@@ -47,8 +47,11 @@ public struct TelemetryPollingSchedule: Equatable, Sendable {
         public let checksRouteHealth: Bool
     }
 
+    private let cadence: TelemetryCadence
     private let telemetryInterval: Int?
-    private let healthInterval: Int
+    private let baseHealthInterval: Int
+    private var currentHealthInterval: Int
+    private var consecutiveHealthyChecks = 0
     private var untilTelemetry: Int?
     private var untilHealth: Int
 
@@ -56,10 +59,12 @@ public struct TelemetryPollingSchedule: Equatable, Sendable {
         cadence: TelemetryCadence,
         healthIntervalSeconds: Int = TunnelStartupTimingPolicy.automaticRouteHealthIntervalSeconds
     ) {
+        self.cadence = cadence
         telemetryInterval = cadence.telemetryIntervalSeconds
-        healthInterval = max(1, healthIntervalSeconds)
+        baseHealthInterval = max(1, healthIntervalSeconds)
+        currentHealthInterval = baseHealthInterval
         untilTelemetry = telemetryInterval.map { max(1, $0) }
-        untilHealth = healthInterval
+        untilHealth = currentHealthInterval
     }
 
     /// The next wait and what to do when it ends.
@@ -73,11 +78,46 @@ public struct TelemetryPollingSchedule: Equatable, Sendable {
             untilTelemetry = refreshesTelemetry ? max(1, interval) : left
         }
         let checksRouteHealth = untilHealth <= 0
-        if checksRouteHealth { untilHealth = healthInterval }
+        if checksRouteHealth { untilHealth = currentHealthInterval }
         return Step(
             sleepSeconds: sleep,
             refreshesTelemetry: refreshesTelemetry,
             checksRouteHealth: checksRouteHealth
         )
+    }
+
+    /// Backs off idle health probes (`healthOnly` / `statistics`) once the route
+    /// stays healthy for 3 consecutive checks (`10s -> 20s -> 40s -> 60s`) so an
+    /// unattended desktop host avoids excess background wakes and connections,
+    /// while resetting immediately back to `baseHealthInterval` on any failure.
+    public mutating func recordRouteHealthOutcome(
+        healthy: Bool,
+        maxIdleIntervalSeconds: Int = 60
+    ) {
+        guard cadence == .healthOnly || cadence == .statistics else {
+            consecutiveHealthyChecks = 0
+            currentHealthInterval = baseHealthInterval
+            return
+        }
+        if healthy {
+            consecutiveHealthyChecks = min(consecutiveHealthyChecks + 1, 16)
+            if consecutiveHealthyChecks >= 3 {
+                let effectiveMax = max(baseHealthInterval, maxIdleIntervalSeconds)
+                var nextInterval = baseHealthInterval
+                for _ in 0..<(consecutiveHealthyChecks - 2) {
+                    if nextInterval >= effectiveMax {
+                        nextInterval = effectiveMax
+                        break
+                    }
+                    nextInterval = nextInterval > (effectiveMax / 2) ? effectiveMax : nextInterval * 2
+                }
+                currentHealthInterval = nextInterval
+                untilHealth = currentHealthInterval
+            }
+        } else {
+            consecutiveHealthyChecks = 0
+            currentHealthInterval = baseHealthInterval
+            untilHealth = min(untilHealth, baseHealthInterval)
+        }
     }
 }

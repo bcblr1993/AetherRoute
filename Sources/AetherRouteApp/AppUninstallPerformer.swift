@@ -152,10 +152,10 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         return .completed
     }
 
-    /// Closes all windows, removes the application bundle and residual files,
-    /// and exits the process immediately without re-entering AppKit termination
-    /// hooks.
-    static func removeAppAndTerminate() {
+    /// Closes all windows, removes the application bundle and (when requested)
+    /// residual user data, and exits the process immediately without re-entering
+    /// AppKit termination hooks.
+    static func removeAppAndTerminate(deletingUserData: Bool = false) {
         guard !isTerminatingForUninstall else { return }
         isTerminatingForUninstall = true
 
@@ -163,7 +163,7 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         let pid = ProcessInfo.processInfo.processIdentifier
         let appPath = appURL.path
 
-        Self.logger.info("stage=uninstall removeAppAndTerminate begin path=\(appPath, privacy: .public)")
+        Self.logger.info("stage=uninstall removeAppAndTerminate begin path=\(appPath, privacy: .public) deletingUserData=\(deletingUserData, privacy: .public)")
 
         AppWindowManager.shared.isTerminating = true
         for window in NSApplication.shared.windows {
@@ -171,7 +171,9 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         }
         NSApplication.shared.hide(nil)
 
-        cleanHostResiduals()
+        if deletingUserData {
+            cleanHostResiduals()
+        }
 
         AppUninstaller.finalizeUninstall(
             appURL: appURL,
@@ -232,6 +234,7 @@ final class SystemExtensionDeactivator: NSObject, OSSystemExtensionRequestDelega
     private static var activeDeactivators: Set<SystemExtensionDeactivator> = []
     private var continuation: CheckedContinuation<UninstallStepOutcome, Never>?
     private var request: OSSystemExtensionRequest?
+    private var timeoutTask: Task<Void, Never>?
 
     static func deactivate(identifier: String) async -> UninstallStepOutcome {
         let deactivator = SystemExtensionDeactivator()
@@ -248,15 +251,23 @@ final class SystemExtensionDeactivator: NSObject, OSSystemExtensionRequestDelega
             )
             request.delegate = self
             self.request = request
+            self.timeoutTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                guard !Task.isCancelled else { return }
+                self?.finish(.completesAfterRestart)
+            }
             OSSystemExtensionManager.shared.submitRequest(request)
         }
     }
 
     private func finish(_ outcome: UninstallStepOutcome) {
+        guard let continuation else { return }
+        self.continuation = nil
+        timeoutTask?.cancel()
+        timeoutTask = nil
         request = nil
         Self.activeDeactivators.remove(self)
-        continuation?.resume(returning: outcome)
-        continuation = nil
+        continuation.resume(returning: outcome)
     }
 
     nonisolated func request(

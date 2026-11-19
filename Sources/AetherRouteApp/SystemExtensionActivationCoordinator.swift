@@ -9,6 +9,12 @@ protocol SystemExtensionActivating: AnyObject {
         identifier: String,
         onApprovalRequired: @escaping @MainActor @Sendable () -> Void
     ) async throws
+
+    func upgradeEnabledIfOutdated(identifier: String) async
+}
+
+extension SystemExtensionActivating {
+    func upgradeEnabledIfOutdated(identifier: String) async {}
 }
 
 @MainActor
@@ -21,6 +27,7 @@ final class SystemExtensionActivationCoordinator: NSObject,
         let continuation: CheckedContinuation<Void, Error>
         let onApprovalRequired: @MainActor @Sendable () -> Void
         let expectedVersion: SystemExtensionActivationPolicy.Version?
+        let isSilentSiblingUpgrade: Bool
     }
 
     private var pendingActivation: PendingActivation?
@@ -66,7 +73,8 @@ final class SystemExtensionActivationCoordinator: NSObject,
                 identifier: identifier,
                 continuation: continuation,
                 onApprovalRequired: onApprovalRequired,
-                expectedVersion: bundledVersion(identifier)
+                expectedVersion: bundledVersion(identifier),
+                isSilentSiblingUpgrade: false
             )
             guard pendingActivation?.expectedVersion != nil else {
                 submitActivation()
@@ -96,6 +104,42 @@ final class SystemExtensionActivationCoordinator: NSObject,
         }
     }
 
+    /// Silently upgrades an already-enabled sibling network extension when the app bundle carries
+    /// a newer build, without prompting or touching disabled/absent extensions.
+    func upgradeEnabledIfOutdated(identifier: String) async {
+        guard !activatedIdentifiers.contains(identifier),
+              pendingActivation == nil,
+              let expectedVersion = bundledVersion(identifier) else {
+            return
+        }
+        try? await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            pendingActivation = PendingActivation(
+                identifier: identifier,
+                continuation: continuation,
+                onApprovalRequired: {},
+                expectedVersion: expectedVersion,
+                isSilentSiblingUpgrade: true
+            )
+            let request = OSSystemExtensionRequest.propertiesRequest(
+                forExtensionWithIdentifier: identifier,
+                queue: .main
+            )
+            isCheckingProperties = true
+            propertiesTimeout = Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    try await Task.sleep(for: propertiesTimeoutDuration)
+                } catch { return }
+                guard submittedRequest === request, isCheckingProperties else {
+                    return
+                }
+                Self.logger.info("stage=siblingUpgrade properties timeout; skipping silent upgrade identifier=\(identifier, privacy: .public)")
+                finish(.success(()), recordActivated: false)
+            }
+            submit(request)
+        }
+    }
+
     nonisolated func request(
         _ request: OSSystemExtensionRequest,
         foundProperties properties: [OSSystemExtensionProperties]
@@ -115,7 +159,27 @@ final class SystemExtensionActivationCoordinator: NSObject,
         Task { @MainActor [weak self] in
             guard let self, submittedRequest === request,
                   isCheckingProperties,
-                  let expected = pendingActivation?.expectedVersion else { return }
+                  let pending = pendingActivation,
+                  let expected = pending.expectedVersion else { return }
+            if pending.isSilentSiblingUpgrade {
+                if SystemExtensionActivationPolicy.canReuse(
+                    expected: expected,
+                    installations: installations
+                ) {
+                    Self.logger.info("stage=siblingUpgrade reuse identifier=\(expected.identifier, privacy: .public) build=\(expected.build, privacy: .public)")
+                    finish(.success(()))
+                } else if SystemExtensionActivationPolicy.shouldSilentlyUpgradeSibling(
+                    expected: expected,
+                    installations: installations
+                ) {
+                    Self.logger.notice("stage=siblingUpgrade upgradingOutdatedEnabled identifier=\(expected.identifier, privacy: .public) build=\(expected.build, privacy: .public)")
+                    submitActivation()
+                } else {
+                    Self.logger.info("stage=siblingUpgrade skipped reason=notEnabledOrAwaitingApproval identifier=\(expected.identifier, privacy: .public)")
+                    finish(.success(()), recordActivated: false)
+                }
+                return
+            }
             if SystemExtensionActivationPolicy.canReuse(
                 expected: expected,
                 installations: installations
@@ -148,6 +212,11 @@ final class SystemExtensionActivationCoordinator: NSObject,
         Task { @MainActor [weak self] in
             guard let self,
                   submittedRequest === request, !isCheckingProperties else {
+                return
+            }
+            if pendingActivation?.isSilentSiblingUpgrade == true {
+                Self.logger.notice("stage=siblingUpgrade aborted reason=userApprovalRequested")
+                finish(.success(()), recordActivated: false)
                 return
             }
             installActiveRecheckObserverIfNeeded()
@@ -199,7 +268,11 @@ final class SystemExtensionActivationCoordinator: NSObject,
                 return
             }
             guard !isCheckingProperties else {
-                submitActivation()
+                if pendingActivation?.isSilentSiblingUpgrade == true {
+                    finish(.success(()), recordActivated: false)
+                } else {
+                    submitActivation()
+                }
                 return
             }
             switch result {
@@ -223,17 +296,22 @@ final class SystemExtensionActivationCoordinator: NSObject,
                 return
             }
             guard !isCheckingProperties else {
-                Self.logger.info("stage=properties failed; falling back to activation")
-                submitActivation()
+                if pendingActivation?.isSilentSiblingUpgrade == true {
+                    Self.logger.info("stage=siblingUpgrade properties failed; skipping silent upgrade")
+                    finish(.success(()), recordActivated: false)
+                } else {
+                    Self.logger.info("stage=properties failed; falling back to activation")
+                    submitActivation()
+                }
                 return
             }
             finish(.failure(SystemExtensionActivationError.framework(error)))
         }
     }
 
-    private func finish(_ result: Result<Void, Error>) {
+    private func finish(_ result: Result<Void, Error>, recordActivated: Bool = true) {
         guard let pendingActivation else { return }
-        if case .success = result {
+        if case .success = result, recordActivated {
             activatedIdentifiers.insert(pendingActivation.identifier)
         }
         self.pendingActivation = nil

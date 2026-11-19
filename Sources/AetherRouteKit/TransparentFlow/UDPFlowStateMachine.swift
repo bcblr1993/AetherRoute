@@ -180,6 +180,7 @@ public actor UDPFlowStateMachine {
     private let bridgeSourceAndSinkShareIdentity: Bool
     private let policy: UDPBatchPolicy
     private let idleTimeout: Duration?
+    private let onActivity: @Sendable () -> Void
     private let onTermination: FlowTerminationHandler
     private let sessionID = UUID()
 
@@ -203,6 +204,7 @@ public actor UDPFlowStateMachine {
         bridgeSink: any RustUDPSink,
         policy: UDPBatchPolicy = .strict,
         idleTimeout: Duration? = UDPFlowStateMachine.defaultIdleTimeout,
+        onActivity: @escaping @Sendable () -> Void = {},
         onTermination: @escaping FlowTerminationHandler = { _ in }
     ) throws {
         self.flow = flow
@@ -212,6 +214,7 @@ public actor UDPFlowStateMachine {
             ObjectIdentifier(bridgeSource) == ObjectIdentifier(bridgeSink)
         self.policy = try policy.validated()
         self.idleTimeout = idleTimeout
+        self.onActivity = onActivity
         self.onTermination = onTermination
     }
 
@@ -307,6 +310,7 @@ public actor UDPFlowStateMachine {
             finish()
         case let .success(.datagrams(datagrams)):
             lastActivityAt = .now
+            onActivity()
             guard validate(datagrams) else { return }
             issueBridgeWrite(datagrams)
         }
@@ -327,6 +331,7 @@ public actor UDPFlowStateMachine {
             finish()
         case let .success(.datagrams(datagrams)):
             lastActivityAt = .now
+            onActivity()
             guard validate(datagrams) else { return }
             issueFlowWrite(datagrams)
         }

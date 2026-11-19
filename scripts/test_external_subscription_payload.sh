@@ -26,13 +26,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 swiftc -parse-as-library \
-  "$ROOT/Sources/AetherRouteKit/ProfileImportValidator.swift" \
-  "$ROOT/Sources/AetherRouteKit/GeoSiteCategoryIndex.swift" \
-  "$ROOT/Sources/AetherRouteKit/EngineCapabilities.swift" \
-  "$ROOT/Sources/AetherRouteKit/ProfileConfigurationSummary.swift" \
-  "$ROOT/Sources/AetherRouteKit/AetherNode.swift" \
-  "$ROOT/Sources/AetherRouteKit/SubscriptionPayloadNormalizer.swift" \
-  "$ROOT/Sources/AetherRouteKit/ProfileSubscription.swift" \
+  "$ROOT"/Sources/AetherRouteKit/*.swift \
   "$ROOT/Tests/ExternalSubscriptions/main.swift" \
   -o "$TEMP_DIR/subscription_fixture_verifier"
 

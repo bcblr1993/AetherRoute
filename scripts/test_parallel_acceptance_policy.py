@@ -276,6 +276,131 @@ class AcceptancePolicyTests(unittest.TestCase):
                 self.save()
                 self.assertNotEqual(self.run_policy("evidence").returncode, 0)
 
+    def test_package_release_dmg_aborts_after_five_codesign_failures_before_notarization(self):
+        src_dir = self.base / "pkg-dmg-src"
+        app_contents = src_dir / "AetherRoute.app/Contents"
+        (app_contents / "MacOS").mkdir(parents=True)
+        (app_contents / "Resources").mkdir(parents=True)
+        (app_contents / "MacOS/AetherRoute").write_bytes(b"macho")
+        icon_bytes = (ROOT / "Config/App/AppIcon.icns").read_bytes()
+        (app_contents / "Resources/AppIcon.icns").write_bytes(icon_bytes)
+        (app_contents / "Info.plist").write_bytes(plistlib.dumps({
+            "CFBundleShortVersionString": "3.0.2",
+            "CFBundleVersion": self.identity["build"],
+            "AetherRouteReleaseChannel": "stable",
+        }))
+        candidate_dmg = self.base / "notarized-candidate.dmg"
+        subprocess.run(["hdiutil", "create", "-quiet", "-fs", "HFS+", "-format", "UDZO",
+                        "-srcfolder", str(src_dir), str(candidate_dmg)], check=True)
+        dmg_sha = hashlib.sha256(candidate_dmg.read_bytes()).hexdigest()
+        for record in self.records.values():
+            record["candidate_sha256"] = dmg_sha
+        self.save()
+
+        signing = self.base / "Signing.json"
+        signing.write_text(json.dumps({"developerIDIdentitySHA1": "0123456789ABCDEF0123456789ABCDEF01234567"}))
+
+        mock_bin = self.base / "mock-bin"
+        mock_bin.mkdir()
+        attempts_log = self.base / "codesign-attempts.log"
+        notary_sentinel = self.base / "notarytool-called"
+
+        def write_exe(name, body):
+            p = mock_bin / name
+            p.write_text("#!/bin/sh\nset -eu\n" + body + "\n")
+            p.chmod(0o755)
+
+        write_exe("codesign", f"""
+for arg in "$@"; do
+  if [ "$arg" = "--verify" ]; then exit 0; fi
+done
+echo attempt >> "{attempts_log}"
+exit 1
+""")
+        write_exe("xcrun", f"""
+if [ "${{1:-}}" = "notarytool" ]; then
+  touch "{notary_sentinel}"
+  exit 0
+fi
+exit 0
+""")
+        write_exe("spctl", "exit 0")
+        write_exe("syspolicy_check", "exit 0")
+        write_exe("sleep", "exit 0")
+
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
+        env["AETHERROUTE_PHYSICAL_RUNTIME_EVIDENCE"] = str(self.evidence)
+        env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
+        out_dir = self.base / "release-out"
+        result = subprocess.run(
+            ["sh", str(ROOT / "scripts/package_release_dmg.sh"), str(candidate_dmg),
+             str(signing), "AetherRoute-Notary", "3.0.2", self.identity["build"], str(out_dir)],
+            env=env, capture_output=True, text=True,
+        )
+        self.assertNotEqual(result.returncode, 0, "package_release_dmg.sh must fail when codesign exhausts 5 retries")
+        self.assertTrue(attempts_log.exists())
+        self.assertEqual(len(attempts_log.read_text().splitlines()), 5)
+        self.assertFalse(notary_sentinel.exists(), "notarytool must not run after codesign fails")
+
+    def test_orchestrator_exit_trap_stops_headless_vm_and_kills_process_tree(self):
+        mock_bin = self.base / "mock-vm-bin"
+        mock_bin.mkdir()
+        tart_log = self.base / "tart-calls.log"
+        grandchild_pid_file = self.base / "grandchild.pid"
+        signing = self.base / "Signing.json"
+        signing.write_text("{}")
+
+        tart_script = mock_bin / "tart"
+        tart_script.write_text(f"""#!/bin/sh
+echo "$@" >> "{tart_log}"
+case "${{1:-}}" in
+  list)
+    echo "local   macos27   40   stopped"
+    exit 0
+    ;;
+  run)
+    # Spawn a grandchild sleep to verify recursive process-tree cleanup
+    ( /bin/sleep 120 & echo $! > "{grandchild_pid_file}"; wait ) &
+    wait
+    exit 0
+    ;;
+  ip)
+    exit 0
+    ;;
+  stop)
+    exit 0
+    ;;
+esac
+exit 0
+""")
+        tart_script.chmod(0o755)
+        fast_sleep = mock_bin / "sleep"
+        fast_sleep.write_text("""#!/bin/sh
+if [ "${1:-}" = "120" ]; then exec /bin/sleep 120; fi
+/bin/sleep 0.05
+""")
+        fast_sleep.chmod(0o755)
+
+        env = {k: v for k, v in os.environ.items() if not k.startswith("AETHERROUTE_")}
+        env["AETHERROUTE_SIGNING_CONFIG"] = str(signing)
+        env["PATH"] = f"{mock_bin}:{env.get('PATH', '')}"
+        out_dir = self.base / "orch-out"
+        result = subprocess.run(
+            ["sh", str(ROOT / "scripts/run_release_acceptance_parallel.sh"),
+             "3.0.2", self.identity["build"], str(out_dir)],
+            env=env, capture_output=True, text=True, timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        calls = tart_log.read_text().splitlines() if tart_log.exists() else []
+        self.addCleanup(lambda: grandchild_pid_file.exists() and subprocess.run(
+            ["kill", "-9", grandchild_pid_file.read_text().strip()], capture_output=True))
+        self.assertTrue(any(c.startswith("stop macos27") for c in calls),
+                        f"Expected 'tart stop macos27' in exit trap, got: {calls}")
+        if grandchild_pid_file.exists():
+            gpid = int(grandchild_pid_file.read_text().strip())
+            alive = subprocess.run(["kill", "-0", str(gpid)], capture_output=True).returncode == 0
+            self.assertFalse(alive, f"Grandchild PID {gpid} survived orchestrator exit trap")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

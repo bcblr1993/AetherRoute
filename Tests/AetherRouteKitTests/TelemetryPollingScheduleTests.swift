@@ -81,4 +81,37 @@ struct TelemetryPollingScheduleTests {
         #expect(result.telemetry.isEmpty)
         #expect(result.health == [15, 30, 45])
     }
+
+    @Test("idle health-only schedule backs off after 3 healthy checks and resets immediately on failure")
+    func idleHealthOnlyScheduleBacksOffAfterHealthyStreakAndResetsOnFailure() {
+        var schedule = TelemetryPollingSchedule(cadence: .healthOnly, healthIntervalSeconds: 10)
+        // First 2 healthy steps stay at base 10s interval.
+        let s1 = schedule.next()
+        #expect(s1.sleepSeconds == 10)
+        #expect(s1.checksRouteHealth)
+        schedule.recordRouteHealthOutcome(healthy: true, maxIdleIntervalSeconds: 60)
+
+        let s2 = schedule.next()
+        #expect(s2.sleepSeconds == 10)
+        schedule.recordRouteHealthOutcome(healthy: true, maxIdleIntervalSeconds: 60)
+
+        let s3 = schedule.next()
+        #expect(s3.sleepSeconds == 10)
+        // 3rd consecutive healthy check steps interval up: 10 -> 20 -> 40 -> 60.
+        schedule.recordRouteHealthOutcome(healthy: true, maxIdleIntervalSeconds: 60)
+        #expect(schedule.next().sleepSeconds == 20)
+
+        schedule.recordRouteHealthOutcome(healthy: true, maxIdleIntervalSeconds: 60)
+        #expect(schedule.next().sleepSeconds == 40)
+
+        schedule.recordRouteHealthOutcome(healthy: true, maxIdleIntervalSeconds: 60)
+        #expect(schedule.next().sleepSeconds == 60)
+
+        schedule.recordRouteHealthOutcome(healthy: true, maxIdleIntervalSeconds: 60)
+        #expect(schedule.next().sleepSeconds == 60)
+
+        // Failure resets immediately back to 10s.
+        schedule.recordRouteHealthOutcome(healthy: false, maxIdleIntervalSeconds: 60)
+        #expect(schedule.next().sleepSeconds == 10)
+    }
 }

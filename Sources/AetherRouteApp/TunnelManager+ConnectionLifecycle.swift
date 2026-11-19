@@ -98,11 +98,12 @@ extension TunnelManager {
         let attemptID = UUID()
         connectionReadinessAttemptID = attemptID
         isVerifyingProxyReadiness = true
-        connectionQuality = .verifying
+        setConnectionQuality(.verifying)
         connectionStage = .readinessCheck
         Self.runtimeLogger.info(
             "stage=connectionReadiness begin groups=\(groups.count, privacy: .public)"
         )
+        Self.diagnosticLog.lifecycle("stage=connectionReadiness begin")
         connectionReadinessTask = Task { [weak self] in
             await self?.verifyConnectionReadiness(
                 groups: groups,
@@ -321,9 +322,10 @@ extension TunnelManager {
             automaticRouteFailureCounts = [:]
             readinessVerifiedConnectionID = connectionID
             isVerifyingProxyReadiness = false
-            connectionQuality = .verified
+            setConnectionQuality(.verified)
             startTelemetryPollingIfNeeded()
             Self.runtimeLogger.info("stage=connectionReadiness success")
+            Self.diagnosticLog.lifecycle("stage=connectionReadiness success")
         } catch is CancellationError {
             Self.runtimeLogger.info("stage=connectionReadiness cancelled")
         } catch {
@@ -345,6 +347,7 @@ extension TunnelManager {
             Self.runtimeLogger.error(
                 "stage=connectionReadiness degraded error=\(String(reflecting: error), privacy: .public)"
             )
+            Self.diagnosticLog.aggregate("stage=connectionReadiness degraded")
             // Readiness measures the selected route; it must not replace it.
             // A link outage can fail this probe while the provider recovers.
             // Switching GLOBAL to DIRECT here strands proxy-only destinations
@@ -359,7 +362,7 @@ extension TunnelManager {
             guard !Task.isCancelled,
                   providerConnectionID == connectionID,
                   connectionReadinessAttemptID == attemptID else { return }
-            connectionQuality = outcome.quality
+            setConnectionQuality(outcome.quality)
             if outcome.marksConnectionUsable {
                 readinessVerifiedConnectionID = connectionID
             }
@@ -392,13 +395,9 @@ extension TunnelManager {
         connectionReadinessAttemptID = nil
         connectionReadinessTask?.cancel()
         connectionReadinessTask = nil
-        Self.probeSessionLock.withLock {
-            Self.activeProbeSession?.getAllTasks { tasks in
-                tasks.forEach { $0.cancel() }
-            }
-        }
+        Self.refreshProbeSession()
         isVerifyingProxyReadiness = false
-        connectionQuality = .unknown
+        setConnectionQuality(.unknown)
     }
 
     func verifyCurrentRouteDataPlane() async throws {
@@ -406,7 +405,7 @@ extension TunnelManager {
         do {
             statusCode = try await currentRouteDataPlaneStatus()
         } catch {
-            // Give a second attempt with refreshed probe session before failing.
+            // Give a second attempt with refreshed probe connections before failing.
             Self.refreshProbeSession()
             statusCode = try await currentRouteDataPlaneStatus()
         }
@@ -445,41 +444,329 @@ extension TunnelManager {
         throw lastError
     }
 
-    /// Dynamic, self-healing session for data-plane probes.
-    ///
-    /// Preserves connection reuse during steady-state probing while allowing
-    /// safe recreation when network topology, sleep/wake, or interface routing changes.
-    private static let probeSessionLock = NSLock()
-    private static var activeProbeSession: URLSession?
+    private nonisolated static let probeQueue = DispatchQueue(
+        label: "com.aetherroute.route-data-plane-probe",
+        qos: .utility
+    )
+    private nonisolated static let probeConnectionsLock = NSLock()
+    nonisolated(unsafe) private static var activeProbeConnections: [UUID: NWConnection] = [:]
 
-    private static func resolveProbeSession(recreate: Bool = false) -> URLSession {
-        probeSessionLock.withLock {
-            if recreate, let existing = activeProbeSession {
-                existing.invalidateAndCancel()
-                activeProbeSession = nil
-            }
-            if let activeProbeSession {
-                return activeProbeSession
-            }
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            configuration.timeoutIntervalForRequest =
-                TimeInterval(TunnelStartupTimingPolicy
-                    .automaticRouteCandidateProbeTimeoutSeconds) + 5
-            configuration.timeoutIntervalForResource =
-                TimeInterval(TunnelStartupTimingPolicy
-                    .automaticRouteCandidateProbeTimeoutSeconds) + 10
-            configuration.waitsForConnectivity = false
-            configuration.httpMaximumConnectionsPerHost = 1
-            configuration.httpShouldSetCookies = false
-            let session = URLSession(configuration: configuration)
-            activeProbeSession = session
-            return session
+    nonisolated static func refreshProbeSession() {
+        let connections = probeConnectionsLock.withLock { () -> [NWConnection] in
+            let current = Array(activeProbeConnections.values)
+            activeProbeConnections.removeAll()
+            return current
+        }
+        for connection in connections {
+            connection.cancel()
         }
     }
 
-    static func refreshProbeSession() {
-        _ = resolveProbeSession(recreate: true)
+    /// Bounded pure-TCP HTTP/1.1 data-plane probe over `NWConnection`.
+    /// Avoids `URLSession` DNS SVCB/HTTPS record resolution (`alpn="h3,h2"`)
+    /// so HTTP/1.1 probes never silently upgrade to QUIC/UDP (`h3stream`).
+    enum RouteDataPlaneTCPProbe {
+        private struct ProbeResponse: Sendable {
+            let statusCode: Int
+            let location: String?
+        }
+
+        private final class ProbeAttempt: @unchecked Sendable {
+            let id = UUID()
+            private let lock = NSLock()
+            private let connection: NWConnection
+            private let requestData: Data
+            private var continuation: CheckedContinuation<ProbeResponse, Error>?
+            private var timeoutTimer: DispatchSourceTimer?
+            private var buffer = Data()
+            private var requestSent = false
+            private var completed = false
+
+            init(
+                connection: NWConnection,
+                requestData: Data,
+                continuation: CheckedContinuation<ProbeResponse, Error>
+            ) {
+                self.connection = connection
+                self.requestData = requestData
+                self.continuation = continuation
+            }
+
+            func start(timeout: TimeInterval) {
+                TunnelManager.probeConnectionsLock.withLock {
+                    TunnelManager.activeProbeConnections[id] = connection
+                }
+                let timer = DispatchSource.makeTimerSource(queue: TunnelManager.probeQueue)
+                let milliseconds = max(50, Int((timeout * 1_000).rounded(.up)))
+                timer.schedule(deadline: .now() + .milliseconds(milliseconds))
+                timer.setEventHandler { [weak self] in
+                    self?.finish(.failure(URLError(.timedOut)))
+                }
+                lock.withLock {
+                    guard !completed else {
+                        timer.setEventHandler {}
+                        timer.resume()
+                        timer.cancel()
+                        return
+                    }
+                    timeoutTimer = timer
+                    timer.resume()
+                }
+                connection.stateUpdateHandler = { [weak self] newState in
+                    self?.handleState(newState)
+                }
+                connection.start(queue: TunnelManager.probeQueue)
+            }
+
+            func cancel() {
+                finish(.failure(CancellationError()))
+            }
+
+            private func handleState(_ newState: NWConnection.State) {
+                switch newState {
+                case .ready:
+                    let shouldSend = lock.withLock { () -> Bool in
+                        guard !completed, !requestSent else { return false }
+                        requestSent = true
+                        return true
+                    }
+                    guard shouldSend else { return }
+                    connection.send(
+                        content: requestData,
+                        completion: .contentProcessed { [weak self] error in
+                            guard let self else { return }
+                            if let error {
+                                self.finish(.failure(error))
+                            } else {
+                                self.receiveNextChunk()
+                            }
+                        }
+                    )
+                case let .failed(error):
+                    finish(.failure(error))
+                case .cancelled:
+                    finish(.failure(CancellationError()))
+                default:
+                    break
+                }
+            }
+
+            private func receiveNextChunk() {
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 8_192) {
+                    [weak self] content, _, isComplete, error in
+                    guard let self else { return }
+                    enum ParseOutcome {
+                        case needMore
+                        case done(Result<ProbeResponse, Error>)
+                    }
+                    let outcome = self.lock.withLock { () -> ParseOutcome in
+                        guard !self.completed else {
+                            return .done(.failure(CancellationError()))
+                        }
+                        if let content, !content.isEmpty {
+                            let remaining = max(0, 16_384 - self.buffer.count)
+                            if remaining > 0 {
+                                self.buffer.append(content.prefix(remaining))
+                            }
+                        }
+                        let headerDelimiter = Data([0x0D, 0x0A, 0x0D, 0x0A])
+                        let headerRange = self.buffer.range(of: headerDelimiter)
+                        if headerRange != nil || isComplete || self.buffer.count >= 16_384 {
+                            let slice = headerRange.map { self.buffer.prefix(upTo: $0.upperBound) } ?? self.buffer[...]
+                            if let parsed = Self.parseHTTPHeader(Data(slice)) {
+                                return .done(.success(parsed))
+                            }
+                            if isComplete || headerRange != nil {
+                                return .done(.failure(TunnelManagerError.noResponsiveProxy))
+                            }
+                        }
+                        if let error {
+                            return .done(.failure(error))
+                        }
+                        if isComplete {
+                            return .done(.failure(TunnelManagerError.noResponsiveProxy))
+                        }
+                        return .needMore
+                    }
+                    switch outcome {
+                    case .needMore:
+                        self.receiveNextChunk()
+                    case let .done(result):
+                        self.finish(result)
+                    }
+                }
+            }
+
+            private func finish(_ result: Result<ProbeResponse, Error>) {
+                let (cont, timer) = lock.withLock {
+                    () -> (CheckedContinuation<ProbeResponse, Error>?, DispatchSourceTimer?) in
+                    guard !completed else { return (nil, nil) }
+                    completed = true
+                    let c = continuation
+                    let t = timeoutTimer
+                    continuation = nil
+                    timeoutTimer = nil
+                    return (c, t)
+                }
+                guard let cont else { return }
+                timer?.cancel()
+                TunnelManager.probeConnectionsLock.withLock {
+                    _ = TunnelManager.activeProbeConnections.removeValue(forKey: id)
+                }
+                connection.stateUpdateHandler = nil
+                connection.cancel()
+                cont.resume(with: result)
+            }
+
+            private static func parseHTTPHeader(_ data: Data) -> ProbeResponse? {
+                guard let text = String(data: data, encoding: .utf8)
+                    ?? String(data: data, encoding: .isoLatin1) else {
+                    return nil
+                }
+                let lines = text.components(separatedBy: "\r\n")
+                guard let statusLine = lines.first,
+                      statusLine.hasPrefix("HTTP/1.") else {
+                    return nil
+                }
+                let parts = statusLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+                guard parts.count >= 2, let code = Int(parts[1]), (100...599).contains(code) else {
+                    return nil
+                }
+                var location: String?
+                for line in lines.dropFirst() {
+                    if line.isEmpty { break }
+                    if let colon = line.firstIndex(of: ":") {
+                        let name = line[..<colon].trimmingCharacters(in: .whitespacesAndNewlines)
+                        if name.caseInsensitiveCompare("Location") == .orderedSame {
+                            location = line[line.index(after: colon)...]
+                                .trimmingCharacters(in: .whitespacesAndNewlines)
+                            break
+                        }
+                    }
+                }
+                return ProbeResponse(statusCode: code, location: location)
+            }
+        }
+
+        static func statusCode(
+            url: URL,
+            timeout: TimeInterval = 10,
+            maxRedirects: Int = 1
+        ) async throws -> Int {
+            var currentURL = url
+            var redirectsRemaining = max(0, maxRedirects)
+            let deadline = ContinuousClock.now.advanced(by: .milliseconds(max(50, Int((timeout * 1_000).rounded(.up)))))
+            while true {
+                let remaining = ContinuousClock.now.duration(to: deadline)
+                let remainingSeconds = max(0.05, Double(remaining.components.seconds) + Double(remaining.components.attoseconds) / 1e18)
+                guard remaining > .zero else {
+                    throw URLError(.timedOut)
+                }
+                let response = try await singleRequest(url: currentURL, timeout: remainingSeconds)
+                if [301, 302, 307, 308].contains(response.statusCode),
+                   redirectsRemaining > 0,
+                   let location = response.location,
+                   let resolved = URL(string: location, relativeTo: currentURL)?.absoluteURL,
+                   let nextScheme = resolved.scheme?.lowercased(),
+                   nextScheme == "http" || nextScheme == "https" {
+                    currentURL = resolved
+                    redirectsRemaining -= 1
+                    continue
+                }
+                return response.statusCode
+            }
+        }
+
+        private static func singleRequest(url: URL, timeout: TimeInterval) async throws -> ProbeResponse {
+            guard let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  let host = url.host,
+                  !host.isEmpty else {
+                throw TunnelManagerError.noResponsiveProxy
+            }
+            let rawPort = UInt16(url.port ?? (scheme == "https" ? 443 : 80))
+            guard let nwPort = NWEndpoint.Port(rawValue: rawPort) else {
+                throw TunnelManagerError.noResponsiveProxy
+            }
+            let tcpOptions = NWProtocolTCP.Options()
+            tcpOptions.enableFastOpen = false
+            tcpOptions.noDelay = true
+            let parameters: NWParameters
+            if scheme == "https" {
+                let tlsOptions = NWProtocolTLS.Options()
+                sec_protocol_options_add_tls_application_protocol(
+                    tlsOptions.securityProtocolOptions,
+                    "http/1.1"
+                )
+                sec_protocol_options_set_tls_server_name(
+                    tlsOptions.securityProtocolOptions,
+                    host
+                )
+                parameters = NWParameters(tls: tlsOptions, tcp: tcpOptions)
+            } else {
+                parameters = NWParameters(tls: nil, tcp: tcpOptions)
+            }
+
+            let path = url.path.isEmpty ? "/" : url.path
+            let pathAndQuery = url.query.map { "\(path)?\($0)" } ?? path
+            let isDefaultPort = (scheme == "https" && rawPort == 443) || (scheme == "http" && rawPort == 80)
+            let formattedHost = host.contains(":") ? "[\(host)]" : host
+            let hostHeader = isDefaultPort ? formattedHost : "\(formattedHost):\(rawPort)"
+            let requestText = "GET \(pathAndQuery) HTTP/1.1\r\n"
+                + "Host: \(hostHeader)\r\n"
+                + "User-Agent: AetherRoute/3.0\r\n"
+                + "Accept: */*\r\n"
+                + "Cache-Control: no-cache\r\n"
+                + "Connection: close\r\n\r\n"
+            let requestData = Data(requestText.utf8)
+            let connection = NWConnection(
+                host: NWEndpoint.Host(host),
+                port: nwPort,
+                using: parameters
+            )
+            let attemptBox = LockedAttemptBox()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let attempt = ProbeAttempt(
+                        connection: connection,
+                        requestData: requestData,
+                        continuation: continuation
+                    )
+                    attemptBox.set(attempt)
+                    if Task.isCancelled {
+                        attempt.cancel()
+                    } else {
+                        attempt.start(timeout: timeout)
+                    }
+                }
+            } onCancel: {
+                attemptBox.cancel()
+            }
+        }
+
+        private final class LockedAttemptBox: @unchecked Sendable {
+            private let lock = NSLock()
+            private var attempt: ProbeAttempt?
+            private var cancelled = false
+
+            func set(_ attempt: ProbeAttempt) {
+                let cancelNow = lock.withLock { () -> Bool in
+                    self.attempt = attempt
+                    return self.cancelled
+                }
+                if cancelNow {
+                    attempt.cancel()
+                }
+            }
+
+            func cancel() {
+                let target = lock.withLock { () -> ProbeAttempt? in
+                    self.cancelled = true
+                    return self.attempt
+                }
+                target?.cancel()
+            }
+        }
     }
 
     func currentRouteDataPlaneStatus(
@@ -496,32 +783,21 @@ extension TunnelManager {
         guard let url = components.url else {
             throw TunnelManagerError.noResponsiveProxy
         }
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = timeoutInterval
-        request.assumesHTTP3Capable = false
-        request.httpMethod = "GET"
 
-        let session = Self.resolveProbeSession()
         do {
-            let (_, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw TunnelManagerError.noResponsiveProxy
+            return try await RouteDataPlaneTCPProbe.statusCode(
+                url: url,
+                timeout: timeoutInterval
+            )
+        } catch let error where !(error is CancellationError) {
+            if let managerError = error as? TunnelManagerError, managerError == .noResponsiveProxy {
+                throw managerError
             }
-            return http.statusCode
-        } catch let urlError as URLError where urlError.code == .notConnectedToInternet
-            || urlError.code == .networkConnectionLost
-            || urlError.code == .cannotConnectToHost
-            || urlError.code == .dnsLookupFailed
-            || urlError.code == .timedOut {
-            // Path was stale or invalidated by interface/route change. Recreate session and retry once.
             Self.refreshProbeSession()
-            let freshSession = Self.resolveProbeSession()
-            let (_, response) = try await freshSession.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw TunnelManagerError.noResponsiveProxy
-            }
-            return http.statusCode
+            return try await RouteDataPlaneTCPProbe.statusCode(
+                url: url,
+                timeout: timeoutInterval
+            )
         }
     }
 
@@ -534,7 +810,7 @@ extension TunnelManager {
         providerConnectionID = nil
         readinessVerifiedConnectionID = nil
         readinessFailureStopPending = false
-        connectionQuality = .unknown
+        setConnectionQuality(.unknown)
         lastObservedProviderStatus = nil
     }
 
@@ -844,6 +1120,10 @@ extension TunnelManager {
     ) {
         Self.runtimeLogger.error(
             "stage=recordFailure context=\(String(describing: context), privacy: .public) error=\(String(reflecting: error), privacy: .public)"
+        )
+        let nsError = error as NSError
+        Self.diagnosticLog.failure(
+            "stage=recordFailure context=\(String(describing: context)) domain=\(nsError.domain) code=\(nsError.code)"
         )
         invalidateConnectionRequest()
         cancelConnectionWatchdog()

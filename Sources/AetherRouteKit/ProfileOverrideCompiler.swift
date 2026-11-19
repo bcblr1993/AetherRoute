@@ -215,6 +215,7 @@ public enum ProfileOverrideCompiler {
             nodes: document.nodeNames,
             nodeDialerProxies: document.nodeDialerProxies,
             groups: document.groups.map { ($0.name, $0.members) },
+            includeAllGroups: Set(document.groups.filter(\.includeAll).map(\.name)),
             nodeTokens: document.nodeTokens,
             yamlCloner: { targetName, newName, dialer in
                 document.clonedProxyLines(
@@ -375,6 +376,7 @@ public enum ProfileOverrideCompiler {
             nodes: [String],
             nodeDialerProxies: [String: String] = [:],
             groups: [(name: String, members: [String])],
+            includeAllGroups: Set<String> = [],
             nodeTokens: [String: String] = [:],
             yamlCloner: ((_ target: String, _ newName: String, _ dialer: String?) -> [String]?)? = nil,
             proxyItemIndent: Int = 2
@@ -518,10 +520,18 @@ public enum ProfileOverrideCompiler {
 
             var resolvedGroupMembers: [String: [String]] = [:]
             var resolvedGroupOrder: [String] = []
+            let includeAllExpandedMembers = visible + acceptedChains.map(\.name)
             for group in groups {
                 let originalTokens = group.members.map(YAMLDocument.quote)
                 let finalTokens = members(of: group.name, original: originalTokens)
-                resolvedGroupMembers[group.name] = finalTokens.map(YAMLDocument.unquote)
+                var memberNames = finalTokens.map(YAMLDocument.unquote)
+                if includeAllGroups.contains(group.name) {
+                    var seenMembers = Set(memberNames)
+                    for candidate in includeAllExpandedMembers where seenMembers.insert(candidate).inserted {
+                        memberNames.append(candidate)
+                    }
+                }
+                resolvedGroupMembers[group.name] = memberNames
                 resolvedGroupOrder.append(group.name)
             }
             for customGroup in emittedCustomGroups {
@@ -780,11 +790,19 @@ public enum ProfileOverrideCompiler {
             }
         }
         var groups = root["proxy-groups"] as? [[String: Any]] ?? []
+        let jsonIncludeAllNames = Set(groups.compactMap { entry -> String? in
+            guard let name = entry["name"] as? String else { return nil }
+            let inc = (entry["include-all"] as? Bool == true)
+                || (entry["include-all-proxies"] as? Bool == true)
+                || (entry["include-all-providers"] as? Bool == true)
+            return inc ? name : nil
+        })
         let plan = Plan(
             override: override,
             nodes: nodes,
             nodeDialerProxies: nodeDialerProxies,
-            groups: groups.map { (($0["name"] as? String) ?? "", ($0["proxies"] as? [String]) ?? []) }
+            groups: groups.map { (($0["name"] as? String) ?? "", ($0["proxies"] as? [String]) ?? []) },
+            includeAllGroups: jsonIncludeAllNames
         )
 
         let existingRules = root["rules"] as? [String] ?? []
@@ -978,7 +996,7 @@ struct YAMLDocument {
     private var existingNormalizedRules: Set<String> = []
     private var hostsHeader: Int?
     private var hostsItemIndent = 2
-    private var existingHostLineByDomain: [String: Int] = [:]
+    private var existingHostRangeByDomain: [String: Range<Int>] = [:]
 
     func filterUnseenRules(_ candidates: [String]) -> [String] {
         var result: [String] = []
@@ -1058,18 +1076,39 @@ struct YAMLDocument {
                 }
                 hostsHeader = section.start
                 var detectedIndent: Int?
+                var currentHostDomain: String?
+                var currentHostStart: Int?
+                func finishHostEntry(at upperBound: Int) {
+                    if let domain = currentHostDomain, let start = currentHostStart {
+                        var trimmedEnd = upperBound
+                        while trimmedEnd > start + 1 {
+                            let t = lines[trimmedEnd - 1].trimmingCharacters(in: .whitespaces)
+                            guard t.isEmpty || t.hasPrefix("#") else { break }
+                            trimmedEnd -= 1
+                        }
+                        existingHostRangeByDomain[domain] = start..<trimmedEnd
+                    }
+                    currentHostDomain = nil
+                    currentHostStart = nil
+                }
                 for index in (section.start + 1)..<end {
                     let line = lines[index]
                     let trimmed = Self.stripComment(line.trimmingCharacters(in: .whitespaces))
-                    guard !trimmed.isEmpty, !trimmed.hasPrefix("-") else { continue }
+                    guard !trimmed.isEmpty else { continue }
                     let indent = Self.indent(of: line)
-                    if detectedIndent == nil, indent > 0 {
+                    if detectedIndent == nil, indent > 0, !trimmed.hasPrefix("-") {
                         detectedIndent = indent
                     }
-                    if let (key, _) = Self.keyValue(trimmed) {
-                        existingHostLineByDomain[key.lowercased()] = index
+                    if let baseIndent = detectedIndent,
+                       indent == baseIndent,
+                       !trimmed.hasPrefix("-"),
+                       let (key, _) = Self.keyValue(trimmed) {
+                        finishHostEntry(at: index)
+                        currentHostDomain = key.lowercased()
+                        currentHostStart = index
                     }
                 }
+                finishHostEntry(at: end)
                 if let detectedIndent {
                     hostsItemIndent = detectedIndent
                 }
@@ -1145,7 +1184,7 @@ struct YAMLDocument {
         let dash = first.firstIndex(of: "-")!
         let body = first[first.index(after: dash)...].trimmingCharacters(in: .whitespaces)
         if body.hasPrefix("{") {
-            let text = range.map { lines[$0] }.joined(separator: " ")
+            let text = range.map { Self.stripComment(lines[$0]) }.joined(separator: " ")
             guard let open = text.firstIndex(of: "{"),
                   let close = text.lastIndex(of: "}") else { return ParsedItem() }
             return parseFlowMapping(String(text[text.index(after: open)..<close]))
@@ -1311,7 +1350,7 @@ struct YAMLDocument {
         guard let dash = first.firstIndex(of: "-") else { return nil }
         let body = first[first.index(after: dash)...].trimmingCharacters(in: .whitespaces)
         if body.hasPrefix("{") {
-            let text = range.map { lines[$0] }.joined(separator: " ")
+            let text = range.map { Self.stripComment(lines[$0]) }.joined(separator: " ")
             guard let open = text.firstIndex(of: "{"),
                   let close = text.lastIndex(of: "}") else { return nil }
             let content = String(text[text.index(after: open)..<close])
@@ -1406,9 +1445,12 @@ struct YAMLDocument {
             "\(hostPad)\(Self.quote(entry.domain)): \(Self.quote(entry.ip))"
         }
         let ruleLines = insertingRules.map { "\(rulePad)- \($0)" }
-        let overriddenHostLineIndices = Set(
-            insertingHosts.compactMap { existingHostLineByDomain[$0.domain] }
-        )
+        var overriddenHostLineIndices = Set<Int>()
+        for entry in insertingHosts {
+            if let range = existingHostRangeByDomain[entry.domain] {
+                overriddenHostLineIndices.formUnion(range)
+            }
+        }
         let firstMajorHeader = [proxiesHeader, groupsHeader, rulesHeader].compactMap { $0 }.min()
         var wroteHostsSection = hostsHeader != nil || hostLines.isEmpty
         var wroteRules = ruleLines.isEmpty

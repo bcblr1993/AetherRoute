@@ -188,6 +188,193 @@ public struct BypassPolicy: Codable, Equatable, Sendable {
         rules.filter { $0.kind == .ipv6CIDR }.map(\.value)
     }
 
+    /// High-priority `DOMAIN-SUFFIX,<domain>,DIRECT` rules synthesized for
+    /// Packet Tunnel (TUN) mode, where `NEDNSSettings.matchDomains = [""]`
+    /// captures all DNS queries and OS-level route exclusions apply only to IP CIDRs.
+    public var packetTunnelDomainRules: [CustomRule] {
+        domains.map { domain in
+            CustomRule(
+                kind: .domainSuffix,
+                value: domain,
+                target: .direct,
+                isEnabled: true
+            )
+        }
+    }
+
+    /// `fake-ip-filter` wildcard patterns corresponding to user bypass domains
+    /// so Fake-IP resolvers return real A/AAAA records for bypassed domains.
+    public var fakeIPFilterPatterns: [String] {
+        var patterns: [String] = []
+        var seen = Set<String>()
+        for domain in domains {
+            for candidate in [domain, "+.\(domain)", "*.\(domain)"] {
+                if seen.insert(candidate).inserted {
+                    patterns.append(candidate)
+                }
+            }
+        }
+        return patterns
+    }
+
+    /// Idempotently injects `packetTunnelDomainRules` and `fakeIPFilterPatterns`
+    /// into a runtime profile YAML or JSON string so TUN mode honors domain bypasses
+    /// even when DomesticRoutingOptimizer was bypassed or disabled.
+    public func applyingPacketTunnelDomainBypass(to profileYAML: String) -> String {
+        let bypassDomains = domains
+        guard !bypassDomains.isEmpty,
+              !profileYAML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return profileYAML
+        }
+
+        let ruleStrings = bypassDomains.map { "DOMAIN-SUFFIX,\($0),DIRECT" }
+        let filterStrings = fakeIPFilterPatterns
+
+        if profileYAML.first(where: { !$0.isWhitespace }) == "{" {
+            guard var root = (try? JSONSerialization.jsonObject(with: Data(profileYAML.utf8))) as? [String: Any] else {
+                return profileYAML
+            }
+            let existingRules = (root["rules"] as? [String]) ?? []
+            let existingNorm = Set(existingRules.map { $0.filter { !$0.isWhitespace }.uppercased() })
+            let missingRules = ruleStrings.filter {
+                !existingNorm.contains($0.filter { !$0.isWhitespace }.uppercased())
+            }
+            if !missingRules.isEmpty {
+                root["rules"] = missingRules + existingRules
+            }
+            if var dns = root["dns"] as? [String: Any] {
+                var filters = (dns["fake-ip-filter"] as? [String]) ?? []
+                let existingFilters = Set(filters.map { $0.lowercased() })
+                for pattern in filterStrings where !existingFilters.contains(pattern.lowercased()) {
+                    filters.append(pattern)
+                }
+                dns["fake-ip-filter"] = filters
+                root["dns"] = dns
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]),
+               let rendered = String(data: data, encoding: .utf8) {
+                return rendered
+            }
+            return profileYAML
+        }
+
+        var lines = ProfileRuntimeYAML.canonicalize(profileYAML).components(separatedBy: "\n")
+
+        // 1. Inject fake-ip-filter entries if a `dns:` section with `fake-ip-filter:` exists (or add under `dns:`)
+        if let dnsIndex = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "dns:" }) {
+            var dnsEnd = lines.count
+            for idx in (dnsIndex + 1)..<lines.count {
+                let line = lines[idx]
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty, !trimmed.hasPrefix("#"), !line.hasPrefix(" "), !line.hasPrefix("\t") {
+                    dnsEnd = idx
+                    break
+                }
+            }
+            var existingFilters = Set<String>()
+            var filterHeaderIdx: Int?
+            var filterFlowIdx: Int?
+            for idx in (dnsIndex + 1)..<dnsEnd {
+                let trimmed = lines[idx].trimmingCharacters(in: .whitespaces)
+                if trimmed == "fake-ip-filter:" {
+                    filterHeaderIdx = idx
+                } else if trimmed.hasPrefix("fake-ip-filter:"), trimmed.contains("[") {
+                    filterFlowIdx = idx
+                } else if filterHeaderIdx != nil, trimmed.hasPrefix("-") {
+                    let raw = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+                    existingFilters.insert(raw.lowercased())
+                }
+            }
+            let missingFilters = filterStrings.filter { !existingFilters.contains($0.lowercased()) }
+            if !missingFilters.isEmpty {
+                if let headerIdx = filterHeaderIdx {
+                    let inserted = missingFilters.map { "    - '\($0)'" }
+                    lines.insert(contentsOf: inserted, at: headerIdx + 1)
+                } else if filterFlowIdx == nil {
+                    var block = ["  fake-ip-filter:"]
+                    block.append(contentsOf: missingFilters.map { "    - '\($0)'" })
+                    lines.insert(contentsOf: block, at: dnsIndex + 1)
+                }
+            }
+        }
+
+        // 2. Inject DOMAIN-SUFFIX,<domain>,DIRECT rules near the top of `rules:` (after loopback protection if present)
+        var existingNormRules = Set<String>()
+        var rulesHeaderIndex: Int?
+        var rulesEmptyFlow = false
+        for (idx, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !line.hasPrefix(" "), !line.hasPrefix("\t") {
+                if trimmed == "rules:" {
+                    rulesHeaderIndex = idx
+                    continue
+                } else if trimmed.hasPrefix("rules:"), trimmed.dropFirst("rules:".count).trimmingCharacters(in: .whitespaces) == "[]" {
+                    rulesHeaderIndex = idx
+                    rulesEmptyFlow = true
+                    continue
+                }
+            }
+            if let rIdx = rulesHeaderIndex, idx > rIdx {
+                if !trimmed.isEmpty, !trimmed.hasPrefix("#"), !line.hasPrefix(" "), !line.hasPrefix("\t") {
+                    break
+                }
+                if trimmed.hasPrefix("-") {
+                    let raw = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+                    existingNormRules.insert(raw.filter { !$0.isWhitespace }.uppercased())
+                }
+            }
+        }
+
+        let missingRules = ruleStrings.filter {
+            !existingNormRules.contains($0.filter { !$0.isWhitespace }.uppercased())
+        }
+        guard !missingRules.isEmpty else {
+            var output = lines.joined(separator: "\n")
+            if !output.hasSuffix("\n") { output.append("\n") }
+            return output
+        }
+
+        let formattedRules = missingRules.map { "  - \($0)" }
+        if let rIdx = rulesHeaderIndex {
+            if rulesEmptyFlow {
+                lines[rIdx] = "rules:"
+                lines.insert(contentsOf: formattedRules, at: rIdx + 1)
+            } else {
+                var insertAt = rIdx + 1
+                let loopbackNorms = Set(DomesticRoutingOptimizer.loopbackProtectionRules.map {
+                    $0.filter { !$0.isWhitespace }.uppercased()
+                })
+                while insertAt < lines.count {
+                    let trimmed = lines[insertAt].trimmingCharacters(in: .whitespaces)
+                    if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                        insertAt += 1
+                        continue
+                    }
+                    guard trimmed.hasPrefix("-") else { break }
+                    let raw = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+                    if loopbackNorms.contains(raw.filter { !$0.isWhitespace }.uppercased()) {
+                        insertAt += 1
+                    } else {
+                        break
+                    }
+                }
+                lines.insert(contentsOf: formattedRules, at: insertAt)
+            }
+        } else {
+            lines.append("rules:")
+            lines.append(contentsOf: formattedRules)
+        }
+
+        var output = lines.joined(separator: "\n")
+        if !output.hasSuffix("\n") {
+            output.append("\n")
+        }
+        return output
+    }
+
     public func validated() throws -> Self {
         guard rules.count <= Self.maximumRules else {
             throw BypassPolicyError.tooManyRules(rules.count)
@@ -234,6 +421,37 @@ public struct BypassNetworkSettingsPlan: Equatable, Sendable {
     public let domainSuffixes: [String]
     public let ipv4Routes: [IPv4Route]
     public let ipv6Routes: [IPv6Route]
+
+    /// Infrastructure IPv4 networks always excluded from Transparent Proxy capture:
+    /// loopback, RFC1918 private, link-local, Tailscale/CGNAT, multicast (mDNS/SSDP/AirDrop), and limited broadcast.
+    public static let transparentProxyInfrastructureIPv4Exclusions: [(String, Int)] = [
+        ("127.0.0.0", 8),
+        ("10.0.0.0", 8),
+        ("172.16.0.0", 12),
+        ("192.168.0.0", 16),
+        ("169.254.0.0", 16),
+        ("100.64.0.0", 10),
+        ("224.0.0.0", 4),
+        ("255.255.255.255", 32),
+    ]
+
+    /// Infrastructure IPv6 networks always excluded from Transparent Proxy capture:
+    /// loopback, link-local, ULA, and multicast (`ff00::/8`).
+    public static let transparentProxyInfrastructureIPv6Exclusions: [(String, Int)] = [
+        ("::1", 128),
+        ("fe80::", 10),
+        ("fc00::", 7),
+        ("ff00::", 8),
+    ]
+
+    /// Apple forbids port 53 in address-based `NETransparentProxyNetworkSettings`
+    /// exclusions. Installing a whole-host (`port: .any`) exclusion for a proxy
+    /// server configured on port 53 would allow all user TCP/UDP traffic (e.g. 443)
+    /// to that IP to bypass the proxy completely; extension-originated egress on
+    /// port 53 is already bypassed by `TransparentProxySelfIdentityGuard`.
+    public static func shouldInstallAddressExclusionForUpstreamPort(_ port: UInt16) -> Bool {
+        port != 53 && port > 0
+    }
 
     public init(policy: BypassPolicy) throws {
         let policy = try policy.validated()

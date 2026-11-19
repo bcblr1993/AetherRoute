@@ -191,8 +191,34 @@ struct ContentView: View {
             else { return }
             selectSection(section)
         }
-        .onOpenURL { url in
-            tunnel.handleIncomingExternalURL(url)
+        .alert(
+            AppLocalization.inline(
+                "Confirm External URL Command",
+                chinese: "确认外部 URL 控制操作"
+            ),
+            isPresented: Binding(
+                get: { tunnel.pendingControlURLRequest != nil },
+                set: { presented in
+                    if !presented {
+                        tunnel.cancelPendingControlURLAction()
+                    }
+                }
+            ),
+            presenting: tunnel.pendingControlURLRequest
+        ) { _ in
+            Button(AppLocalization.inline("Allow", chinese: "允许")) {
+                tunnel.confirmPendingControlURLAction()
+            }
+            Button(AppLocalization.string("Cancel"), role: .cancel) {
+                tunnel.cancelPendingControlURLAction()
+            }
+        } message: { pending in
+            Text(
+                AppLocalization.inline(
+                    "An external link (\(pending.url.host ?? "aetherroute")) requested changing your connection state without an automation token. Allow this action?",
+                    chinese: "外部链接（\(pending.url.host ?? "aetherroute")）未携带自动化令牌，正在请求变更您的连接或配置状态，是否允许执行？"
+                )
+            )
         }
         .overlay(alignment: .top) {
             if isCommandPalettePresented && tunnel.hasAcceptedPrivacyDisclosure {
@@ -870,6 +896,7 @@ private struct OverviewView: View {
     @State private var isCloudSyncSheetPresented = false
     @State private var isEngineSetupPresented = false
     @State private var subscriptionURL = ""
+    @State private var overviewWindowDemand: TunnelManager.TelemetryDemand = .none
 
     var body: some View {
         ScrollView {
@@ -886,8 +913,8 @@ private struct OverviewView: View {
                 if showsTraffic {
                     TrafficCard(
                         isConnected: tunnel.isConnected,
-                        isRealtime: tunnel.isRealtimeTelemetryPreferred,
-                        isBackground: tunnel.isBackgroundTelemetryPreferred,
+                        isRealtime: overviewWindowDemand == .realtime,
+                        isBackground: overviewWindowDemand == .background,
                         subscriptionUsage: tunnel.effectiveActiveSubscriptionUsage,
                         telemetry: tunnel.telemetryViewModel
                     )
@@ -909,7 +936,11 @@ private struct OverviewView: View {
             ProfileCloudSyncSheet()
                 .environmentObject(tunnel)
         }
-        .telemetryDemand(source: "overview")
+        .telemetryDemand(source: "overview") { demand in
+            if overviewWindowDemand != demand {
+                overviewWindowDemand = demand
+            }
+        }
         .accessibilityIdentifier("overview-page")
     }
 
@@ -1578,7 +1609,7 @@ private struct OverviewAdaptiveRowLayout: Layout {
         let hint = subviews[1].sizeThatFits(.unspecified)
         // A zero-width probe asks for a minimum: answer with one line rather
         // than a label wrapped to nothing.
-        guard let proposedWidth = proposal.width, proposedWidth >= 1 else {
+        guard let proposedWidth = proposal.width, proposedWidth >= 1, proposedWidth.isFinite else {
             return CGSize(width: 0, height: max(label.height, hint.height, control.height))
         }
         let width = proposedWidth
@@ -2015,6 +2046,7 @@ private struct OverviewExitRow: View {
                         + CGFloat(max(0, filteredMembers.count - 1)) * AetherVisual.sMicro,
                     240
                 )
+                let unavailableSet = unsupportedNames
                 ScrollView {
                     LazyVStack(spacing: AetherVisual.sMicro) {
                         ForEach(filteredMembers, id: \.self) { member in
@@ -2022,6 +2054,7 @@ private struct OverviewExitRow: View {
                                 member: member,
                                 group: group,
                                 isSelected: member == selectedMember,
+                                isUnavailable: unavailableSet.contains(member),
                                 proxySummary: summaries[member],
                                 badgeLabel: OverviewExitDrawerPolicy.protocolBadgeLabel(
                                     for: member,
@@ -2106,10 +2139,10 @@ private struct OverviewExitRow: View {
         member: String,
         group: ProxyGroupConfigurationSummary,
         isSelected: Bool,
+        isUnavailable: Bool,
         proxySummary: ProxyConfigurationSummary?,
         badgeLabel: String?
     ) -> some View {
-        let isUnavailable = unsupportedNames.contains(member)
         let isSwitchingThis = pendingMember == member
         let isSelectionDisabled = pendingMember != nil
             || tunnel.proxySelectionRequests.contains(group.name)
@@ -2951,8 +2984,66 @@ private struct TrafficCard: View {
     }
 }
 
-/// Observe high-frequency updates only where the waveform is drawn.
+/// Observe high-frequency updates only when this window is actually visible.
 private struct LiveTrafficHistoryGraph: View {
+    let model: NetworkTelemetryViewModel
+    let isRealtime: Bool
+    let isBackground: Bool
+
+    var body: some View {
+        if isRealtime || isBackground {
+            LiveTrafficHistoryGraphActive(
+                model: model,
+                isRealtime: isRealtime,
+                isBackground: isBackground
+            )
+        } else {
+            LiveTrafficHistoryGraphFrozen(history: model.history)
+        }
+    }
+}
+
+private struct LiveTrafficHistoryGraphFrozen: View {
+    let history: TrafficHistory
+
+    var body: some View {
+        let anchor = history.samples.last?.date ?? .now
+        let samples = history.visible(at: anchor)
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            HStack {
+                Spacer(minLength: 0)
+                Text(LiveTrafficHistoryGraphActive.peakRate(samples).map {
+                    String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+                } ?? " ")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(AetherVisual.secondaryText)
+                .aetherLiveValue()
+            }
+            ZStack {
+                AetherTrafficMiniGraph(
+                    downloadSamples: samples.map(\.download),
+                    uploadSamples: samples.map(\.upload),
+                    samplePositions: samples.map { TrafficHistory.position(of: $0, at: anchor) },
+                    height: 80
+                )
+                if samples.count < 2 {
+                    Text(AppLocalization.string("Collecting traffic samples…"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+            }
+            HStack {
+                Text(AppLocalization.string("30 s ago"))
+                Spacer(minLength: AetherVisual.s2)
+                Text(AppLocalization.string("Now"))
+            }
+            .font(.caption)
+            .foregroundStyle(AetherVisual.secondaryText)
+        }
+    }
+}
+
+private struct LiveTrafficHistoryGraphActive: View {
     @ObservedObject var model: NetworkTelemetryViewModel
     let isRealtime: Bool
     let isBackground: Bool
@@ -2975,7 +3066,7 @@ private struct LiveTrafficHistoryGraph: View {
             // own line so it never covers the curve.
             HStack {
                 Spacer(minLength: 0)
-                Text(peakRate(model.history.visible(at: windowEnd(at: .now, lastSample: lastSample))).map {
+                Text(Self.peakRate(model.history.visible(at: windowEnd(at: .now, lastSample: lastSample))).map {
                     String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
                 } ?? " ")
                 .font(.caption2.monospacedDigit())
@@ -3029,7 +3120,7 @@ private struct LiveTrafficHistoryGraph: View {
             : (lastSample ?? date)
     }
 
-    private func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
+    fileprivate static func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
         let peak = samples.map { max($0.download, $0.upload) }.max() ?? 0
         guard samples.count > 1, peak >= 1 else { return nil }
         return formattedRate(UInt64(peak))

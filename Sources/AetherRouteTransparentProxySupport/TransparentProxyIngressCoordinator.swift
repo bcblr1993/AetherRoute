@@ -178,6 +178,13 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
     private let registry: TransparentProxySessionRegistry
     private let sessionFactory: TransparentProxyIngressSessionFactory
     private let failureObserver: FailureObserver
+    private let rollbackBarrier = RollbackBarrierTracker()
+
+    public func waitForPendingRollbacks(
+        completion: @escaping @Sendable () -> Void
+    ) {
+        rollbackBarrier.notifyWhenDrained(completion)
+    }
 
     public convenience init(
         resourceBudget: FlowResourceBudget,
@@ -224,7 +231,13 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
 
         let resourceLease: FlowResourceLease
         do {
-            resourceLease = try resourceBudget.lease(for: .tcp)
+            if let directLease = try? resourceBudget.lease(for: .tcp) {
+                resourceLease = directLease
+            } else if registry.evictOldestUDPSession() {
+                resourceLease = try resourceBudget.lease(for: .tcp)
+            } else {
+                throw FlowResourceBudgetError.exhausted
+            }
         } catch {
             return rollbackTCP(
                 .resourceAdmission,
@@ -325,7 +338,13 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
 
         let resourceLease: FlowResourceLease
         do {
-            resourceLease = try resourceBudget.lease(for: .udp)
+            if let directLease = try? resourceBudget.lease(for: .udp) {
+                resourceLease = directLease
+            } else if registry.evictOldestUDPSession() {
+                resourceLease = try resourceBudget.lease(for: .udp)
+            } else {
+                throw FlowResourceBudgetError.exhausted
+            }
         } catch {
             return rollbackUDP(
                 .resourceAdmission,
@@ -458,6 +477,7 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
         } else {
             rustCleanup = nil
         }
+        rollbackBarrier.enter()
         let rollback = TransparentProxyIngressRollback(
             openApple: { completion in
                 components.opening.open(completion: completion)
@@ -467,7 +487,10 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
             },
             cancelRustAndDestroy: rustCleanup,
             resourceLease: resourceLease,
-            sourceLease: nil
+            sourceLease: nil,
+            onDrained: { [rollbackBarrier] in
+                rollbackBarrier.leave()
+            }
         )
         rollback.start()
         return TransparentProxyIngressClaimResult(failurePoint: failurePoint)
@@ -490,6 +513,7 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
         } else {
             rustCleanup = nil
         }
+        rollbackBarrier.enter()
         let rollback = TransparentProxyIngressRollback(
             openApple: { completion in
                 components.opening.open(completion: completion)
@@ -499,7 +523,10 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
             },
             cancelRustAndDestroy: rustCleanup,
             resourceLease: resourceLease,
-            sourceLease: sourceLease
+            sourceLease: sourceLease,
+            onDrained: { [rollbackBarrier] in
+                rollbackBarrier.leave()
+            }
         )
         rollback.start()
         return TransparentProxyIngressClaimResult(failurePoint: failurePoint)
@@ -507,6 +534,39 @@ public final class TransparentProxyIngressCoordinator: @unchecked Sendable {
 
     private enum IngressSourceError: Error {
         case invalidEndpoint
+    }
+}
+
+private final class RollbackBarrierTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var activeCount = 0
+    private var drainWaiters: [@Sendable () -> Void] = []
+
+    func enter() {
+        lock.withLock { activeCount += 1 }
+    }
+
+    func leave() {
+        let callbacks = lock.withLock { () -> [@Sendable () -> Void] in
+            activeCount = max(0, activeCount - 1)
+            guard activeCount == 0, !drainWaiters.isEmpty else { return [] }
+            defer { drainWaiters.removeAll(keepingCapacity: false) }
+            return drainWaiters
+        }
+        callbacks.forEach { $0() }
+    }
+
+    func notifyWhenDrained(_ completion: @escaping @Sendable () -> Void) {
+        let immediate = lock.withLock { () -> Bool in
+            if activeCount == 0 {
+                return true
+            }
+            drainWaiters.append(completion)
+            return false
+        }
+        if immediate {
+            completion()
+        }
     }
 }
 
@@ -527,6 +587,7 @@ private final class TransparentProxyIngressRollback: @unchecked Sendable {
     private let openApple: OpenApple
     private let cancelAppleAndDrain: CancelAppleAndDrain
     private let cancelRustAndDestroy: CancelRustAndDestroy?
+    private let onDrained: @Sendable () -> Void
     private let lock = NSLock()
     private var resourceLease: FlowResourceLease?
     private var sourceLease: SyntheticSourceEndpointLease?
@@ -541,13 +602,15 @@ private final class TransparentProxyIngressRollback: @unchecked Sendable {
         cancelAppleAndDrain: @escaping CancelAppleAndDrain,
         cancelRustAndDestroy: CancelRustAndDestroy?,
         resourceLease: FlowResourceLease?,
-        sourceLease: SyntheticSourceEndpointLease?
+        sourceLease: SyntheticSourceEndpointLease?,
+        onDrained: @escaping @Sendable () -> Void = {}
     ) {
         self.openApple = openApple
         self.cancelAppleAndDrain = cancelAppleAndDrain
         self.cancelRustAndDestroy = cancelRustAndDestroy
         self.resourceLease = resourceLease
         self.sourceLease = sourceLease
+        self.onDrained = onDrained
     }
 
     func start() {
@@ -608,17 +671,20 @@ private final class TransparentProxyIngressRollback: @unchecked Sendable {
         defer { sourceLease = nil }
         return ReleasedResources(
             resourceLease: resourceLease,
-            sourceLease: sourceLease
+            sourceLease: sourceLease,
+            onDrained: onDrained
         )
     }
 
     private struct ReleasedResources {
         let resourceLease: FlowResourceLease?
         let sourceLease: SyntheticSourceEndpointLease?
+        let onDrained: @Sendable () -> Void
 
         func release() {
             sourceLease?.release()
             resourceLease?.release()
+            onDrained()
         }
     }
 }

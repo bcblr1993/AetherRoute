@@ -14,10 +14,18 @@ outputs/
 work/
 .codex-validation-tools/
 
-# Local configuration, signing material, and distributable artifacts.
+# Local configuration, signing material, user profiles, and distributable artifacts.
 .env
 .env.*
 !.env.example
+*.aetherroute
+*.conf
+*.yaml
+*.yml
+!project.yml
+!.github/**
+!Tests/**/*.yaml
+!Tests/**/*.yml
 *.cer
 *.dmg
 *.mobileprovision
@@ -26,6 +34,9 @@ work/
 *.provisionprofile
 AetherRouteSigning.xcconfig
 Config/Signing.json
+scratch/
+.claude/
+.codex/
 
 # Owner-operated distribution secrets and mutable state never belong in Git.
 Services/DistributionService/private/

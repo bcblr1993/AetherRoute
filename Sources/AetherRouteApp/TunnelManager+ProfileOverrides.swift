@@ -20,8 +20,8 @@ extension TunnelManager {
     }
 
     var standaloneChainedProxyGroupName: String? {
-        guard let chained = activeProfile?.overrides?.chainedProxies,
-              chained.contains(where: { ($0.parentGroup ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let chained = (activeProfile?.overrides?.chainedProxies ?? []) + loadGlobalProfileOverride().chainedProxies
+        guard chained.contains(where: { ($0.parentGroup ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
         else { return nil }
         return activeOverrideResult()?.standaloneChainedProxyGroupName
     }
@@ -30,7 +30,7 @@ extension TunnelManager {
     /// group's members and the diagnostics, for the editor and the cards.
     func activeOverrideResult(_ overrides: ProfileOverride? = nil) -> ProfileOverrideResult? {
         guard let activeProfile else { return nil }
-        return ProfileOverrideCompiler.apply(overrides ?? activeProfile.overrides, to: activeProfile.yaml)
+        return effectiveOverrideResult(for: activeProfile, overrides: overrides)
     }
 
     /// Every node name in the active profile, in order, for pickers and

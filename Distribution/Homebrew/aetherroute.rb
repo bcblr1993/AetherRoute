@@ -1,17 +1,17 @@
 cask "aetherroute" do
   arch arm: "arm64"
 
-  version "1.0.1"
-  sha256 "58608a9674d141f86e09083bd701c3aeeef93bbdd9cbfa693f43ab1e931e3a30"
+  version "3.0.3,2026111902"
+  sha256 "5d36f1d37bdf92329149f2c2eb83e202e3b94c256b929ad385a3d0517ae19178"
 
-  url "https://github.com/bcblr1993/AetherRoute/releases/download/v1.0.1-build-2026091301/AetherRoute-1.0.1-build-2026091301-#{arch}-Notarized-Test-Normal-Core.dmg"
+  url "https://github.com/bcblr1993/AetherRoute/releases/download/v#{version.csv.first}/AetherRoute-#{version.csv.first}-build-#{version.csv.second}-#{arch}.dmg"
   name "AetherRoute"
   desc "Native, private routing client engineered exclusively for Apple silicon macOS"
   homepage "https://www.aethernative.com/"
 
   livecheck do
-    url "https://www.aethernative.com/releases/"
-    regex(/AetherRoute\s+v?(\d+(?:\.\d+)+)/i)
+    url "https://aethernative.com/apps/aetherroute/appcast.xml"
+    strategy :sparkle
   end
 
   auto_updates true
@@ -22,13 +22,15 @@ cask "aetherroute" do
 
   uninstall quit: [
               "com.aetherroute.desktop",
-              "com.aetherroute.desktop.packet-tunnel",
+              "com.aetherroute.desktop.tunnel",
               "com.aetherroute.desktop.transparent-proxy",
             ]
 
   zap trash: [
     "~/Library/Application Support/AetherRoute",
     "~/Library/Caches/com.aetherroute.desktop",
+    "~/Library/Containers/com.aetherroute.desktop",
+    "~/Library/Group Containers/group.com.aetherroute.desktop",
     "~/Library/HTTPStorages/com.aetherroute.desktop",
     "~/Library/Preferences/com.aetherroute.desktop.plist",
     "~/Library/Saved Application State/com.aetherroute.desktop.savedState",

@@ -32,13 +32,32 @@ public struct ActiveProfile: Codable, Equatable, Sendable {
         self.overrides = overrides?.isEmpty == true ? nil : overrides
     }
 
-    /// The profile as it runs: its text with the overrides applied. Node
-    /// choices and other settings stay bound to `yaml`, the text the
-    /// provider sent, so changing an override never loses them.
+    /// The profile as it runs: its text with per-profile overrides and base
+    /// `dialer-proxy` cycle stripping applied. Node choices and other settings
+    /// stay bound to `yaml`, the text the provider sent, so changing an override
+    /// never loses them.
     public var runtimeYAML: String {
+        effectiveRuntimeYAML(globalOverride: nil)
+    }
+
+    /// Unified runtime compilation entrypoint combining canonicalization,
+    /// `globalOverride`, per-profile `overrides`, external rule providers, and
+    /// mandatory `dialer-proxy` cycle detection/stripping even when overrides are nil.
+    public func effectiveRuntimeYAML(
+        globalOverride: ProfileOverride?,
+        externalRuleProviders: [RuleProviderMetadata] = [],
+        ruleProviderCacheDirectoryURL: URL? = nil,
+        externalRules: [String] = []
+    ) -> String {
         let text = ProfileRuntimeYAML.canonicalize(yaml)
-        guard let overrides else { return text }
-        return ProfileOverrideCompiler.apply(overrides, to: text).yaml
+        return ProfileOverrideCompiler.apply(
+            overrides,
+            globalOverride: globalOverride,
+            externalRuleProviders: externalRuleProviders,
+            ruleProviderCacheDirectoryURL: ruleProviderCacheDirectoryURL,
+            externalRules: externalRules,
+            to: text
+        ).yaml
     }
 
     /// The same profile with other overrides (nil clears them).

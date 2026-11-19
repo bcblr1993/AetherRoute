@@ -330,6 +330,67 @@ public struct RoutingResourceStore: Sendable {
         }
     }
 
+    /// Resolves required routing resources inside a running Network Extension
+    /// during `.reloadProfile`, installing any inline resources carried in the
+    /// reload payload and falling back to the signed host `.app`'s bundled
+    /// databases when a newly required database is absent from `root`'s container.
+    public func resolveReloadResourceSnapshot(
+        for profileYAML: String,
+        inlineResources: [RoutingResourceKind: Data]? = nil,
+        extensionBundle: Bundle = .main,
+        now: Date = .now,
+        fileManager: FileManager = .default
+    ) throws -> [RoutingResourceKind: Data] {
+        if let inlineResources {
+            for (kind, data) in inlineResources where !data.isEmpty {
+                _ = try installUserProvided(
+                    data: data,
+                    kind: kind,
+                    installedAt: now,
+                    fileManager: fileManager
+                )
+            }
+        }
+        let requirements = ProfileConfigurationInspector
+            .inspect(yaml: profileYAML)
+            .requiredRoutingResources
+        let hasMissing = requirements.contains { kind in
+            !status(for: kind, now: now, fileManager: fileManager).isUsableForConnection
+        }
+        if hasMissing,
+           let bundledDir = BundledRoutingResources.extensionFallbackDirectoryURL(
+               extensionBundle: extensionBundle
+           ) {
+            _ = try? BundledRoutingResources(directoryURL: bundledDir)
+                .installMissingResources(for: profileYAML, in: self)
+        }
+        return try launchResourceSnapshot(
+            for: profileYAML,
+            now: now,
+            fileManager: fileManager
+        )
+    }
+
+    /// Returns lowercase SHA-256 digests of usable routing databases currently
+    /// installed in this store.
+    public func usableResourceDigests(
+        now: Date = .now,
+        fileManager: FileManager = .default
+    ) -> [RoutingResourceKind: String] {
+        var digests: [RoutingResourceKind: String] = [:]
+        for kind in RoutingResourceKind.allCases {
+            switch status(for: kind, now: now, fileManager: fileManager) {
+            case let .ready(record):
+                digests[kind] = record.sha256
+            case let .stale(record) where RoutingResourceStatus.stale(record).isUsableForConnection:
+                digests[kind] = record.sha256
+            default:
+                break
+            }
+        }
+        return digests
+    }
+
     private func commit(
         data: Data,
         kind: RoutingResourceKind,
@@ -1393,6 +1454,143 @@ public enum RoutingResourceError: LocalizedError, Equatable, Sendable {
             "The routing-resource server returned HTTP \(status)."
         case let .responseTooLarge(bytes):
             "The routing-resource response is too large (\(bytes) bytes)."
+        }
+    }
+}
+
+/// Bounded, disk-backed chunk assembler for staging routing databases into a
+/// running root-context Network System Extension without holding the full
+/// database buffer in memory across IPC messages.
+public final class RoutingResourceChunkStagingReceiver: @unchecked Sendable {
+    private struct ActiveTransfer {
+        let transferID: UUID
+        let kind: RoutingResourceKind
+        let expectedSHA256: String
+        let totalBytes: Int
+        let totalChunks: UInt32
+        var nextChunkIndex: UInt32
+        var receivedBytes: Int
+        let partFileURL: URL
+    }
+
+    private let lock = NSLock()
+    private let storeProvider: @Sendable () throws -> RoutingResourceStore
+    private var activeTransfers: [RoutingResourceKind: ActiveTransfer] = [:]
+
+    public init(store: RoutingResourceStore) {
+        self.storeProvider = { store }
+    }
+
+    public init(storeProvider: @escaping @Sendable () throws -> RoutingResourceStore) {
+        self.storeProvider = storeProvider
+    }
+
+    public func installedDigests(
+        now: Date = .now,
+        fileManager: FileManager = .default
+    ) -> [RoutingResourceKind: String] {
+        guard let store = try? storeProvider() else { return [:] }
+        return store.usableResourceDigests(now: now, fileManager: fileManager)
+    }
+
+    public func receive(
+        _ chunk: RoutingResourceTransferChunk,
+        fileManager: FileManager = .default
+    ) throws {
+        let normalizedSHA = chunk.expectedSHA256.lowercased()
+        guard normalizedSHA.utf8.count == 64,
+              normalizedSHA.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
+              chunk.totalChunks > 0,
+              chunk.chunkIndex < chunk.totalChunks,
+              !chunk.data.isEmpty,
+              chunk.data.count <= RoutingResourceTransferChunk.maximumChunkDataBytes,
+              chunk.totalBytes > 0,
+              chunk.totalBytes <= chunk.kind.maximumBytes else {
+            throw ProxySelectionProviderMessageError.malformed
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        let store = try storeProvider()
+        let stagingDir = store.applicationSupportDirectory.appendingPathComponent(
+            "RoutingResourcesStaging",
+            isDirectory: true
+        )
+        try fileManager.createDirectory(
+            at: stagingDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let partURL = stagingDir.appendingPathComponent("\(chunk.kind.rawValue).part", isDirectory: false)
+
+        if chunk.chunkIndex == 0 {
+            try? fileManager.removeItem(at: partURL)
+            guard chunk.data.count <= chunk.totalBytes else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            try chunk.data.write(to: partURL, options: [.atomic])
+            try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: partURL.path)
+            activeTransfers[chunk.kind] = ActiveTransfer(
+                transferID: chunk.transferID,
+                kind: chunk.kind,
+                expectedSHA256: normalizedSHA,
+                totalBytes: chunk.totalBytes,
+                totalChunks: chunk.totalChunks,
+                nextChunkIndex: 1,
+                receivedBytes: chunk.data.count,
+                partFileURL: partURL
+            )
+        } else {
+            guard var state = activeTransfers[chunk.kind],
+                  state.transferID == chunk.transferID,
+                  state.expectedSHA256 == normalizedSHA,
+                  state.totalBytes == chunk.totalBytes,
+                  state.totalChunks == chunk.totalChunks,
+                  state.nextChunkIndex == chunk.chunkIndex,
+                  state.receivedBytes + chunk.data.count <= state.totalBytes else {
+                activeTransfers.removeValue(forKey: chunk.kind)
+                try? fileManager.removeItem(at: partURL)
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            let handle = try FileHandle(forWritingTo: state.partFileURL)
+            do {
+                try handle.seekToEnd()
+                try handle.write(contentsOf: chunk.data)
+                try handle.close()
+            } catch {
+                try? handle.close()
+                activeTransfers.removeValue(forKey: chunk.kind)
+                try? fileManager.removeItem(at: partURL)
+                throw error
+            }
+            state.nextChunkIndex += 1
+            state.receivedBytes += chunk.data.count
+            activeTransfers[chunk.kind] = state
+        }
+
+        if let completed = activeTransfers[chunk.kind],
+           completed.nextChunkIndex == completed.totalChunks {
+            defer {
+                activeTransfers.removeValue(forKey: chunk.kind)
+                try? fileManager.removeItem(at: completed.partFileURL)
+            }
+            guard completed.receivedBytes == completed.totalBytes else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            let assembled = try Data(contentsOf: completed.partFileURL, options: [.mappedIfSafe])
+            guard assembled.count == completed.totalBytes else {
+                throw ProxySelectionProviderMessageError.malformed
+            }
+            let actualSHA = SHA256.hash(data: assembled).map { String(format: "%02x", $0) }.joined()
+            guard actualSHA == completed.expectedSHA256 else {
+                throw RoutingResourceError.checksumMismatch(chunk.kind)
+            }
+            _ = try store.installUserProvided(
+                data: assembled,
+                kind: chunk.kind,
+                fileManager: fileManager
+            )
         }
     }
 }

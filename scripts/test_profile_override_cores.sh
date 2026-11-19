@@ -16,24 +16,7 @@ trap cleanup EXIT HUP INT TERM
 
 KIT="$ROOT/Sources/AetherRouteKit"
 swiftc -parse-as-library \
-  "$KIT/ProfileImportValidator.swift" \
-  "$KIT/AetherNode.swift" \
-  "$KIT/ProfileOverride.swift" \
-  "$KIT/TunnelConfiguration.swift" \
-  "$KIT/LocalProxySettings.swift" \
-  "$KIT/ProfileOverrideCompiler.swift" \
-  "$KIT/NodeRegion.swift" \
-  "$KIT/GeoSiteCategoryIndex.swift" \
-  "$KIT/EngineCapabilities.swift" \
-  "$KIT/ProfileConfigurationSummary.swift" \
-  "$KIT/ProxySelectionMode.swift" \
-  "$KIT/CustomRule.swift" \
-  "$KIT/AppLog.swift" \
-  "$KIT/SubscriptionUsage.swift" \
-  "$KIT/ProfileRuntimeYAML.swift" \
-  "$KIT/ProxyProviderEngine.swift" \
-  "$KIT/DomesticRoutingOptimizer.swift" \
-  "$KIT/RuleProviderEngine.swift" \
+  "$KIT"/*.swift \
   "$ROOT/Tests/ProfileOverride/main.swift" \
   -o "$TEMP_DIR/profile_override_fixture_generator"
 "$TEMP_DIR/profile_override_fixture_generator" "$TEMP_DIR/profiles"

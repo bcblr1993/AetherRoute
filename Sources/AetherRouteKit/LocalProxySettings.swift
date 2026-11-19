@@ -95,7 +95,9 @@ public struct LocalProxySettings: Codable, Equatable, Sendable {
             if trimmed.isEmpty {
                 continue
             }
-            if trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) != nil {
+            if trimmed.hasPrefix("-")
+                || trimmed.rangeOfCharacter(from: .whitespacesAndNewlines) != nil
+                || trimmed.contains("\0") {
                 throw LocalProxySettingsError.invalidBypassDomain(rawDomain)
             }
             let lower = trimmed.lowercased()

@@ -36,7 +36,9 @@ def audit(app, team, certificate):
             ('AetherRouteLicenseServiceURL', 'AetherRouteUpdateManifestURL', 'AetherRouteDistributionSigningPublicKey')):
         raise ValueError('Independent update or licensing configuration is present.')
     forbidden = [p.relative_to(app).as_posix() for p in app.rglob('*')
-                 if 'sparkle' in p.name.lower() or p.suffix.lower() in ('.aetherroute', '.yaml', '.conf')]
+                 if 'sparkle' in p.name.lower()
+                 or (p.suffix.lower() in ('.aetherroute', '.yaml', '.yml', '.conf')
+                     and not (p.parent.name == 'Metadata.appintents' and p.name.lower().endswith('.ssu.yaml')))]
     if forbidden:
         raise ValueError('Forbidden resources: ' + ', '.join(forbidden))
     bundle_id = info['CFBundleIdentifier']
@@ -59,8 +61,9 @@ def audit(app, team, certificate):
                 or ent.get('com.apple.developer.networking.networkextension') != network
                 or ent.get('com.apple.developer.team-identifier') != team):
             raise ValueError('Invalid sandbox, debug permission, team or provider entitlements.')
-        if 'com.apple.security.temporary-exception.mach-lookup.global-name' in ent:
-            raise ValueError('Updater Mach lookup exceptions remain.')
+        temp_exceptions = [k for k in ent if k.startswith('com.apple.security.temporary-exception.')]
+        if temp_exceptions:
+            raise ValueError('Disallowed Store sandbox temporary-exception entitlements remain: ' + ', '.join(sorted(temp_exceptions)))
         for key, value in ent.items():
             if key.startswith('com.apple.developer.') or key in ('com.apple.application-identifier', 'application-identifier',
                                                                'keychain-access-groups', 'com.apple.security.application-groups'):

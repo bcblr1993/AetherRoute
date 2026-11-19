@@ -40,6 +40,54 @@ final class FlowCoreLatencyLeaseFixesTests: XCTestCase {
             XCTAssertEqual(backend.engineDestroyCalls, 1)
         }
     }
+
+    func testEngineAccepts12MiBProfileAndCapsTelemetryConnectionCount() throws {
+        let backend = LatencyBlockingMockFlowCoreABI()
+        let largeProfile = Data(repeating: UInt8(ascii: "#"), count: 12 * 1_024 * 1_024)
+        let engine = try FlowCoreEngine(
+            profile: largeProfile,
+            runtimeDirectory: URL(fileURLWithPath: "/tmp/aetherroute-flow-12mb-test"),
+            configuration: .default,
+            backend: backend
+        )
+        _ = try engine.telemetrySnapshot(maximumConnections: 512)
+        XCTAssertLessThanOrEqual(
+            backend.lastRequestedTelemetryConnections,
+            UInt32(FlowCoreEngine.maximumSafeTelemetryConnections)
+        )
+        let stopped = expectation(description: "engine stopped")
+        engine.shutdown { stopped.fulfill() }
+        wait(for: [stopped], timeout: 1.5)
+    }
+
+    func testLiveBackendUDPWriteHandlesEmptyRemoteEndpointWithoutNullDereference() throws {
+        let liveBackend = try LiveFlowCoreABIBackend()
+        let engine = try FlowCoreEngine(
+            profile: Data("mode: rule\nproxies: []\nrules: []\n".utf8),
+            runtimeDirectory: FileManager.default.temporaryDirectory,
+            configuration: FlowCoreEngineConfiguration(routingMode: .direct),
+            backend: liveBackend
+        )
+        let created = liveBackend.udpCreate(
+            engine: FlowCoreABIHandle(rawValue: UnsafeMutableRawPointer(bitPattern: 0x1)!),
+            source: Data(),
+            sourceApp: nil
+        )
+        XCTAssertNotEqual(created.status, FlowCoreABIStatus.success)
+
+        // Calling udpWrite with empty `remoteEndpoint: Data()` must cleanly return an ABI error
+        // instead of crashing inside `NSData.bytes.assumingMemoryBound(to:)`.
+        let status = liveBackend.udpWrite(
+            FlowCoreABIHandle(rawValue: UnsafeMutableRawPointer(bitPattern: 0x1)!),
+            datagrams: [FlowCoreABIUDPDatagram(payload: Data([1, 2, 3]), remoteEndpoint: Data())],
+            token: 1
+        ) { _, _ in }
+        XCTAssertNotEqual(status, FlowCoreABIStatus.success)
+
+        let stopped = expectation(description: "live engine stopped")
+        engine.shutdown { stopped.fulfill() }
+        wait(for: [stopped], timeout: 2.0)
+    }
 }
 
 private final class LatencyBlockingMockFlowCoreABI: FlowCoreABIBackend, @unchecked Sendable {
@@ -49,6 +97,7 @@ private final class LatencyBlockingMockFlowCoreABI: FlowCoreABIBackend, @uncheck
     private let latencyRelease = DispatchSemaphore(value: 0)
     private let engineDestroyed = DispatchSemaphore(value: 0)
     private(set) var engineDestroyCalls = 0
+    private(set) var lastRequestedTelemetryConnections: UInt32 = 0
 
     func engineCreate(
         profile _: Data,
@@ -88,8 +137,9 @@ private final class LatencyBlockingMockFlowCoreABI: FlowCoreABIBackend, @uncheck
         return (FlowCoreABIStatus.success, Data([0x41, 0x52, 0x4c, 0x31, 0, 0, 0, 0]))
     }
 
-    func telemetrySnapshot(engine _: FlowCoreABIHandle, maximumConnections _: UInt32) -> (status: Int32, snapshot: Data?) {
-        (FlowCoreABIStatus.success, try? NetworkTelemetryCodec.encode(.empty))
+    func telemetrySnapshot(engine _: FlowCoreABIHandle, maximumConnections: UInt32) -> (status: Int32, snapshot: Data?) {
+        lock.withLock { lastRequestedTelemetryConnections = maximumConnections }
+        return (FlowCoreABIStatus.success, try? NetworkTelemetryCodec.encode(.empty))
     }
 
     func closeConnections(engine _: FlowCoreABIHandle, request _: Data) -> (status: Int32, closedCount: UInt64) { (FlowCoreABIStatus.success, 0) }

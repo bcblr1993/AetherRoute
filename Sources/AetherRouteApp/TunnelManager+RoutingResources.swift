@@ -51,8 +51,15 @@ extension TunnelManager {
     func prepareRequiredRoutingResources() async {
         guard ensurePrivacyConsent(), canModifyProfiles,
               !isUpdatingRoutingResources, !isUIReviewMode,
-              let rawYAML = activeProfile?.yaml else { return }
-        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
+              let activeProfile else { return }
+        let effectiveRules = effectiveRuntimeCustomRules
+        let currentRemoteRules = compiledRemoteRulesCache
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
+            for: effectiveProfileYAML(for: activeProfile),
+            customRules: effectiveRules,
+            remoteRules: currentRemoteRules,
+            enableDomesticDirect: isDomesticOptimizationEnabled
+        )
         isUpdatingRoutingResources = true
         routingResourceMessage = nil
         routingResourceMessageIsError = false
@@ -134,7 +141,7 @@ extension TunnelManager {
               routingResourceRefreshTask == nil,
               !isRefreshingRoutingResources, !isUpdatingRoutingResources,
               nextAutomaticResourceRefreshAttempt.map({ now >= $0 }) ?? true,
-              let rawYAML = activeProfile?.yaml else { return }
+              let activeProfile else { return }
         // Connected reports arrive often; the cached statuses avoid hashing
         // both databases again when nothing can be due yet.
         let mayBeDue = requiredRoutingResources.contains { kind in
@@ -146,7 +153,14 @@ extension TunnelManager {
             }
         }
         guard mayBeDue else { return }
-        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML)
+        let effectiveRules = effectiveRuntimeCustomRules
+        let currentRemoteRules = compiledRemoteRulesCache
+        let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
+            for: effectiveProfileYAML(for: activeProfile),
+            customRules: effectiveRules,
+            remoteRules: currentRemoteRules,
+            enableDomesticDirect: isDomesticOptimizationEnabled
+        )
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         routingResourceRefreshTask = Task { [weak self] in
@@ -154,8 +168,11 @@ extension TunnelManager {
             do {
                 result = try await Task.detached(priority: .utility) {
                     let store = try storeFactory()
-                    let required = ProfileConfigurationInspector.inspect(yaml: profileYAML)
-                        .requiredRoutingResources
+                    let required = ProfileConfigurationInspector.inspect(
+                        yaml: profileYAML,
+                        customRules: effectiveRules,
+                        remoteRules: currentRemoteRules
+                    ).requiredRoutingResources
                     var checked = false
                     var failure: Error?
                     for kind in RoutingResourceKind.allCases where required.contains(kind) {
@@ -263,10 +280,27 @@ extension TunnelManager {
             let anyUpdated = outcomes.contains {
                 if case .updated = $0 { true } else { false }
             }
+            var syncedLive = false
+            if anyUpdated, state == .connected {
+                do {
+                    let currentRoutingMode = sessionRoutingMode ?? routingMode
+                    let preparedReload = try await prepareReloadProfilePayload(
+                        requestedMode: currentRoutingMode
+                    )
+                    let client = makeProxySelectionProviderClient()
+                    try await reloadActiveProfileStagingResources(preparedReload, via: client)
+                    await finalizeLiveProfileReload(client: client, resetReadiness: false)
+                    syncedLive = true
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=downloadRequiredRoutingResources liveReload failed error=\(String(reflecting: error), privacy: .public)"
+                    )
+                }
+            }
             routingResourceMessage = AppLocalization.string(
                 !anyUpdated
                     ? "Routing resources are already up to date."
-                    : appliesOnNextConnection
+                    : (appliesOnNextConnection && !syncedLive)
                         ? "Routing resources were downloaded and verified. They apply on the next connection."
                         : "Routing resources were downloaded and verified."
             )

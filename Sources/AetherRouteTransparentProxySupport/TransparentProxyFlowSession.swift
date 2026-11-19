@@ -505,6 +505,21 @@ final class TransparentUDPProxySession:
     private var machine: UDPFlowStateMachine?
     private var machineStartTask: Task<Void, Never>?
     private var sourceLease: SyntheticSourceEndpointLease?
+    private var lastActivityNs: UInt64 = DispatchTime.now().uptimeNanoseconds
+
+    var isEvictableUDPSession: Bool { true }
+
+    var lastActivityUptimeNanoseconds: UInt64 {
+        lock.withLock { lastActivityNs }
+    }
+
+    func reclaimAdmissionSlotForEviction() {
+        let lease = lock.withLock { () -> FlowResourceLease? in
+            defer { resourceLease = nil }
+            return resourceLease
+        }
+        lease?.release()
+    }
 
     init(
         sessionID: UUID = UUID(),
@@ -544,7 +559,12 @@ final class TransparentUDPProxySession:
                 flow: flow,
                 bridgeSource: rust,
                 bridgeSink: rust,
-                policy: validatedPolicy
+                policy: validatedPolicy,
+                onActivity: { [weak self] in
+                    guard let self else { return }
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    self.lock.withLock { self.lastActivityNs = now }
+                }
             ) { [weak self] lifecycle in
                 self?.scheduleMachineTermination(lifecycle)
             }

@@ -226,12 +226,12 @@ struct MacUISmoothnessAndPolishTests {
         precondition(!dnsView.contains(".pickerStyle(.segmented)"), "DNSPageView must use AetherSegmentedPicker instead of system .segmented")
 
         precondition(
-            !contentView.contains("tunnel.handleExternalURL(url)"),
-            "ContentView.onOpenURL must route through tunnel.handleIncomingExternalURL(url)"
+            !contentView.contains(".onOpenURL"),
+            "ContentView must not register a duplicate .onOpenURL handler alongside AppDelegate.application(_:open:)"
         )
         precondition(
-            contentView.contains("tunnel.handleIncomingExternalURL(url)"),
-            "ContentView.onOpenURL must call tunnel.handleIncomingExternalURL(url)"
+            appFile.contains("tunnel?.handleIncomingExternalURL(url)"),
+            "AppDelegate.application(_:open:) must be the single authoritative URL scheme entry point"
         )
 
         precondition(
@@ -317,6 +317,20 @@ struct MacUISmoothnessAndPolishTests {
                 }
             },
             name: "AetherSessionOptionalSlotLayout"
+        )
+
+        // Verify AetherPageHeader returns finite fitting size even under infinite / ideal size probes.
+        let headerHost = NSHostingView(
+            rootView: AetherPageHeader(.overview) {
+                Button(action: {}) { Text(verbatim: "Action") }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+        )
+        headerHost.layoutSubtreeIfNeeded()
+        let headerIdeal = headerHost.fittingSize
+        precondition(
+            headerIdeal.width.isFinite && headerIdeal.height.isFinite && headerIdeal.width >= 0,
+            "AetherPageHeaderLayout returned non-finite size under unbounded width probe: \(headerIdeal)"
         )
     }
 

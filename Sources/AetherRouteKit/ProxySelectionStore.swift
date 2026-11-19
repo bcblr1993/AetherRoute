@@ -691,6 +691,28 @@ public struct ProxySelectionStore: Sendable {
         )
     }
 
+    public func removeSelections(
+        forProfileYAML yaml: String,
+        fileManager: FileManager = .default
+    ) throws {
+        let digest = Self.profileDigest(yaml: yaml)
+        guard let existing = try load(fileManager: fileManager),
+              existing.profiles[digest] != nil else {
+            return
+        }
+        var profiles = existing.profiles
+        var profileOrder = existing.profileOrder
+        profiles.removeValue(forKey: digest)
+        profileOrder.removeAll { $0 == digest }
+        try save(
+            ProxySelectionPayload(
+                profiles: profiles,
+                profileOrder: profileOrder
+            ),
+            fileManager: fileManager
+        )
+    }
+
     private func recordSelection(
         group: String,
         member: String,

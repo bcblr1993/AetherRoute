@@ -904,4 +904,632 @@ final class CoreKitAuditP0P2FixesTests: XCTestCase {
             XCTFail("Cancelled first reconnect must throw CancellationError")
         } catch is CancellationError {}
     }
+
+    // MARK: - v3.0.3 Audit Batch 1 TDD Regression Tests (P0-3 & P0-17)
+
+    func testProfileImportValidatorCatchesMultilineFlowMappingAndEscapedKeys() throws {
+        // 1. Multi-line flow mapping where second line has multiple comma-separated keys
+        let multilineFlowYAML = """
+        proxies:
+          - {
+            name: SafeLooking, udp: true, plugin: evil-exec, command: /bin/sh
+          }
+        """
+        XCTAssertThrowsError(
+            try ProfileImportValidator.validate(data: Data(multilineFlowYAML.utf8))
+        ) { error in
+            guard case .forbiddenExecutableKey = error as? ProfileImportError else {
+                return XCTFail("Expected forbiddenExecutableKey, got \(error)")
+            }
+        }
+
+        // 2. JSON/YAML escaped key names (`"plug\u0069n"`, `"comm\x61nd"`)
+        let escapedPluginYAML = """
+        proxies:
+          - {"name": "N1", "type": "ss", "plug\\u0069n": "evil-bin"}
+        """
+        XCTAssertThrowsError(
+            try ProfileImportValidator.validate(data: Data(escapedPluginYAML.utf8))
+        ) { error in
+            XCTAssertEqual(
+                error as? ProfileImportError,
+                .forbiddenExecutableKey("plugin")
+            )
+        }
+
+        let escapedCommandYAML = """
+        proxies:
+          - {"name": "N1", "type": "ss", "comm\\x61nd": "/bin/sh"}
+        """
+        XCTAssertThrowsError(
+            try ProfileImportValidator.validate(data: Data(escapedCommandYAML.utf8))
+        ) { error in
+            XCTAssertEqual(
+                error as? ProfileImportError,
+                .forbiddenExecutableKey("command")
+            )
+        }
+    }
+
+    func testUntrustedSubscriptionProvidersBlockLoopbackPrivateLinkLocalAndValidateProxyPayload() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("untrusted-provider-ssrf-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let requestedURLs = AuditLockedBox<[URL]>([])
+        let ruleEngine = RuleProviderEngine(
+            directoryURL: tempDir.appendingPathComponent("Rules", isDirectory: true),
+            stagingBaseURL: tempDir,
+            httpFetcher: { url in
+                requestedURLs.mutate { $0.append(url) }
+                let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (Data("payload:\n  - '+.example.com'\n".utf8), resp)
+            }
+        )
+
+        let ssrfProfileYAML = """
+        proxies:
+          - {name: P1, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: p}
+        rule-providers:
+          r_loopback_http:
+            type: http
+            behavior: domain
+            url: http://127.0.0.1:8080/rules.yaml
+          r_loopback_https:
+            type: http
+            behavior: domain
+            url: https://127.0.0.1:8443/rules.yaml
+          r_rfc1918:
+            type: http
+            behavior: domain
+            url: https://192.168.1.1/rules.yaml
+          r_metadata:
+            type: http
+            behavior: domain
+            url: https://169.254.169.254/latest/meta-data
+          r_ipv6_ula:
+            type: http
+            behavior: domain
+            url: https://[fd00::1]/rules.yaml
+          r_mdns:
+            type: http
+            behavior: domain
+            url: https://nas.local/rules.yaml
+        rules:
+          - MATCH,P1
+        """
+
+        let stagedRules = await ruleEngine.stageProviders(inProfileYAML: ssrfProfileYAML)
+        XCTAssertTrue(stagedRules.isEmpty, "Untrusted profile rule-providers must never stage loopback/private/.local URLs")
+        XCTAssertTrue(requestedURLs.value.isEmpty)
+
+        // ProxyProviderEngine must reject forbidden executable keys via ProfileImportValidator
+        let evilProxyProviderYAML = """
+        proxies:
+          - {name: EvilNode, type: ss, server: 1.2.3.4, port: 443, cipher: aes-128-gcm, password: p, plugin: /usr/bin/nc}
+        """
+        let proxyEngine = ProxyProviderEngine(
+            directoryURL: tempDir.appendingPathComponent("Proxies", isDirectory: true),
+            stagingBaseURL: tempDir,
+            httpFetcher: { url in
+                requestedURLs.mutate { $0.append(url) }
+                let resp = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                return (Data(evilProxyProviderYAML.utf8), resp)
+            }
+        )
+        let evilSubYAML = """
+        proxy-providers:
+          p_loopback:
+            type: http
+            url: http://127.0.0.1:9090/proxies.yaml
+          p_evil_plugin:
+            type: http
+            url: https://sub.example.com/evil-proxies.yaml
+        proxy-groups:
+          - {name: G, type: select, use: [p_evil_plugin]}
+        rules:
+          - MATCH,G
+        """
+        let stagedProxies = await proxyEngine.stageProviders(inProfileYAML: evilSubYAML)
+        // Loopback provider must be skipped completely; evil plugin provider must fail validation and never stage file
+        XCTAssertEqual(requestedURLs.value.map(\.absoluteString), ["https://sub.example.com/evil-proxies.yaml"])
+        XCTAssertNotNil(stagedProxies.first?.lastError)
+        let stagedProxyFile = tempDir.appendingPathComponent(
+            "providers/proxies/\(ProxyProviderEngine.sanitizedProviderFileName(name: "p_evil_plugin"))"
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagedProxyFile.path))
+    }
+
+    func testMetaFlagNegotiationRefresh304DoesNotCorruptFullSubscriptionWithSingleFallbackNode() async throws {
+        let baseURL = try XCTUnwrap(URL(string: "https://panel.example.com/api/v1/client/subscribe?token=xyz"))
+        let metaURL = try XCTUnwrap(URL(string: "https://panel.example.com/api/v1/client/subscribe?token=xyz&flag=meta"))
+
+        let degradedSingleNode = Data(
+            "ss://YWVzLTEyOC1nY206cGFzc3dvcmRAZXhhbXBsZS5jb206NDQz#UpgradeClientNotice".utf8
+        ).base64EncodedData()
+        let fullMetaYAML = Data(
+            """
+            proxies:
+              - {name: HK-01, type: vless, server: hk1.example.com, port: 443, uuid: 11111111-1111-1111-1111-111111111111, tls: true}
+              - {name: JP-01, type: vless, server: jp1.example.com, port: 443, uuid: 22222222-2222-2222-2222-222222222222, tls: true}
+              - {name: SG-01, type: vless, server: sg1.example.com, port: 443, uuid: 33333333-3333-3333-3333-333333333333, tls: true}
+            rules:
+              - MATCH,HK-01
+            """.utf8
+        )
+
+        let t1 = Date(timeIntervalSince1970: 10_000)
+        let t2 = Date(timeIntervalSince1970: 13_600)
+        let currentTime = AuditLockedBox<Date>(t1)
+
+        let client = ProfileSubscriptionClient(
+            transport: { req in
+                if req.url == baseURL {
+                    if req.headers["If-None-Match"] == "\"etag-legacy\"" {
+                        return ProfileSubscriptionHTTPResponse(
+                            data: Data(),
+                            statusCode: 304,
+                            finalURL: baseURL,
+                            headers: ["ETag": "\"etag-legacy\""]
+                        )
+                    }
+                    return ProfileSubscriptionHTTPResponse(
+                        data: degradedSingleNode,
+                        statusCode: 200,
+                        finalURL: baseURL,
+                        headers: ["ETag": "\"etag-legacy\""]
+                    )
+                } else if req.url == metaURL {
+                    if req.headers["If-None-Match"] == "\"etag-meta\"" {
+                        return ProfileSubscriptionHTTPResponse(
+                            data: Data(),
+                            statusCode: 304,
+                            finalURL: metaURL,
+                            headers: ["ETag": "\"etag-meta\""]
+                        )
+                    }
+                    return ProfileSubscriptionHTTPResponse(
+                        data: fullMetaYAML,
+                        statusCode: 200,
+                        finalURL: metaURL,
+                        headers: ["ETag": "\"etag-meta\""]
+                    )
+                }
+                throw ProfileSubscriptionError.invalidURL
+            },
+            now: { currentTime.value }
+        )
+
+        // First fetch negotiates ?flag=meta and retrieves 3 nodes
+        let initialSub = try ProfileSubscription(url: baseURL)
+        guard case let .updated(firstData, firstMeta, _) = try await client.fetch(initialSub) else {
+            return XCTFail("Expected initial fetch to return .updated")
+        }
+        XCTAssertTrue(String(decoding: firstData, as: UTF8.self).contains("SG-01"))
+        XCTAssertEqual(firstMeta.etag, "\"etag-meta\"")
+
+        // Second fetch hits 304 on meta endpoint; MUST return .notModified instead of overwriting with degradedSingleNode!
+        currentTime.mutate { $0 = t2 }
+
+        let secondResult = try await client.fetch(firstMeta)
+        guard case let .notModified(secondMeta) = secondResult else {
+            return XCTFail("Expected second refresh to return .notModified, got \(secondResult)")
+        }
+        XCTAssertEqual(secondMeta.etag, "\"etag-meta\"")
+        XCTAssertEqual(secondMeta.negotiatedMetaFlag, true)
+
+        // Legacy upgrade path: a pre-fix saved subscription with bare URL + meta ETag (negotiatedMetaFlag == nil)
+        // must also treat fallback 304 as .notModified and heal `negotiatedMetaFlag = true`!
+        let legacyPolluted = try ProfileSubscription(
+            url: baseURL,
+            etag: "\"etag-meta\"",
+            lastCheckedAt: t1,
+            lastUpdatedAt: t1
+        )
+        let healedResult = try await client.fetch(legacyPolluted)
+        guard case let .notModified(healedMeta) = healedResult else {
+            return XCTFail("Expected legacy polluted refresh to heal via .notModified, got \(healedResult)")
+        }
+        XCTAssertEqual(healedMeta.etag, "\"etag-meta\"")
+        XCTAssertEqual(healedMeta.negotiatedMetaFlag, true)
+    }
+
+    // MARK: - 14. Batch 3 & 4 TDD Regression Suite (P0-11, P0-16, P1-4, P1-5, P2-3)
+
+    func testPacketTunnelOutputRingBufferDropsIPv6WhenDisabledAndIsolatesPoisonPacketWithoutLivelock() {
+        var buffer = PacketTunnelOutputRingBuffer(capacity: 8, maxBatchRetries: 2)
+
+        // Empty and >65535 packets dropped
+        XCTAssertFalse(buffer.enqueue(packet: Data(), ipVersion: 4, enableIPv6: true))
+        XCTAssertFalse(buffer.enqueue(packet: Data(repeating: 0xAA, count: 65_536), ipVersion: 4, enableIPv6: true))
+        // IPv6 dropped when enableIPv6 == false
+        XCTAssertFalse(buffer.enqueue(packet: Data([0x60, 0x00, 0x00, 0x00]), ipVersion: 6, enableIPv6: false))
+        XCTAssertEqual(buffer.count, 0)
+
+        let good1 = Data([0x45, 0x00, 0x00, 0x01])
+        let poison = Data([0x45, 0xFF, 0xDE, 0xAD])
+        let good2 = Data([0x45, 0x00, 0x00, 0x02])
+        let good3 = Data([0x60, 0x00, 0x00, 0x03])
+
+        XCTAssertTrue(buffer.enqueue(packet: good1, ipVersion: 4, enableIPv6: true))
+        XCTAssertFalse(buffer.enqueue(packet: poison, ipVersion: 4, enableIPv6: true))
+        XCTAssertFalse(buffer.enqueue(packet: good2, ipVersion: 4, enableIPv6: true))
+        XCTAssertFalse(buffer.enqueue(packet: good3, ipVersion: 6, enableIPv6: true))
+        XCTAssertEqual(buffer.count, 4)
+
+        var delivered: [(Data, Int32)] = []
+        var iterations = 0
+        while iterations < 32, let slice = buffer.nextWriteSlice(maxBatchSize: 32) {
+            iterations += 1
+            let hasPoison = slice.packets.contains(poison)
+            if !hasPoison {
+                for (pkt, proto) in zip(slice.packets, slice.protocols) {
+                    delivered.append((pkt, proto.int32Value))
+                }
+            }
+            let disposition = buffer.completeWriteSlice(succeeded: !hasPoison, sliceCount: slice.packets.count)
+            if disposition == .drained {
+                break
+            }
+        }
+
+        XCTAssertLessThan(iterations, 16, "Poison packet must be isolated in bounded steps without 500Hz livelock")
+        XCTAssertEqual(delivered.map(\.0), [good1, good2, good3])
+        XCTAssertEqual(delivered.map(\.1), [AF_INET, AF_INET, AF_INET6])
+        XCTAssertEqual(buffer.count, 0)
+    }
+
+    func testBypassPolicyPacketTunnelDomainRulesFakeIPFiltersAndIPv4OnlyDNSPolicy() throws {
+        let policy = try BypassPolicy(rules: [
+            BypassRule.parse("*.corp.example.com"),
+            BypassRule.parse("10.88.0.0/16"),
+        ]).validated()
+
+        XCTAssertEqual(policy.packetTunnelDomainRules.count, 1)
+        XCTAssertEqual(policy.packetTunnelDomainRules.first?.toClashRuleString(), "DOMAIN-SUFFIX,corp.example.com,DIRECT")
+        XCTAssertTrue(policy.fakeIPFilterPatterns.contains("*.corp.example.com"))
+        XCTAssertTrue(policy.fakeIPFilterPatterns.contains("+.corp.example.com"))
+
+        let rawYAML = """
+        dns:
+          enable: true
+          enhanced-mode: fake-ip
+          nameserver:
+            - 223.5.5.5
+        proxies:
+          - {name: Edge-1, type: ss, server: 203.0.113.10, port: 443, cipher: aes-128-gcm, password: secret}
+        rules:
+          - MATCH,Edge-1
+        """
+        let bypassedYAML = policy.applyingPacketTunnelDomainBypass(to: rawYAML)
+        XCTAssertTrue(bypassedYAML.contains("DOMAIN-SUFFIX,corp.example.com,DIRECT"))
+        XCTAssertTrue(bypassedYAML.contains("*.corp.example.com"))
+
+        let optimizedYAML = DomesticRoutingOptimizer.optimizedProfile(
+            for: rawYAML,
+            enableDomesticDirect: true,
+            bypassPolicy: policy
+        )
+        XCTAssertTrue(optimizedYAML.contains("DOMAIN-SUFFIX,corp.example.com,DIRECT"))
+        XCTAssertTrue(optimizedYAML.contains("'*.corp.example.com'"))
+
+        let dns = DNSConfigurationSummary(isPresent: true, isEnabled: true, allowsIPv6: true, mode: .fakeIP)
+        XCTAssertFalse(
+            DNSRuntimePolicy(ipv6: .enabled).effectivePacketTunnelAllowsIPv6(for: dns, profileAllowsIPv6: false),
+            "IPv4-only tunnel must never return AAAA records even if DNSRuntimePolicy.ipv6 is .enabled"
+        )
+
+        // ProviderLaunchSnapshot must accept valid compiled profiles > 8 MiB up to 16 MiB
+        let paddingRuleLines = (0..<190_000).map { "  - DOMAIN-SUFFIX,host-\($0).example.org,DIRECT" }.joined(separator: "\n")
+        let nineMiBYAML = """
+        proxies:
+          - {name: Edge-1, type: ss, server: 203.0.113.10, port: 443, cipher: aes-128-gcm, password: secret}
+        rules:
+        \(paddingRuleLines)
+          - MATCH,Edge-1
+        """
+        XCTAssertGreaterThan(nineMiBYAML.utf8.count, 8 * 1_024 * 1_024)
+        let snapshot = try ProviderLaunchSnapshot(
+            profileYAML: nineMiBYAML,
+            routingMode: .rule,
+            bypassPolicy: .empty,
+            dnsPolicy: .inherited,
+            proxySelections: [:],
+            routingResources: [:]
+        )
+        XCTAssertNoThrow(try snapshot.validate())
+    }
+
+    func testChunkedRoutingResourceStagingOverBoundedIPCAndAsyncSerialGate() async throws {
+        let rootDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreKitAudit-RootResourceStaging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: rootDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootDir) }
+
+        let rootStore = RoutingResourceStore(applicationSupportDirectory: rootDir)
+        let receiver = RoutingResourceChunkStagingReceiver(store: rootStore)
+
+        // Create a valid >300 KiB synthetic GeoSite resource (starts with 0x0A)
+        var geoSiteBytes = Data([0x0A, 0x05, 0x63, 0x6E, 0x12, 0x01, 0x61])
+        geoSiteBytes.append(Data(repeating: 0x42, count: 320 * 1_024))
+
+        let client = ProxySelectionProviderClient { wireData in
+            XCTAssertLessThanOrEqual(wireData.count, ProxySelectionProviderMessageCodec.maximumMessageBytes)
+            let req = try ProxySelectionProviderMessageCodec.decodeRequest(wireData)
+            let resp: ProxySelectionProviderResponse
+            switch req {
+            case .installedRoutingResourceDigests:
+                resp = .routingResourceDigests(receiver.installedDigests())
+            case let .stageRoutingResourceChunk(chunk):
+                try receiver.receive(chunk)
+                resp = .routingResourceChunkStaged
+            default:
+                resp = .failure(.invalidRequest)
+            }
+            return try ProxySelectionProviderMessageCodec.encode(response: resp)
+        }
+
+        try await client.stageRoutingResources([.geoSite: geoSiteBytes], chunkSize: 128 * 1_024)
+        let profileNeedingGeoSite = """
+        proxies:
+          - {name: Edge-1, type: ss, server: 203.0.113.10, port: 443, cipher: aes-128-gcm, password: secret}
+        rules:
+          - GEOSITE,cn,DIRECT
+          - MATCH,Edge-1
+        """
+        let stagedSnapshot = try rootStore.launchResourceSnapshot(for: profileNeedingGeoSite)
+        XCTAssertEqual(stagedSnapshot[.geoSite], geoSiteBytes)
+
+        // Second call sees matching SHA-256 and skips re-uploading chunks
+        let wireCallCounter = AuditLockedBox<Int>(0)
+        let countingClient = ProxySelectionProviderClient { wireData in
+            wireCallCounter.mutate { $0 += 1 }
+            let req = try ProxySelectionProviderMessageCodec.decodeRequest(wireData)
+            if case .installedRoutingResourceDigests = req {
+                return try ProxySelectionProviderMessageCodec.encode(
+                    response: .routingResourceDigests(receiver.installedDigests())
+                )
+            }
+            XCTFail("Expected no chunk uploads when SHA-256 already matches")
+            return try ProxySelectionProviderMessageCodec.encode(response: .failure(.invalidRequest))
+        }
+        try await countingClient.stageRoutingResources([.geoSite: geoSiteBytes])
+        XCTAssertEqual(wireCallCounter.value, 1)
+
+        // Verify AsyncSerialOperationGate serializes overlapping async operations strictly
+        let gate = AsyncSerialOperationGate()
+        let events = AuditLockedBox<[String]>([])
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await gate.run { done in
+                    events.mutate { $0.append("op1-begin") }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(60)) {
+                        events.mutate { $0.append("op1-end") }
+                        done()
+                    }
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+            group.addTask {
+                await gate.run { done in
+                    events.mutate { $0.append("op2-begin") }
+                    events.mutate { $0.append("op2-end") }
+                    done()
+                }
+            }
+        }
+        XCTAssertEqual(events.value, ["op1-begin", "op1-end", "op2-begin", "op2-end"])
+    }
+
+    func testTransparentProxyInfrastructureExclusionsAndPort53UpstreamPolicy() {
+        let ipv4CIDRs = BypassNetworkSettingsPlan.transparentProxyInfrastructureIPv4Exclusions.map { "\($0.0)/\($0.1)" }
+        let ipv6CIDRs = BypassNetworkSettingsPlan.transparentProxyInfrastructureIPv6Exclusions.map { "\($0.0)/\($0.1)" }
+
+        XCTAssertTrue(ipv4CIDRs.contains("224.0.0.0/4"))
+        XCTAssertTrue(ipv4CIDRs.contains("255.255.255.255/32"))
+        XCTAssertTrue(ipv4CIDRs.contains("127.0.0.0/8"))
+        XCTAssertTrue(ipv4CIDRs.contains("10.0.0.0/8"))
+        XCTAssertTrue(ipv4CIDRs.contains("192.168.0.0/16"))
+        XCTAssertTrue(ipv6CIDRs.contains("::1/128"))
+        XCTAssertTrue(ipv6CIDRs.contains("fe80::/10"))
+        XCTAssertTrue(ipv6CIDRs.contains("fc00::/7"))
+        XCTAssertTrue(ipv6CIDRs.contains("ff00::/8"))
+        // IPv4-mapped addresses (::ffff:x.x.x.x) must NOT be in IPv6 exclusions,
+        // because NetworkExtension converts them to IPv4 endpoints and rejects prefixes > 32.
+        XCTAssertFalse(ipv6CIDRs.contains(where: { $0.hasPrefix("::ffff:") }))
+        XCTAssertFalse(BypassNetworkSettingsPlan.shouldInstallAddressExclusionForUpstreamPort(53))
+        XCTAssertTrue(BypassNetworkSettingsPlan.shouldInstallAddressExclusionForUpstreamPort(443))
+    }
+
+    func testActiveProfileRuntimeYAMLStripsDialerCyclesWithoutOverridesAndSupportsGlobalOverride() throws {
+        let cyclicYAML = """
+        hosts:
+          api.internal.test:
+            - 10.0.0.1
+            - 10.0.0.2
+        proxies:
+          - {
+              name: Hop-A, # inline comment inside multiline flow!
+              type: ss,
+              server: 203.0.113.1,
+              port: 443,
+              cipher: aes-128-gcm,
+              password: p1,
+              dialer-proxy: Auto-All
+            }
+        proxy-groups:
+          - {name: Auto-All, type: url-test, include-all: true, url: 'https://www.gstatic.com/generate_204', interval: 300}
+        rules:
+          - MATCH,Auto-All
+        """
+        let profile = ActiveProfile(name: "Cyclic", yaml: cyclicYAML, overrides: nil)
+        // Even with overrides == nil, runtimeYAML must parse multiline commented flow and strip the Hop-A -> Auto-All (include-all) -> Hop-A cycle!
+        let runtime = profile.runtimeYAML
+        XCTAssertTrue(runtime.contains("Hop-A"))
+        XCTAssertFalse(runtime.contains("dialer-proxy"), "Cyclic dialer-proxy through include-all group must be stripped even when overrides == nil")
+
+        var globalOverride = ProfileOverride()
+        globalOverride.customHosts = [CustomHostMapping(domain: "api.internal.test", ip: "192.0.2.55", isEnabled: true)]
+        let effective = profile.effectiveRuntimeYAML(globalOverride: globalOverride)
+        XCTAssertTrue(effective.contains("192.0.2.55"))
+        XCTAssertFalse(effective.contains("10.0.0.1"), "Multi-line hosts list children must be cleanly replaced without orphaned list items")
+        XCTAssertFalse(effective.contains("10.0.0.2"))
+    }
+
+    func testDomesticRoutingOptimizerQuotesIPv6DNSAndHashNodeNamesAndPreservesParenthesizedRules() {
+        let rawYAML = """
+        dns:
+          enable: true
+          nameserver:
+            - 2400:3200::1
+            - '[2400:3200::1]:53'
+        proxies:
+          - {name: 'HK #2', type: ss, server: 203.0.113.20, port: 443, cipher: aes-128-gcm, password: secret}
+        proxy-groups:
+          - {name: 'HK #2 Group', type: select, proxies: ['HK #2']}
+        rules:
+          - DOMAIN-SUFFIX,openai.com,HK #2
+          - 'DOMAIN-SUFFIX,claude.ai,HK #2'
+          - MATCH,HK #2
+        """
+        let optimized = DomesticRoutingOptimizer.optimizedProfile(for: rawYAML, enableDomesticDirect: true)
+        XCTAssertTrue(optimized.contains("'2400:3200::1'"), "Bare IPv6 DNS server must be quoted in YAML")
+        XCTAssertTrue(optimized.contains("'[2400:3200::1]:53'"), "Bracketed IPv6 DNS server must remain quoted in YAML")
+        XCTAssertTrue(optimized.contains("'DOMAIN-SUFFIX,claude.ai,HK #2'"), "Rule targeting node with ' #' must be quoted so '#2' is not stripped as a YAML comment")
+
+        let classicalContent = """
+        payload:
+          - AND,((NETWORK,UDP),(DST-PORT,443)),REJECT
+          - IP-ASN,13335,DIRECT,no-resolve
+        """
+        let parsed = RuleProviderEngine.parseRawRuleContent(classicalContent, behavior: .classical, format: .yaml)
+        XCTAssertEqual(parsed.count, 2)
+        XCTAssertEqual(parsed[0].type, "AND")
+        XCTAssertEqual(parsed[0].payload, "((NETWORK,UDP),(DST-PORT,443))")
+        XCTAssertEqual(parsed[0].target, "REJECT")
+        XCTAssertEqual(parsed[1].type, "IP-ASN")
+        XCTAssertEqual(parsed[1].payload, "13335")
+        XCTAssertEqual(parsed[1].target, "DIRECT")
+        XCTAssertTrue(parsed[1].noResolve)
+    }
+
+    @MainActor
+    func testCloudSyncEncryptsRuleProvidersBreaksEqualTimestampURLPingPongAndUpdatesMergedSpecs() async throws {
+        let dirA = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreKitAudit-PingPong-A-\(UUID().uuidString)", isDirectory: true)
+        let dirB = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoreKitAudit-PingPong-B-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dirA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dirB, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: dirA)
+            try? FileManager.default.removeItem(at: dirB)
+        }
+
+        let keyStore = InMemoryProfileKeyStore()
+        let key = try keyStore.loadOrCreateKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID)
+
+        let engineA = RuleProviderEngine(directoryURL: dirA.appendingPathComponent("RuleProviders"))
+        let engineB = RuleProviderEngine(directoryURL: dirB.appendingPathComponent("RuleProviders"))
+        let sharedURL = URL(string: "https://rules.example.com/secret-company-list.yaml")!
+        let fixedTime = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try await engineA.registerProvider(
+            RuleProviderMetadata(id: UUID(), name: "CorpList", url: sharedURL, lastUpdatedAt: fixedTime)
+        )
+        try await engineB.registerProvider(
+            RuleProviderMetadata(id: UUID(), name: "CorpList", url: sharedURL, lastUpdatedAt: fixedTime)
+        )
+
+        guard let encryptedFromA = await engineA.exportCloudSyncPayload(deviceIdentifier: "dev-a", encryptionKey: key) else {
+            return XCTFail("Expected encrypted RuleProviderSyncPayload")
+        }
+        // Raw KVS bytes must NOT contain the plaintext URL!
+        XCTAssertFalse(
+            String(decoding: encryptedFromA, as: UTF8.self).contains("secret-company-list.yaml"),
+            "RuleProviderSyncPayload in KVS must be AES-GCM encrypted"
+        )
+
+        let outcomeOnB = await engineB.mergeCloudSyncPayloadOutcome(encryptedFromA, encryptionKey: key)
+        if !outcomeOnB.matchesRemote {
+            // If B won the deterministic tie-breaker, B pushes once and A must then converge with matchesRemote == true!
+            let rawFromB = await engineB.exportCloudSyncPayload(deviceIdentifier: "dev-b", encryptionKey: key)
+            let encryptedFromB = try XCTUnwrap(rawFromB)
+            let outcomeOnA = await engineA.mergeCloudSyncPayloadOutcome(encryptedFromB, encryptionKey: key)
+            XCTAssertTrue(outcomeOnA.matchesRemote, "Equal-timestamp same-URL tie breaker must converge in 1 round without KVS ping-pong")
+        }
+        let finalA = await engineA.allProviders()
+        let finalB = await engineB.allProviders()
+        XCTAssertEqual(finalA.map(\.id), finalB.map(\.id))
+
+        // ProfileCatalogStore mergedSpec cleanup on source removal & dialer-proxy rename
+        let catalogStore = ProfileCatalogStore(directoryURL: dirA, keyStore: keyStore)
+        let src1YAML = """
+        proxies:
+          - {name: Entry, type: ss, server: 198.51.100.1, port: 443, cipher: aes-128-gcm, password: p1}
+          - {name: Exit, type: ss, server: 198.51.100.2, port: 443, cipher: aes-128-gcm, password: p2, dialer-proxy: Entry}
+        rules:
+          - MATCH,Exit
+        """
+        let src2YAML = "proxies:\n  - {name: Backup, type: ss, server: 198.51.100.3, port: 443, cipher: aes-128-gcm, password: p3}\nrules:\n  - MATCH,Backup\n"
+        let src3YAML = "proxies:\n  - {name: Spare, type: ss, server: 198.51.100.4, port: 443, cipher: aes-128-gcm, password: p4}\nrules:\n  - MATCH,Spare\n"
+        _ = try catalogStore.addValidated(data: Data(src1YAML.utf8), suggestedName: "Sub1", makeActive: false)
+        _ = try catalogStore.addValidated(data: Data(src2YAML.utf8), suggestedName: "Sub2", makeActive: false)
+        let afterSrcs = try catalogStore.addValidated(data: Data(src3YAML.utf8), suggestedName: "Sub3", makeActive: false)
+        let ids = afterSrcs.profiles.map(\.id)
+        let withMerged = try catalogStore.createMergedProfile(
+            name: "Combo",
+            spec: MergedProfileSpec(sourceProfileIDs: ids, prefixSourceName: true),
+            makeActive: true
+        )
+        let mergedProfile = try XCTUnwrap(withMerged.activeProfile)
+        XCTAssertTrue(
+            mergedProfile.profile.yaml.contains("'[Sub1] Entry'"),
+            "Merged profile must rewrite intra-source dialer-proxy to match prefixed node name"
+        )
+        let afterRemove = try catalogStore.remove(id: ids[1])
+        let updatedMerged = try XCTUnwrap(afterRemove.profiles.first { $0.id == mergedProfile.id })
+        XCTAssertFalse(updatedMerged.mergedSpec?.sourceProfileIDs.contains(ids[1]) ?? true)
+    }
+
+    func testDiagnosticAggregatorConcurrentStartStopLocalProxyDashGuardAndAsyncLoopbackProbe() async throws {
+        let log = DiagnosticLogCenter.current.log(category: "audit-test")
+        let aggregator = DiagnosticAggregator(log: log, interval: 60)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<40 {
+                group.addTask { aggregator.start() }
+                group.addTask { aggregator.stop() }
+            }
+        }
+        aggregator.stop()
+
+        let evilProxySettings = LocalProxySettings(
+            isEnabled: true,
+            systemProxyBypassDomains: ["localhost", "-setwebproxystate"]
+        )
+        XCTAssertThrowsError(try evilProxySettings.validated()) { error in
+            XCTAssertEqual(error as? LocalProxySettingsError, .invalidBypassDomain("-setwebproxystate"))
+        }
+
+        let unlisteningResult = await NetworkDiagnosticDoctor.probeLoopbackTCPPortAsync(1, timeoutMilliseconds: 60)
+        XCTAssertFalse(unlisteningResult)
+    }
+}
+
+private final class AuditLockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+
+    init(_ initial: Value) {
+        self.storage = initial
+    }
+
+    var value: Value {
+        lock.withLock { storage }
+    }
+
+    func mutate(_ transform: (inout Value) -> Void) {
+        lock.withLock { transform(&storage) }
+    }
 }

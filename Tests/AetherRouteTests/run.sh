@@ -22,9 +22,9 @@ cat > "$FW/Versions/A/Resources/Info.plist" << 'EOF'
   <key>CFBundlePackageType</key>
   <string>FMWK</string>
   <key>CFBundleShortVersionString</key>
-  <string>3.0.2</string>
+  <string>3.0.3</string>
   <key>CFBundleVersion</key>
-  <string>2026111702</string>
+  <string>2026111802</string>
   <key>AetherRouteAppGroup</key>
   <string>group.com.aetherroute.desktop</string>
   <key>AetherRouteKeychainAccessGroupSuffix</key>

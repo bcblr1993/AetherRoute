@@ -1,9 +1,11 @@
 import AetherRouteKit
 import Combine
+import CryptoKit
 import Foundation
 import Network
 import NetworkExtension
 import OSLog
+import Security
 
 extension NetworkEngineMode {
     var localizedTitle: String {
@@ -111,27 +113,41 @@ enum ProfileCatalogProjectionBuilder {
         _ catalog: ProfileCatalog,
         customRules: [CustomRule] = [],
         remoteRules: [String] = [],
+        globalOverride: ProfileOverride? = nil,
+        externalRuleProviders: [RuleProviderMetadata] = [],
+        bypassPolicy: BypassPolicy = .empty,
         enableDomesticDirect: Bool = DomesticRoutingOptimizer.isEnabled,
         loadSavedDNSPolicy: ((String) throws -> DNSRuntimePolicy?)? = nil
     ) -> ProfileCatalogProjection {
         let active = catalog.activeProfile?.profile
-        let rawSummary = active.map { profile in
+        let resolvedGlobalOverride = globalOverride
+            ?? ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+        let effectiveCustomRules = TunnelManager.bypassDomainCustomRules(for: bypassPolicy) + customRules
+        let effectiveYAML = active.map { profile in
+            ProfileOverrideCompiler.apply(
+                profile.overrides,
+                globalOverride: resolvedGlobalOverride,
+                externalRuleProviders: externalRuleProviders,
+                to: ProfileRuntimeYAML.canonicalize(profile.yaml)
+            ).yaml
+        }
+        let rawSummary = effectiveYAML.map { yaml in
             ProfileConfigurationInspector.inspect(
-                yaml: profile.runtimeYAML,
-                customRules: customRules,
+                yaml: yaml,
+                customRules: effectiveCustomRules,
                 remoteRules: remoteRules
             )
         }
-        let summary = active.map { profile in
+        let summary = effectiveYAML.map { yaml in
             let optimizedYAML = DomesticRoutingOptimizer.optimizedProfile(
-                for: profile.runtimeYAML,
-                customRules: customRules,
+                for: yaml,
+                customRules: effectiveCustomRules,
                 remoteRules: remoteRules,
                 enableDomesticDirect: enableDomesticDirect
             )
             return ProfileConfigurationInspector.inspect(
                 yaml: optimizedYAML,
-                customRules: customRules,
+                customRules: effectiveCustomRules,
                 remoteRules: remoteRules
             )
         }
@@ -172,12 +188,23 @@ enum ProfileCatalogProjectionBuilder {
     }
 
     static func review(
-        _ catalog: ProfileCatalog
+        _ catalog: ProfileCatalog,
+        globalOverride: ProfileOverride = ProfileOverride(),
+        bypassPolicy: BypassPolicy = .empty
     ) -> ProfileCatalogProjection {
-        ProfileCatalogProjection(
+        let effectiveCustomRules = TunnelManager.bypassDomainCustomRules(for: bypassPolicy)
+        return ProfileCatalogProjection(
             catalog: catalog,
-            summary: catalog.activeProfile.map {
-                ProfileConfigurationInspector.inspect(yaml: $0.profile.yaml)
+            summary: catalog.activeProfile.map { managed in
+                let compiled = ProfileOverrideCompiler.apply(
+                    managed.profile.overrides,
+                    globalOverride: globalOverride,
+                    to: ProfileRuntimeYAML.canonicalize(managed.profile.yaml)
+                ).yaml
+                return ProfileConfigurationInspector.inspect(
+                    yaml: compiled,
+                    customRules: effectiveCustomRules
+                )
             },
             dnsPolicy: DNSRuntimePolicy(
                 resolutionMode: .fakeIP,
@@ -211,12 +238,15 @@ enum ProductionStartupLoader {
         let bypassPolicy = shouldLoadBypassPolicy
             ? try BypassPolicyStore.applicationGroup().load()
             : nil
+        let globalOverride = ProfileOverrideStore.applicationGroup().loadGlobalOverride()
         let catalog = try ProfileCatalogStore.applicationGroup().loadOrMigrate()
         return ProductionStartupState(
             bypassPolicy: bypassPolicy,
             profileProjection: ProfileCatalogProjectionBuilder.production(
                 catalog,
                 customRules: customRules,
+                globalOverride: globalOverride,
+                bypassPolicy: bypassPolicy ?? .empty,
                 enableDomesticDirect: enableDomesticDirect
             )
         )
@@ -643,13 +673,21 @@ final class TunnelManager: ObservableObject {
     /// Quality of the route behind an already-usable tunnel. The tunnel being
     /// up and the selected route being fast are two different questions; this
     /// reports the second without gating the first.
-    @Published var connectionQualityCheckedAt: Date?
+    var connectionQualityCheckedAt: Date?
     @Published var connectionQuality: ConnectionQuality = .unknown {
         didSet {
             switch connectionQuality {
             case .unknown, .verifying: connectionQualityCheckedAt = nil
             case .verified, .degraded: connectionQualityCheckedAt = .now
             }
+        }
+    }
+
+    func setConnectionQuality(_ quality: ConnectionQuality) {
+        if connectionQuality != quality {
+            connectionQuality = quality
+        } else if quality == .verified || quality == .degraded {
+            connectionQualityCheckedAt = .now
         }
     }
     var latencyMeasuredAt: [String: [String: Date]] {
@@ -671,10 +709,29 @@ final class TunnelManager: ObservableObject {
     /// frontmost: poll every 10 seconds so the numbers on screen stay true.
     @Published var isBackgroundTelemetryPreferred = false
 
+    struct PendingControlURLRequest: Identifiable, Equatable, Sendable {
+        let id = UUID()
+        let url: URL
+        let action: ExternalControlAction
+    }
+
+    struct EffectiveProfileCompilationKey: Equatable {
+        let yamlDigest: SHA256Digest
+        let profileOverrides: ProfileOverride?
+        let globalOverride: ProfileOverride
+        let enabledProviders: [RuleProviderMetadata]
+    }
+
+    static let controlURLSchemeTokenPreferenceKey = "AetherRoute.ControlURLSchemeToken"
+
     @Published var localProxySettings: LocalProxySettings
     @Published var localProxySettingsMessage: String? = nil
     @Published var isSystemProxyActive = false
     @Published var controlURLSchemePreferences: ControlURLSchemePreferences
+    @Published private(set) var controlURLSchemeToken: String
+    @Published var pendingControlURLRequest: PendingControlURLRequest?
+    var cachedGlobalProfileOverride: ProfileOverride?
+    var cachedEffectiveProfileCompilation: (key: EffectiveProfileCompilationKey, result: ProfileOverrideResult)?
     @Published var routingMode: RoutingMode {
         didSet {
             guard persistsRoutingModeSelection else { return }
@@ -725,15 +782,18 @@ final class TunnelManager: ObservableObject {
     var nextAutomaticResourceRefreshAttempt: Date?
     let bundledResourceDirectoryURL = Bundle.main.resourceURL?
         .appendingPathComponent("RoutingResources", isDirectory: true)
-    var bundledGeoSiteData: Data? {
-        bundledResourceDirectoryURL
-            .flatMap { try? Data(contentsOf: $0.appendingPathComponent(RoutingResourceKind.geoSite.fileName), options: .mappedIfSafe) }
-    }
+    lazy var bundledGeoSiteData: Data? = bundledResourceDirectoryURL
+        .flatMap { try? Data(contentsOf: $0.appendingPathComponent(RoutingResourceKind.geoSite.fileName), options: .mappedIfSafe) }
     /// GEOSITE categories of the bundled database, read once for the rule
     /// editor (it validates on every keystroke); nil when unreadable, in
     /// which case the launch-time check still applies.
     lazy var bundledGeoSiteCategories: GeoSiteCategoryIndex? = bundledGeoSiteData
         .flatMap { try? GeoSiteCategoryIndex(data: $0) }
+    /// Pre-indexed protobuf slices of each GeoSite entry (`0x0A <len> <entry>`),
+    /// built in a single linear pass so DNS lookup and route simulation only
+    /// decode referenced categories instead of rescanning megabytes per rule.
+    lazy var bundledGeoSiteSliceIndex: GeoSiteEntrySliceIndex? = bundledGeoSiteData
+        .flatMap(GeoSiteEntrySliceIndex.init(data:))
     var connectionWatchdogTask: Task<Void, Never>?
     var disconnectionWatchdogTask: Task<Void, Never>?
     var recoveryWatchdogTask: Task<Void, Never>?
@@ -792,6 +852,9 @@ final class TunnelManager: ObservableObject {
     var lastNetworkRecoveryReconnectAt: Date?
     /// Consecutive control-plane message failures (reply missing or timed out).
     var consecutiveProviderUnresponsiveCount: Int = 0
+    /// Last non-sensitive extension diagnostic log snapshot fetched while connected
+    /// so post-disconnect/post-crash diagnostics remain viewable when offline.
+    var cachedExtensionDiagnosticLog: (process: String, text: String)?
 
     var isInWakeGracePeriod: Bool {
         isSystemSleeping || Date().timeIntervalSince(lastSystemWakeAt) < wakeGracePeriodDuration
@@ -835,6 +898,7 @@ final class TunnelManager: ObservableObject {
         localProxySettings = localProxySettingsStore.load()
         controlURLSchemePreferenceStore = ControlURLSchemePreferenceStore(defaults: userDefaults)
         controlURLSchemePreferences = controlURLSchemePreferenceStore.load()
+        controlURLSchemeToken = Self.loadOrCreateControlURLSchemeToken(in: userDefaults)
         self.systemProxyConfigurator = systemProxyConfigurator ?? SystemProxyConfigurator(defaults: userDefaults)
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
         self.isAutomaticRoutingResourceUpdateEnabled = userDefaults.object(
@@ -1139,6 +1203,7 @@ final class TunnelManager: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self, !self.isUIReviewMode else { return }
                 let previousRules = self.customRules
+                let previousBypass = self.bypassPolicy
                 if let snapshot = syncedSnapshot {
                     self.customRules = snapshot.customRules
                     self.bypassPolicy = Self.sanitizeBypassPolicy(snapshot.bypassPolicy)
@@ -1154,7 +1219,9 @@ final class TunnelManager: ObservableObject {
                 // nothing until the next connect; apply them like a local edit.
                 let previousProviders = self.customRuleProviders
                 await self.reloadCustomRuleProvidersFromEngine()
-                if self.customRules != previousRules || self.customRuleProviders != previousProviders {
+                if self.customRules != previousRules
+                    || self.bypassPolicy != previousBypass
+                    || self.customRuleProviders != previousProviders {
                     self.refreshActiveProfileSummary()
                     await self.reloadCustomRulesLive()
                 }
@@ -1176,13 +1243,20 @@ final class TunnelManager: ObservableObject {
             }
         }
         if !isUIReviewMode {
+            installLANProxyCallbacks()
             restoreSystemProxyIfNeeded()
             LANProxyServerController.shared.updateConfiguration(
                 settings: localProxySettings,
-                allowStandaloneLoopback: true
+                isTunnelConnected: state == .connected,
+                allowStandaloneLoopback: false
             )
             MenuBarTrafficController.shared.onEnabledChanged = { [weak self] enabled in
                 self?.handleMenuBarTrafficEnabledChanged(enabled)
+            }
+            if hasAcceptedPrivacyDisclosure {
+                #if !AETHERROUTE_APP_STORE
+                SparkleUpdaterController.shared.handlePrivacyConsentAccepted()
+                #endif
             }
             startSubscriptionUpdateScheduleIfNeeded()
         }
@@ -1212,6 +1286,9 @@ final class TunnelManager: ObservableObject {
     func acceptPrivacyDisclosure() async {
         if !isUIReviewMode {
             privacyConsentStore.acceptCurrentDisclosure()
+            #if !AETHERROUTE_APP_STORE
+            SparkleUpdaterController.shared.handlePrivacyConsentAccepted()
+            #endif
         }
         hasAcceptedPrivacyDisclosure = true
         startSubscriptionUpdateScheduleIfNeeded()
@@ -1277,9 +1354,12 @@ final class TunnelManager: ObservableObject {
                 additionalProfileYAMLs: startup.profileProjection.catalog.profiles.map(\.profile.yaml)
             )
             let initialProjection: ProfileCatalogProjection
-            if !compiledRemoteRulesCache.isEmpty {
+            let activeRuleProviders = customRuleProviders.filter(\.isEnabled)
+            if !compiledRemoteRulesCache.isEmpty || !activeRuleProviders.isEmpty || !bypassPolicy.rules.isEmpty {
                 let currentCustomRules = customRules
                 let currentRemoteRules = compiledRemoteRulesCache
+                let currentGlobalOverride = loadGlobalProfileOverride()
+                let currentBypassPolicy = bypassPolicy
                 let currentDomesticEnabled = isDomesticOptimizationEnabled
                 let catalog = startup.profileProjection.catalog
                 initialProjection = await Task.detached(priority: .userInitiated) {
@@ -1287,6 +1367,9 @@ final class TunnelManager: ObservableObject {
                         catalog,
                         customRules: currentCustomRules,
                         remoteRules: currentRemoteRules,
+                        globalOverride: currentGlobalOverride,
+                        externalRuleProviders: activeRuleProviders,
+                        bypassPolicy: currentBypassPolicy,
                         enableDomesticDirect: currentDomesticEnabled
                     )
                 }.value
@@ -1312,6 +1395,20 @@ final class TunnelManager: ObservableObject {
             observeConfigurationChanges()
             updateState()
             isPreparing = false
+            if !isUIReviewMode,
+               qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == nil,
+               NSClassFromString("XCTestCase") == nil,
+               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+#if AETHERROUTE_INDEPENDENT
+                let opposingMode: NetworkEngineMode =
+                    networkEngineMode == .transparent ? .tun : .transparent
+                let opposingIdentifier = opposingMode.providerBundleIdentifier
+                Task { @MainActor [weak self] in
+                    await self?.systemExtensionActivator
+                        .upgradeEnabledIfOutdated(identifier: opposingIdentifier)
+                }
+#endif
+            }
             if shouldRunAutomaticSubscriptionCheck, !isApplicationTerminating {
                 Task { @MainActor [weak self] in
                     guard let self, !self.isApplicationTerminating else { return }
@@ -1763,6 +1860,10 @@ final class TunnelManager: ObservableObject {
                 return
             }
             let sampleBeforeStop = state == .connected
+            if sampleBeforeStop {
+                await snapshotExtensionDiagnosticLogIfNeeded()
+            }
+            Self.diagnosticLog.lifecycle("stage=stopVPNTunnel requested")
             // Show Disconnecting before the final sample so the click answers
             // at once; .disconnecting also keeps a connect from interleaving
             // while the sample waits.
@@ -1813,9 +1914,10 @@ final class TunnelManager: ObservableObject {
             }
             Self.runtimeLogger.info("stage=requireManager success")
             if enabled {
-                if !isUIReviewMode, networkEngineMode == .tun, !localProxySettings.allowLAN {
+                if !isUIReviewMode {
                     LANProxyServerController.shared.updateConfiguration(
                         settings: localProxySettings,
+                        isTunnelConnected: false,
                         allowStandaloneLoopback: false
                     )
                 }
@@ -1846,6 +1948,7 @@ final class TunnelManager: ObservableObject {
                 Self.runtimeLogger.info(
                     "stage=startVPNTunnel launchSnapshotReady mode=\(launchSnapshot.routingMode.rawValue, privacy: .public) selections=\(launchSnapshot.proxySelections.count, privacy: .public) resources=\(launchSnapshot.routingResources.count, privacy: .public)"
                 )
+                Self.diagnosticLog.lifecycle("stage=startVPNTunnel begin")
                 try session.startVPNTunnel(options: options)
                 completeConnectionRequest(requestID)
                 Self.runtimeLogger.info("stage=startVPNTunnel submitted")
@@ -1870,6 +1973,7 @@ final class TunnelManager: ObservableObject {
             Self.runtimeLogger.error(
                 "stage=setEnabled failed error=\(String(reflecting: error), privacy: .public)"
             )
+            Self.diagnosticLog.failure("stage=setEnabled failed error=\(String(describing: type(of: error)))")
             cancelConnectionWatchdog()
             cancelDisconnectionWatchdog()
             cancelRecoveryWatchdog()
@@ -1908,8 +2012,9 @@ final class TunnelManager: ObservableObject {
         isUpdatingRoutingResources = true
         defer { isUpdatingRoutingResources = false }
         let rawProfileYAML = activeProfile.yaml
-        let baseProfileYAML = activeProfile.runtimeYAML
-        let currentCustomRules = customRules
+        let baseProfileYAML = effectiveProfileYAML(for: activeProfile)
+        let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
+        let currentCustomRules = Self.bypassDomainCustomRules(for: requestedBypassPolicy) + customRules
         let remoteRules = await ruleProviderEngine.compileActiveRules()
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
             for: baseProfileYAML,
@@ -1928,7 +2033,6 @@ final class TunnelManager: ObservableObject {
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         let bundleDirectory = bundledResourceDirectoryURL
-        let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
         let requestedDNSPolicy = dnsRuntimePolicy
         let requestedEngine = networkEngineMode
         let launchInput = try await Task.detached(
@@ -2067,16 +2171,32 @@ final class TunnelManager: ObservableObject {
         Task { await setEnabled(false) }
     }
 
-    /// Nothing listens on 127.0.0.1 unless TUN's loopback proxy or the LAN
-    /// proxy gateway is on, so a copied command would only break the terminal's
-    /// traffic. The menu bar panel and the main menu share this rule.
+    /// Nothing listens on 127.0.0.1 unless a local proxy listener (TUN loopback,
+    /// Transparent Proxy standalone loopback, System Proxy, or LAN gateway) is enabled.
     var canCopyTerminalProxyCommand: Bool {
 #if AETHERROUTE_INDEPENDENT
-        (networkEngineMode == .tun && localProxySettings.isEnabled)
+        localProxySettings.isEnabled
             || localProxySettings.allowLAN
+            || localProxySettings.setAsSystemProxy
 #else
         false
 #endif
+    }
+
+    func resumeAfterCancelledApplicationTermination() {
+        isApplicationTerminating = false
+        guard !isUIReviewMode else { return }
+        startSubscriptionUpdateScheduleIfNeeded()
+        if state == .connected {
+            startTelemetryPollingIfNeeded()
+            handleSystemProxyForStateTransition(from: .disconnecting, to: .connected)
+        } else {
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                isTunnelConnected: false,
+                allowStandaloneLoopback: false
+            )
+        }
     }
 
     var requiresDisconnectBeforeApplicationTermination: Bool {
@@ -2226,11 +2346,67 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    private static func loadOrCreateControlURLSchemeToken(in defaults: UserDefaults) -> String {
+        if let existing = defaults.string(forKey: controlURLSchemeTokenPreferenceKey),
+           existing.count >= 32,
+           existing.allSatisfy(\.isHexDigit) {
+            return existing
+        }
+        return generateAndStoreControlURLSchemeToken(in: defaults)
+    }
+
+    @discardableResult
+    private static func generateAndStoreControlURLSchemeToken(in defaults: UserDefaults) -> String {
+        var bytes = [UInt8](repeating: 0, count: 16)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        if status != errSecSuccess {
+            var rng = SystemRandomNumberGenerator()
+            for idx in bytes.indices {
+                bytes[idx] = UInt8.random(in: .min ... .max, using: &rng)
+            }
+        }
+        let token = bytes.map { String(format: "%02x", $0) }.joined()
+        defaults.set(token, forKey: controlURLSchemeTokenPreferenceKey)
+        return token
+    }
+
+    @discardableResult
+    func regenerateControlURLSchemeToken() -> String {
+        let token = Self.generateAndStoreControlURLSchemeToken(in: userDefaults)
+        controlURLSchemeToken = token
+        return token
+    }
+
+    private static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        let lhsBytes = Array(lhs.utf8)
+        let rhsBytes = Array(rhs.utf8)
+        guard lhsBytes.count == rhsBytes.count, !lhsBytes.isEmpty else { return false }
+        var diff: UInt8 = 0
+        for index in lhsBytes.indices {
+            diff |= lhsBytes[index] ^ rhsBytes[index]
+        }
+        return diff == 0
+    }
+
     func setControlURLSchemeEnabled(_ enabled: Bool) {
         let updated = ControlURLSchemePreferences(allowControlURLScheme: enabled)
         controlURLSchemePreferences = updated
+        if !enabled {
+            pendingControlURLRequest = nil
+        }
         guard !isUIReviewMode else { return }
         try? controlURLSchemePreferenceStore.save(updated)
+    }
+
+    func confirmPendingControlURLAction() {
+        guard let pending = pendingControlURLRequest else { return }
+        pendingControlURLRequest = nil
+        externalSubscriptionLinkError = nil
+        executeControlURLAction(pending.action)
+    }
+
+    func cancelPendingControlURLAction() {
+        pendingControlURLRequest = nil
     }
 
     func handleIncomingExternalURL(_ url: URL) {
@@ -2243,8 +2419,33 @@ final class TunnelManager: ObservableObject {
             case .importSubscription:
                 handleExternalURL(url)
             case let .control(controlAction):
-                externalSubscriptionLinkError = nil
-                executeControlURLAction(controlAction)
+                let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                let tokenItems = queryItems.filter { $0.name.lowercased() == "token" }
+                if tokenItems.count > 1 {
+                    pendingControlURLRequest = nil
+                    externalSubscriptionLinkError = AppLocalization.inline(
+                        "Invalid control URL token.",
+                        chinese: "URL Scheme 控制令牌无效。"
+                    )
+                    return
+                }
+                if let providedToken = tokenItems.first?.value?.trimmingCharacters(in: .whitespacesAndNewlines) {
+                    guard Self.constantTimeEquals(providedToken, controlURLSchemeToken) else {
+                        pendingControlURLRequest = nil
+                        externalSubscriptionLinkError = AppLocalization.inline(
+                            "Invalid control URL token.",
+                            chinese: "URL Scheme 控制令牌无效。"
+                        )
+                        return
+                    }
+                    pendingControlURLRequest = nil
+                    externalSubscriptionLinkError = nil
+                    executeControlURLAction(controlAction)
+                } else {
+                    externalSubscriptionLinkError = nil
+                    pendingControlURLRequest = PendingControlURLRequest(url: url, action: controlAction)
+                    AppWindowManager.shared.showMainWindow()
+                }
             }
         } catch ExternalSubscriptionLinkError.controlActionsDisabled {
             externalSubscriptionLinkError = AppLocalization.inline(
@@ -2313,11 +2514,47 @@ final class TunnelManager: ObservableObject {
         return (filtered, filtered.isEmpty ? 0 : resolved.latencyMilliseconds)
     }
 
+    nonisolated static func bypassDomainCustomRules(for policy: BypassPolicy) -> [CustomRule] {
+        policy.rules.compactMap { rule in
+            guard rule.kind == .domainSuffix else { return nil }
+            return CustomRule(
+                id: rule.id,
+                kind: .domainSuffix,
+                value: rule.value,
+                target: .direct,
+                isEnabled: true
+            )
+        }
+    }
+
+    var effectiveRuntimeCustomRules: [CustomRule] {
+        Self.bypassDomainCustomRules(for: Self.sanitizeBypassPolicy(bypassPolicy)) + customRules
+    }
+
+    var effectiveCustomHosts: [CustomHostMapping] {
+        let perProfile = activeProfileOverrides.customHosts
+        let global = loadGlobalProfileOverride().customHosts
+        guard !global.isEmpty else { return perProfile }
+        let shadowed = Set(
+            perProfile.map { $0.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        )
+        let inherited = global.filter {
+            !shadowed.contains($0.domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }
+        return inherited + perProfile
+    }
+
+    func slicedGeoSiteData(for summary: ProfileConfigurationSummary?) -> Data? {
+        guard let summary else { return bundledGeoSiteData }
+        guard let index = bundledGeoSiteSliceIndex else { return bundledGeoSiteData }
+        return index.slice(forRules: summary.allRules)
+    }
+
     func traceRoute(_ request: RouteTraceRequest) async -> RouteTraceResult {
         let trimmedIP = request.ip?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedHost = DNSLookupInspector.normalizeHost(request.host)
             ?? request.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let customHosts = activeProfileOverrides.customHosts
+        let customHosts = effectiveCustomHosts
         let requestProfileID = activeProfileID
         let requestConnectionID = providerConnectionID
 
@@ -2382,12 +2619,12 @@ final class TunnelManager: ObservableObject {
         return RouteSimulationInspector.evaluate(
             request: forwardedRequest,
             routingMode: effectiveMode,
-            profileYAML: activeProfile?.runtimeYAML,
+            profileYAML: activeProfile.map { effectiveProfileYAML(for: $0) },
             summary: activeProfileSummary,
             proxySelections: currentSelections,
-            customRules: customRules,
+            customRules: effectiveRuntimeCustomRules,
             customHosts: mergedCustomHosts,
-            geoSiteData: bundledGeoSiteData,
+            geoSiteData: slicedGeoSiteData(for: activeProfileSummary),
             resolvedAddresses: resolvedDNS.addresses,
             dnsLatencyMilliseconds: resolvedDNS.addresses.isEmpty || resolvedDNS.latencyMilliseconds == 0
                 ? nil
@@ -2396,43 +2633,105 @@ final class TunnelManager: ObservableObject {
         )
     }
 
+    func installLANProxyCallbacks() {
+        LANProxyServerController.shared.onListenerReady = { [weak self] in
+            guard let self, !self.isUIReviewMode, !self.isApplicationTerminating else { return }
+            if self.state == .connected && self.localProxySettings.setAsSystemProxy {
+                self.applySystemProxyIfNeeded()
+            }
+        }
+        LANProxyServerController.shared.onListenerFailure = { [weak self] port, error in
+            guard let self, !self.isUIReviewMode else { return }
+            self.handleLocalProxyListenerFailure(port: port, error: error)
+        }
+    }
+
+    func handleLocalProxyListenerFailure(port: Int, error: Error) {
+        let wasSystemProxyRequested = localProxySettings.setAsSystemProxy || isSystemProxyActive
+        isSystemProxyActive = false
+        if wasSystemProxyRequested {
+            restoreSystemProxyIfNeeded()
+        }
+        localProxySettingsMessage = AppLocalization.inline(
+            "Local proxy port \(port) is already in use or failed to bind (\(error.localizedDescription)). System Proxy has been rolled back.",
+            chinese: "本地代理端口 \(port) 已被占用或启动失败（\(error.localizedDescription)），已自动回滚系统代理。"
+        )
+    }
+
+    func tunnelOwnsLoopbackListener(for settings: LocalProxySettings) -> Bool {
+        networkEngineMode == .tun && !settings.allowLAN
+    }
+
     func handleSystemProxyForStateTransition(from oldState: State, to newState: State) {
         guard !isUIReviewMode else { return }
         switch newState {
         case .connected:
-            if networkEngineMode == .transparent,
-               localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
+            installLANProxyCallbacks()
+            let usesHostProxyListener = !tunnelOwnsLoopbackListener(for: localProxySettings)
+            if usesHostProxyListener,
+               localProxySettings.allowLAN || localProxySettings.setAsSystemProxy || localProxySettings.isEnabled {
                 LANProxyServerController.shared.updateConfiguration(
                     settings: localProxySettings,
-                    allowStandaloneLoopback: true
+                    isTunnelConnected: true,
+                    allowStandaloneLoopback: networkEngineMode == .transparent
+                )
+            } else {
+                LANProxyServerController.shared.updateConfiguration(
+                    settings: localProxySettings,
+                    isTunnelConnected: false,
+                    allowStandaloneLoopback: false
                 )
             }
             if localProxySettings.setAsSystemProxy {
                 applySystemProxyIfNeeded()
             }
-        case .disconnecting:
-            restoreSystemProxyIfNeeded()
+        case .recovering, .connecting, .disconnecting:
+            if isSystemProxyActive || oldState == .connected {
+                isSystemProxyActive = false
+                restoreSystemProxyIfNeeded()
+            }
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                isTunnelConnected: false,
+                allowStandaloneLoopback: false
+            )
         case .disconnected, .failed:
             let wasActive = switch oldState {
             case .connected, .connecting, .recovering, .disconnecting: true
-            default: false
+            default: isSystemProxyActive
             }
             if wasActive {
+                isSystemProxyActive = false
                 restoreSystemProxyIfNeeded()
-                LANProxyServerController.shared.updateConfiguration(
-                    settings: localProxySettings,
-                    allowStandaloneLoopback: false
-                )
             }
-        case .privacyConsentRequired, .loading, .connecting, .recovering:
-            break
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                isTunnelConnected: false,
+                allowStandaloneLoopback: false
+            )
+        case .privacyConsentRequired, .loading:
+            LANProxyServerController.shared.updateConfiguration(
+                settings: localProxySettings,
+                isTunnelConnected: false,
+                allowStandaloneLoopback: false
+            )
         }
     }
 
     func applySystemProxyIfNeeded(settings overrideSettings: LocalProxySettings? = nil) {
         let settings = overrideSettings ?? localProxySettings
-        guard !isUIReviewMode, !isApplicationTerminating, settings.setAsSystemProxy else {
+        guard !isUIReviewMode,
+              !isApplicationTerminating,
+              state == .connected,
+              settings.setAsSystemProxy else {
+            isSystemProxyActive = false
             return
+        }
+        if !tunnelOwnsLoopbackListener(for: settings) {
+            guard LANProxyServerController.shared.isReady else {
+                isSystemProxyActive = false
+                return
+            }
         }
         systemProxyGeneration &+= 1
         let generation = systemProxyGeneration
@@ -2440,6 +2739,11 @@ final class TunnelManager: ObservableObject {
         systemProxyCoordinator.enqueueApply(settings: settings, configurator: configurator) { [weak self] error in
             Task { @MainActor [weak self] in
                 guard let self, self.systemProxyGeneration == generation else { return }
+                guard self.state == .connected, !self.isApplicationTerminating else {
+                    self.isSystemProxyActive = false
+                    self.restoreSystemProxyIfNeeded()
+                    return
+                }
                 if let error {
                     self.isSystemProxyActive = false
                     self.localProxySettingsMessage = error.localizedDescription
@@ -2454,8 +2758,8 @@ final class TunnelManager: ObservableObject {
     }
 
     func restoreSystemProxyIfNeeded() {
+        isSystemProxyActive = false
         guard !isUIReviewMode else {
-            isSystemProxyActive = false
             return
         }
         systemProxyGeneration &+= 1
@@ -2639,11 +2943,20 @@ final class TunnelManager: ObservableObject {
     struct LatencyRunToken: Equatable {
         let profileName: String
         let importedAt: Date
+        let lastUpdatedAt: Date?
+        let yamlLength: Int
+        let overrides: ProfileOverride?
     }
 
     var currentLatencyRunToken: LatencyRunToken? {
         activeProfile.map {
-            LatencyRunToken(profileName: $0.name, importedAt: $0.importedAt)
+            LatencyRunToken(
+                profileName: $0.name,
+                importedAt: $0.importedAt,
+                lastUpdatedAt: $0.subscription?.lastUpdatedAt,
+                yamlLength: $0.yaml.utf8.count,
+                overrides: $0.overrides
+            )
         }
     }
 
@@ -3742,5 +4055,129 @@ final class SystemProxyWorkCoordinator: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return sequence != latestSequence
+    }
+}
+
+/// Single-pass protobuf entry index over `GeoSite.dat` (`GeoSiteList`: repeated field 1 length-delimited `GeoSite`).
+/// Stores exact wire byte ranges for each `country_code` once so DNS lookup and route simulation
+/// can materialize a compact `GeoSiteList` containing only categories referenced by active rules.
+struct GeoSiteEntrySliceIndex: Sendable {
+    private let rawData: Data
+    private let entryWireRanges: [String: Range<Int>]
+
+    init?(data: Data) {
+        let bytes = [UInt8](data)
+        var offset = 0
+        var ranges: [String: Range<Int>] = [:]
+        ranges.reserveCapacity(512)
+
+        func readVarint(_ index: inout Int, end: Int) -> UInt64? {
+            var value: UInt64 = 0
+            var shift: UInt64 = 0
+            while index < end && shift < 64 {
+                let byte = bytes[index]
+                index += 1
+                value |= UInt64(byte & 0x7f) << shift
+                if (byte & 0x80) == 0 {
+                    return value
+                }
+                shift += 7
+            }
+            return nil
+        }
+
+        func skipField(wireType: UInt64, _ index: inout Int, end: Int) -> Bool {
+            switch wireType {
+            case 0:
+                return readVarint(&index, end: end) != nil
+            case 1:
+                guard index + 8 <= end else { return false }
+                index += 8
+                return true
+            case 2:
+                guard let len = readVarint(&index, end: end),
+                      len <= UInt64(end - index) else { return false }
+                index += Int(len)
+                return true
+            case 5:
+                guard index + 4 <= end else { return false }
+                index += 4
+                return true
+            default:
+                return false
+            }
+        }
+
+        while offset < bytes.count {
+            let recordStart = offset
+            guard let key = readVarint(&offset, end: bytes.count) else { return nil }
+            let field = key >> 3
+            let wireType = key & 0x07
+            guard field == 1, wireType == 2 else {
+                guard skipField(wireType: wireType, &offset, end: bytes.count) else { return nil }
+                continue
+            }
+            guard let len = readVarint(&offset, end: bytes.count),
+                  len <= UInt64(bytes.count - offset) else { return nil }
+            let entryStart = offset
+            let entryEnd = offset + Int(len)
+            offset = entryEnd
+
+            var inner = entryStart
+            var code: String?
+            while inner < entryEnd {
+                guard let innerKey = readVarint(&inner, end: entryEnd) else { break }
+                let innerField = innerKey >> 3
+                let innerWire = innerKey & 0x07
+                if innerField == 1, innerWire == 2 {
+                    guard let codeLen = readVarint(&inner, end: entryEnd),
+                          codeLen <= UInt64(entryEnd - inner) else { break }
+                    let slice = bytes[inner ..< (inner + Int(codeLen))]
+                    code = String(bytes: slice, encoding: .utf8)?.lowercased()
+                    break
+                } else {
+                    guard skipField(wireType: innerWire, &inner, end: entryEnd) else { break }
+                }
+            }
+            if let code, !code.isEmpty, ranges[code] == nil {
+                ranges[code] = recordStart ..< entryEnd
+            }
+        }
+        guard !ranges.isEmpty else { return nil }
+        self.rawData = data
+        self.entryWireRanges = ranges
+    }
+
+    func slice(forRules rules: [RuleConfigurationSummary]) -> Data? {
+        var neededCodes: [String] = []
+        var seen = Set<String>()
+        for rule in rules {
+            if rule.kind.caseInsensitiveCompare("GEOSITE") == .orderedSame,
+               let criteria = rule.criteria {
+                let code = GeoSiteCategoryIndex.categoryCode(of: criteria)
+                if !code.isEmpty, seen.insert(code).inserted {
+                    neededCodes.append(code)
+                }
+            } else if let criteria = rule.criteria,
+                      criteria.range(of: "GEOSITE,", options: .caseInsensitive) != nil {
+                return rawData
+            }
+        }
+        guard !neededCodes.isEmpty else { return nil }
+        var totalBytes = 0
+        for code in neededCodes {
+            if let range = entryWireRanges[code] {
+                totalBytes += range.count
+            }
+        }
+        guard totalBytes > 0 else { return Data() }
+        var output = Data()
+        output.reserveCapacity(totalBytes)
+        for code in neededCodes {
+            if let range = entryWireRanges[code] {
+                output.append(rawData.subdata(in: range))
+            }
+        }
+        return output
     }
 }

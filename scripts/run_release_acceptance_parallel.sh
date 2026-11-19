@@ -130,6 +130,62 @@ tart list 2>/dev/null | grep -E "^local[[:space:]]+$VM_NAME[[:space:]]" >/dev/nu
   exit 1
 }
 
+VM_PID=
+REMOTE_PID=
+NOTARIZED_PID=
+TART_RUN_PID=
+VM_STARTED_BY_ORCHESTRATOR=0
+CLEANUP_DONE=0
+
+collect_descendant_pids() {
+  parent_pid="$1"
+  children=$(pgrep -P "$parent_pid" 2>/dev/null || true)
+  for child in $children; do
+    collect_descendant_pids "$child"
+    printf '%s\n' "$child"
+  done
+}
+
+terminate_process_tree() {
+  root_pid="${1:-}"
+  [ -n "$root_pid" ] || return 0
+  descendants=$(collect_descendant_pids "$root_pid")
+  for dpid in $descendants; do
+    kill -TERM "$dpid" 2>/dev/null || true
+  done
+  kill -TERM "$root_pid" 2>/dev/null || true
+  sleep 0.1
+  for dpid in $descendants; do
+    if kill -0 "$dpid" 2>/dev/null; then
+      kill -KILL "$dpid" 2>/dev/null || true
+    fi
+  done
+  if kill -0 "$root_pid" 2>/dev/null; then
+    kill -KILL "$root_pid" 2>/dev/null || true
+  fi
+}
+
+cleanup_subprocesses() {
+  [ "$CLEANUP_DONE" -eq 1 ] && return 0
+  CLEANUP_DONE=1
+  set +e
+  for pid in $VM_PID $REMOTE_PID $NOTARIZED_PID; do
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      log "Terminating track process tree ($pid)..."
+      terminate_process_tree "$pid"
+    fi
+  done
+  if [ "$VM_STARTED_BY_ORCHESTRATOR" -eq 1 ]; then
+    log "[Cleanup] Stopping headless Tart VM '$VM_NAME'..."
+    tart stop "$VM_NAME" >/dev/null 2>&1 || true
+    if [ -n "$TART_RUN_PID" ]; then
+      terminate_process_tree "$TART_RUN_PID"
+      wait "$TART_RUN_PID" 2>/dev/null || true
+    fi
+  fi
+}
+trap cleanup_subprocesses EXIT HUP INT TERM
+
 if tart list 2>/dev/null | grep -E "^local[[:space:]]+$VM_NAME[[:space:]].*running" >/dev/null; then
   log "[Preflight] Cycling Tart VM '$VM_NAME' to clear stale provider daemons..."
   tart stop "$VM_NAME" >/dev/null 2>&1 || true
@@ -137,7 +193,9 @@ if tart list 2>/dev/null | grep -E "^local[[:space:]]+$VM_NAME[[:space:]].*runni
 fi
 
 log "[Preflight] Starting Tart VM '$VM_NAME' headless..."
+VM_STARTED_BY_ORCHESTRATOR=1
 tart run "$VM_NAME" --no-graphics >/dev/null 2>&1 &
+TART_RUN_PID=$!
 sleep 5
 vm_ip=
 for i in $(seq 1 15); do
@@ -197,20 +255,6 @@ RUN_REMOTE_ARM64=${AETHERROUTE_RUN_REMOTE_ARM64:-YES}
 NOTARIZED_DIR="$OUTPUT_DIR/notarized-candidate"
 NOTARIZED_LOG="$OUTPUT_DIR/notarized_candidate.log"
 VM_REMOTE_LOG="$OUTPUT_DIR/remote_arm64_vm.log"
-
-VM_PID=
-REMOTE_PID=
-NOTARIZED_PID=
-
-cleanup_subprocesses() {
-  for pid in $VM_PID $REMOTE_PID $NOTARIZED_PID; do
-    if kill -0 "$pid" 2>/dev/null; then
-      log "Terminating track process ($pid)..."
-      kill "$pid" 2>/dev/null || true
-    fi
-  done
-}
-trap cleanup_subprocesses EXIT HUP INT TERM
 
 log ""
 log "[Dispatch] Launching parallel execution tracks..."

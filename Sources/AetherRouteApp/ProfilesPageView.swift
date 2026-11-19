@@ -1332,8 +1332,7 @@ private struct ManagedProfileRow: View {
                 )
             }.value
             guard !Task.isCancelled else { return }
-            ProfileNodeCountCache.counts[key] = inspected.count
-            ProfileNodeCountCache.fallbackUsages[key] = inspected.usage
+            ProfileNodeCountCache.store(count: inspected.count, usage: inspected.usage, for: key)
             inspectedNodeCount = inspected.count
             inspectedFallbackUsage = inspected.usage
         }
@@ -1610,21 +1609,46 @@ struct SubscriptionEditorSheet: View {
     }
 }
 
-/// Node counts of the profiles in the library, by profile and import date,
-/// so the list does not re-parse every profile each time it appears.
+/// Node counts of the profiles in the library, keyed by identity, timestamps,
+/// content hash, and overrides so refreshes and equal-length quota updates
+/// invalidate stale values while bounding dictionary size.
 @MainActor
 private enum ProfileNodeCountCache {
     struct Key: Hashable {
         let id: UUID
         let importedAt: Date
+        let lastUpdatedAt: Date?
         let length: Int
+        let contentAndOverrideHash: Int
     }
 
+    private static let maximumEntries = 128
     static var counts: [Key: Int] = [:]
     static var fallbackUsages: [Key: SubscriptionUsage] = [:]
 
     static func key(for managed: ManagedProfile) -> Key {
-        Key(id: managed.id, importedAt: managed.profile.importedAt, length: managed.profile.yaml.utf8.count)
+        var hasher = Hasher()
+        hasher.combine(managed.profile.yaml)
+        if let overrides = managed.profile.overrides,
+           let encoded = try? JSONEncoder().encode(overrides) {
+            hasher.combine(encoded)
+        }
+        return Key(
+            id: managed.id,
+            importedAt: managed.profile.importedAt,
+            lastUpdatedAt: managed.profile.subscription?.lastUpdatedAt,
+            length: managed.profile.yaml.utf8.count,
+            contentAndOverrideHash: hasher.finalize()
+        )
+    }
+
+    static func store(count: Int, usage: SubscriptionUsage?, for key: Key) {
+        if counts.count >= maximumEntries && counts[key] == nil {
+            counts.removeAll(keepingCapacity: true)
+            fallbackUsages.removeAll(keepingCapacity: true)
+        }
+        counts[key] = count
+        fallbackUsages[key] = usage
     }
 }
 

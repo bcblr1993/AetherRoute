@@ -182,6 +182,150 @@ final class TransparentProxyConcurrencyAndBudgetFixesTests: XCTestCase, @uncheck
         let decoded = try TransparentProxyReloadPayloadPolicy.decode(encoded)
         XCTAssertEqual(decoded, payload)
     }
+
+    func testResolveTCPDestinationEncodesIPLiteralsAsIPEndpointsAndSupportsUnderscoreAndFallback() throws {
+        let decodedFallback = FlowEndpoint(host: .ipv4([198, 18, 0, 15]), port: 443, transport: .tcp)
+
+        // 1. IPv4 literal in `remoteHostname` MUST be encoded as `.ipv4` (not `.name`),
+        //    so Rust `dispatcher_impl` triggers Fake-IP reverse lookup & ClientHello SNI recovery!
+        let ipv4Resolved = try NetworkExtensionFlowLifecycle.resolveTCPDestination(
+            decodedEndpoint: decodedFallback,
+            remoteHostname: "198.18.0.15"
+        )
+        XCTAssertEqual(ipv4Resolved.host, .ipv4([198, 18, 0, 15]))
+
+        // 2. IPv6 literal in `remoteHostname` MUST be encoded as `.ipv6` instead of failing validation
+        let ipv6Resolved = try NetworkExtensionFlowLifecycle.resolveTCPDestination(
+            decodedEndpoint: decodedFallback,
+            remoteHostname: "2001:4860:4860::8888"
+        )
+        if case .ipv6 = ipv6Resolved.host {
+            // expected
+        } else {
+            XCTFail("Expected .ipv6 endpoint, got \(ipv6Resolved.host)")
+        }
+
+        // 3. Valid hostname with underscore must succeed as `.name`
+        let underscoreResolved = try NetworkExtensionFlowLifecycle.resolveTCPDestination(
+            decodedEndpoint: decodedFallback,
+            remoteHostname: "api_v2.corp.internal"
+        )
+        XCTAssertEqual(underscoreResolved.host, .name("api_v2.corp.internal"))
+
+        // 4. Malformed hostname must safely fall back to `decodedEndpoint` instead of throwing ECONNREFUSED
+        let fallbackResolved = try NetworkExtensionFlowLifecycle.resolveTCPDestination(
+            decodedEndpoint: decodedFallback,
+            remoteHostname: "bad host name!"
+        )
+        XCTAssertEqual(fallbackResolved, decodedFallback)
+    }
+
+    func testIdleUDPSessionsEvictLRUWhenFullSoNewTCPFlowsAreNeverStarved() throws {
+        let engine = InstantUDPEvictionMockEngine()
+        let runtime = try TransparentProxyFlowRuntime(
+            engine: engine,
+            maximumFlowBytes: 8 * TransparentFlowResourceKind.udp.reservationBytes,
+            maximumSessionCount: 8
+        )
+
+        // Fill all 8 slots with idle UDP sessions
+        for _ in 0..<8 {
+            let id = TransparentProxyAppleFlowIdentity()
+            let comps = TransparentUDPIngressComponents(
+                opening: InstantOpenAdapter(),
+                flow: HangingUDPFlowIO(),
+                openingIdentity: id,
+                flowIdentity: id
+            )
+            let res = runtime.claimUDP(components: comps, localSource: nil)
+            XCTAssertNotNil(res.sessionID)
+        }
+
+        // Now admit a new TCP flow while all 8 UDP sessions are sitting idle — must evict oldest idle UDP and succeed!
+        let tcpID = TransparentProxyAppleFlowIdentity()
+        let tcpComps = TransparentTCPIngressComponents(
+            opening: InstantOpenAdapter(),
+            flow: HangingTCPFlowIO(),
+            openingIdentity: tcpID,
+            flowIdentity: tcpID
+        )
+        let tcpClaim = runtime.claimTCP(
+            components: tcpComps,
+            source: nil,
+            destination: FlowEndpoint(host: .ipv4([1, 1, 1, 1]), port: 443, transport: .tcp)
+        )
+        XCTAssertNotNil(tcpClaim.sessionID, "New TCP flow must evict an idle UDP session instead of starving with ECONNREFUSED")
+
+        let stopped = expectation(description: "runtime stopped cleanly after UDP eviction")
+        runtime.stop { stopped.fulfill() }
+        wait(for: [stopped], timeout: 3.0)
+    }
+
+    func testStopDuringInFlightRebuildClearsRebuildInFlightForSubsequentSession() throws {
+        let firstEngine = InstantUDPEvictionMockEngine()
+        let controller = TransparentProxyProviderLifecycleController {
+            try TransparentProxyFlowRuntime(engine: firstEngine)
+        }
+
+        let started1 = expectation(description: "initial start")
+        controller.start(
+            installNetworkSettings: { $0(true) },
+            completion: { err in
+                XCTAssertNil(err)
+                started1.fulfill()
+            }
+        )
+        wait(for: [started1], timeout: 2.0)
+
+        let rebuildEntered = DispatchSemaphore(value: 0)
+        let rebuildRelease = DispatchSemaphore(value: 0)
+        let rebuildCompleted = expectation(description: "first rebuild callback")
+        controller.rebuildRuntime(
+            runtimeFactory: {
+                rebuildEntered.signal()
+                rebuildRelease.wait()
+                return try TransparentProxyFlowRuntime(engine: InstantUDPEvictionMockEngine())
+            },
+            completion: { swapped in
+                XCTAssertFalse(swapped)
+                rebuildCompleted.fulfill()
+            }
+        )
+        XCTAssertEqual(rebuildEntered.wait(timeout: .now() + 1.5), .success)
+
+        // Trigger stop while rebuildFactory is blocked on preparationQueue, then release rebuildFactory
+        let stopped = expectation(description: "controller stopped")
+        controller.stop { stopped.fulfill() }
+        rebuildRelease.signal()
+        wait(for: [stopped, rebuildCompleted], timeout: 2.0)
+
+        // Start a brand-new session and verify `rebuildRuntime` is NOT stuck with `rebuildInFlight == true`
+        let started2 = expectation(description: "second start")
+        controller.start(
+            installNetworkSettings: { $0(true) },
+            completion: { err in
+                XCTAssertNil(err)
+                started2.fulfill()
+            }
+        )
+        wait(for: [started2], timeout: 2.0)
+
+        let secondRebuildDone = expectation(description: "second rebuild succeeded")
+        controller.rebuildRuntime(
+            runtimeFactory: {
+                try TransparentProxyFlowRuntime(engine: InstantUDPEvictionMockEngine())
+            },
+            completion: { swapped in
+                XCTAssertTrue(swapped)
+                secondRebuildDone.fulfill()
+            }
+        )
+        wait(for: [secondRebuildDone], timeout: 2.0)
+
+        let finalStop = expectation(description: "final stop")
+        controller.stop { finalStop.fulfill() }
+        wait(for: [finalStop], timeout: 2.0)
+    }
 }
 
 private final class LockedBox<Value: Sendable>: @unchecked Sendable {
@@ -315,4 +459,15 @@ private final class NonBlockingAdmissionMockEngine: TransparentProxyFlowEngine, 
         makeTCPEntered.wait(timeout: .now() + timeout) == .success
     }
     func releaseMakeTCP() { makeTCPRelease.signal() }
+}
+
+private final class InstantUDPEvictionMockEngine: TransparentProxyFlowEngine, @unchecked Sendable {
+    func makeTCPFlow(source _: FlowEndpoint?, destination _: FlowEndpoint, sourceApp _: FlowSourceApp?) throws -> any RustTCPFlowBridge {
+        InstantDestroyTCPRustBridge()
+    }
+    func makeUDPFlow(source _: FlowEndpoint, sourceApp _: FlowSourceApp?) throws -> any RustUDPFlowBridge {
+        HangingUDPRustBridge()
+    }
+    func resetNetworkState(interfaceIndex _: UInt32) throws -> EngineNetworkResetOutcome { .reset }
+    func shutdown(completion: @escaping @Sendable () -> Void) { completion() }
 }

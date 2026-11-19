@@ -346,11 +346,13 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
     private func beginDrain() {
         TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain begin")
         registry.stopAll { [self] in
-            TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain success")
-            TransparentLifecycleLog.logger.info("stage=flowEngineShutdown begin")
-            engine.shutdown { [self] in
-                TransparentLifecycleLog.logger.info("stage=flowEngineShutdown success")
-                finishStop()
+            coordinator.waitForPendingRollbacks { [self] in
+                TransparentLifecycleLog.logger.info("stage=flowRuntimeDrain success")
+                TransparentLifecycleLog.logger.info("stage=flowEngineShutdown begin")
+                engine.shutdown { [self] in
+                    TransparentLifecycleLog.logger.info("stage=flowEngineShutdown success")
+                    finishStop()
+                }
             }
         }
     }
@@ -611,6 +613,7 @@ public final class TransparentProxyProviderLifecycleController:
     private var stopRequested = false
     private var stopCompletions: [ProviderStopCompletion] = []
     private var rebuildInFlight = false
+    private var lifecycleEpoch: UInt64 = 0
 
     public init(
         identityGuard: TransparentProxySelfIdentityGuard = .init(),
@@ -737,12 +740,15 @@ public final class TransparentProxyProviderLifecycleController:
                 callbackQueue.async { completion(false) }
                 return
             }
+            let startedEpoch = lifecycleEpoch
             rebuildInFlight = true
             TransparentLifecycleLog.logger.info("stage=runtimeRebuild begin")
             preparationQueue.async { [self] in
                 let result = Result { try rebuildFactory() }
                 lifecycleQueue.async { [self] in
-                    rebuildInFlight = false
+                    if lifecycleEpoch == startedEpoch {
+                        rebuildInFlight = false
+                    }
                     switch result {
                     case let .failure(error):
                         TransparentLifecycleLog.logger.error(
@@ -753,12 +759,15 @@ public final class TransparentProxyProviderLifecycleController:
                         // A stop, or a stop and a new start, may have run while
                         // the engine was being built. Only the runtime this
                         // rebuild set out to replace may be replaced.
-                        guard phase == .running, runtime === current else {
+                        guard lifecycleEpoch == startedEpoch,
+                              phase == .running,
+                              runtime === current else {
                             TransparentLifecycleLog.logger.info(
                                 "stage=runtimeRebuild discarded reason=stale"
                             )
-                            fresh.stop {}
-                            callbackQueue.async { completion(false) }
+                            fresh.stop {
+                                self.callbackQueue.async { completion(false) }
+                            }
                             return
                         }
                         runtime = fresh
@@ -1084,6 +1093,8 @@ public final class TransparentProxyProviderLifecycleController:
     }
 
     private func resetToIdle() {
+        lifecycleEpoch &+= 1
+        rebuildInFlight = false
         phase = .idle
         TransparentLifecycleLog.logger.info("stage=lifecyclePhase value=idle")
         operationID = nil

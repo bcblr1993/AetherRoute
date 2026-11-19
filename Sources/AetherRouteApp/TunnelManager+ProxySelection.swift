@@ -767,12 +767,13 @@ extension TunnelManager {
 
     func sendProviderMessage(
         _ data: Data,
-        for connectionID: UUID?
+        for connectionID: UUID?,
+        timeout: Duration = TunnelStartupTimingPolicy.standardProviderMessageTimeout
     ) async throws -> Data {
         guard state == .connected, providerConnectionID == connectionID else {
             throw TunnelManagerError.providerSessionUnavailable
         }
-        return try await sendProviderMessage(data)
+        return try await sendProviderMessage(data, timeout: timeout)
     }
 
     func sendProviderMessage(
@@ -854,7 +855,7 @@ extension TunnelManager {
         consecutiveProviderUnresponsiveCount = 0
         latencyMeasuredAt = [:]
         stopTelemetryPolling()
-        connectionQuality = .unknown
+        setConnectionQuality(.unknown)
         automaticReadinessGroupNames = []
         automaticReadinessChildGroups = [:]
         automaticRouteFailureCounts = [:]

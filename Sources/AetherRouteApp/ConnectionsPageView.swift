@@ -1560,6 +1560,7 @@ private struct ConnectionInspector: View {
     let initiallyClosed: Bool
     @ObservedObject private var model: NetworkTelemetryViewModel
     @State private var lastSeenConnection: ConnectionTelemetry
+    @State private var cachedDecisionTrace: ConnectionRouteDecisionTrace?
 
     init(
         flowID: ConnectionTableItem.ID,
@@ -1574,37 +1575,19 @@ private struct ConnectionInspector: View {
         _lastSeenConnection = State(initialValue: initialConnection)
     }
 
-    private var liveConnection: ConnectionTelemetry? {
+    private func resolveLiveConnection() -> ConnectionTelemetry? {
         guard !initiallyClosed, tunnel.isConnected else { return nil }
         return model.identifiedSnapshotConnections()
             .first(where: { $0.id == flowID })?
             .connection
     }
 
-    private var connection: ConnectionTelemetry {
-        liveConnection ?? lastSeenConnection
-    }
-
-    private var isClosed: Bool {
-        initiallyClosed || liveConnection == nil
-    }
-
-    private var liveRates: ConnectionTransferRates? {
-        guard !isClosed else { return nil }
-        return model.connectionRates[flowID]
-    }
-
-    private var destination: String { connection.destinationAddress }
-    private var app: SourceAppPresentation {
-        SourceAppDirectory.shared.presentation(for: connection)
-    }
-
-    private var decisionTrace: ConnectionRouteDecisionTrace {
+    private func computeDecisionTrace(for conn: ConnectionTelemetry) -> ConnectionRouteDecisionTrace {
         ConnectionRouteDecisionTrace.evaluate(
-            connection: connection,
+            connection: conn,
             routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode,
-            customHosts: tunnel.activeProfileOverrides.customHosts,
-            customRules: tunnel.customRules,
+            customHosts: tunnel.effectiveCustomHosts,
+            customRules: tunnel.effectiveRuntimeCustomRules,
             summary: tunnel.activeProfileSummary
         )
     }
@@ -1615,7 +1598,13 @@ private struct ConnectionInspector: View {
     }
 
     var body: some View {
-        let trace = decisionTrace
+        let currentLive = resolveLiveConnection()
+        let connection = currentLive ?? lastSeenConnection
+        let isClosed = initiallyClosed || currentLive == nil
+        let liveRates: ConnectionTransferRates? = isClosed ? nil : model.connectionRates[flowID]
+        let destination = connection.destinationAddress
+        let app = SourceAppDirectory.shared.presentation(for: connection)
+        let trace = cachedDecisionTrace ?? computeDecisionTrace(for: initialConnection)
         VStack(alignment: .leading, spacing: 0) {
             AetherSheetHeader(
                 symbol: connection.transport == .tcp ? "arrow.left.arrow.right" : "dot.radiowaves.left.and.right",
@@ -1625,7 +1614,7 @@ private struct ConnectionInspector: View {
                     : AppLocalization.string("Live connection telemetry and route decision path."),
                 tint: AppSection.connections.tileColor
             ) {
-                inspectorStatusBadge
+                inspectorStatusBadge(isClosed: isClosed)
             }
             .padding([.horizontal, .top], AetherVisual.dialogPadding)
 
@@ -1658,7 +1647,7 @@ private struct ConnectionInspector: View {
                         routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode
                     )
                 }
-                quickRulesSection
+                quickRulesSection(connection: connection, app: app)
                 Section(AppLocalization.string("Traffic")) {
                     if let liveRates, liveRates.totalBytesPerSecond > 0 {
                         LabeledContent(AppLocalization.string("Live rate")) {
@@ -1741,7 +1730,16 @@ private struct ConnectionInspector: View {
             .padding([.horizontal, .bottom], AetherVisual.dialogPadding)
         }
         .aetherSheetFrame()
-        .onChange(of: liveConnection) { _, latest in
+        .onAppear {
+            cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
+        }
+        .onChange(of: tunnel.customRules) { _, _ in
+            cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
+        }
+        .onChange(of: tunnel.routingMode) { _, _ in
+            cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
+        }
+        .onChange(of: currentLive) { _, latest in
             if let latest {
                 lastSeenConnection = latest
             } else if !initiallyClosed,
@@ -1756,7 +1754,7 @@ private struct ConnectionInspector: View {
         }
     }
 
-    private var inspectorStatusBadge: some View {
+    private func inspectorStatusBadge(isClosed: Bool) -> some View {
         HStack(spacing: AetherVisual.s1) {
             Circle()
                 .fill(isClosed ? AnyShapeStyle(AetherVisual.secondaryText) : AnyShapeStyle(AetherReadableTint(color: .green)))
@@ -1775,7 +1773,7 @@ private struct ConnectionInspector: View {
     }
 
     @ViewBuilder
-    private var quickRulesSection: some View {
+    private func quickRulesSection(connection: ConnectionTelemetry, app: SourceAppPresentation) -> some View {
         let candidates = ConnectionDestinationRulePlanner.candidates(for: connection.destination)
         let appSubject = SourceAppDirectory.shared.ruleSubject(for: app)
         if !candidates.isEmpty || appSubject != nil {
@@ -1842,7 +1840,7 @@ private struct ConnectionInspector: View {
                                             target: target
                                         )
                                         if saved, tunnel.isConnected {
-                                            await closeInspectorAppConnections()
+                                            await closeInspectorAppConnections(for: connection)
                                         }
                                     }
                                 } label: {
@@ -1859,7 +1857,7 @@ private struct ConnectionInspector: View {
                                     Task {
                                         let deleted = await tunnel.deleteCustomRule(id: existing.id)
                                         if deleted, tunnel.isConnected {
-                                            await closeInspectorAppConnections()
+                                            await closeInspectorAppConnections(for: connection)
                                         }
                                     }
                                 }
@@ -1876,7 +1874,7 @@ private struct ConnectionInspector: View {
         }
     }
 
-    private func closeInspectorAppConnections() async {
+    private func closeInspectorAppConnections(for connection: ConnectionTelemetry) async {
         let requests = ConnectionCloseRequest.closing(apps: [ConnectionCloseApp(of: connection)])
         for request in requests {
             await tunnel.closeConnections(request)

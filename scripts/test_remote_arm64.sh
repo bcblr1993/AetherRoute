@@ -101,6 +101,7 @@ for relative_path in \
   CONTRIBUTING.md \
   Config \
   Design \
+  Distribution \
   Docs \
   Licenses \
   Services \

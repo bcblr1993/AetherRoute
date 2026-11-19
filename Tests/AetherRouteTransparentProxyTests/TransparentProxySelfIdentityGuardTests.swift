@@ -7,14 +7,26 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
     private let tokenByteCount = MemoryLayout<audit_token_t>.size
     private let selfIdentifier = "com.aetherroute.desktop.transparent-proxy"
 
-    // MARK: - Self egress must bypass
+    // MARK: - Self egress must bypass ONLY when PID and code-signature anchor match
 
-    func testMatchingSigningIdentifierBypassesWithoutAuditToken() {
+    func testMatchingSigningIdentifierWithoutAuditTokenMustNotBypass() {
         let guardUnderTest = makeGuard(pid: 41)
 
         let result = guardUnderTest.evaluate(
             signingIdentifier: selfIdentifier,
             auditToken: nil
+        )
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertFalse(result.shouldBypassProxy)
+    }
+
+    func testMatchingSigningIdentifierAndPIDAndAnchorBypasses() {
+        let guardUnderTest = makeGuard(pid: 41, currentPID: 41)
+
+        let result = guardUnderTest.evaluate(
+            signingIdentifier: selfIdentifier,
+            auditToken: validLengthToken()
         )
 
         XCTAssertEqual(result.disposition, .bypass)
@@ -35,10 +47,10 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
     }
 
     /// The host readiness request and a packet-tunnel sibling are ordinary
-    /// client traffic. Only this extension's own egress may bypass capture.
-    func testOnlyTransparentExtensionBundleIsTreatedAsSelfEgress() {
+    /// client traffic. Only this extension's own egress (matching PID + anchor) may bypass capture.
+    func testOnlyTransparentExtensionBundleWithMatchingPIDIsTreatedAsSelfEgress() {
         let guardUnderTest = TransparentProxySelfIdentityGuard(
-            identityVerifier: StubIdentityVerifier(mode: .success(pid: 99)),
+            identityVerifier: StubIdentityVerifier(mode: .success(pid: 41)),
             currentProcessIdentifier: { 41 },
             selfSigningIdentifiers: [selfIdentifier]
         )
@@ -46,7 +58,7 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
         XCTAssertEqual(
             guardUnderTest.evaluate(
                 signingIdentifier: selfIdentifier,
-                auditToken: nil
+                auditToken: validLengthToken()
             ).disposition,
             .bypass
         )
@@ -59,7 +71,7 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
             XCTAssertEqual(
                 guardUnderTest.evaluate(
                     signingIdentifier: identifier,
-                    auditToken: nil
+                    auditToken: validLengthToken()
                 ).disposition,
                 .proxy,
                 "\(identifier) is client traffic, not extension self egress"
@@ -186,20 +198,21 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
         XCTAssertTrue(
             guardUnderTest.evaluate(
                 signingIdentifier: selfIdentifier,
-                auditToken: nil
+                auditToken: validLengthToken()
             ).shouldBypassProxy
         )
         XCTAssertFalse(
             guardUnderTest.evaluate(
                 signingIdentifier: "com.apple.Safari",
-                auditToken: nil
+                auditToken: validLengthToken()
             ).shouldBypassProxy
         )
     }
 
-    /// The signing identifier is the primary signal, so a self match must win
-    /// even when the audit token names a different process.
-    func testSigningIdentifierTakesPrecedenceOverAuditToken() {
+    /// P0-2 Regression: A local process forging our bundle ID via ad-hoc
+    /// `codesign -s - -i <BundleID>` has `sourcePID != currentPID` and MUST NOT
+    /// bypass the transparent proxy.
+    func testSpoofedSelfSigningIdentifierFromDifferentPIDMustBeProxied() {
         let guardUnderTest = makeGuard(pid: 999, currentPID: 41)
 
         let result = guardUnderTest.evaluate(
@@ -207,8 +220,29 @@ final class TransparentProxySelfIdentityGuardTests: XCTestCase {
             auditToken: validLengthToken()
         )
 
-        XCTAssertEqual(result.disposition, .bypass)
-        XCTAssertEqual(result.reason, .signingIdentifierMatchedSelf)
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertFalse(result.shouldBypassProxy)
+    }
+
+    /// P0-2 Regression: Even when PID matches, failing code-signature / Team ID
+    /// anchor verification must prevent self-bypass.
+    func testFailedCodeSignatureAnchorVerificationPreventsBypass() {
+        let guardUnderTest = TransparentProxySelfIdentityGuard(
+            identityVerifier: StubIdentityVerifier(
+                mode: .success(pid: 41),
+                codeIdentityValid: false
+            ),
+            currentProcessIdentifier: { 41 },
+            selfSigningIdentifiers: [selfIdentifier]
+        )
+
+        let result = guardUnderTest.evaluate(
+            signingIdentifier: selfIdentifier,
+            auditToken: validLengthToken()
+        )
+
+        XCTAssertEqual(result.disposition, .proxy)
+        XCTAssertFalse(result.shouldBypassProxy)
     }
 
     func testProductionVerifierUsesKernelAuditTokenSize() {
@@ -243,6 +277,7 @@ private struct StubIdentityVerifier: TransparentProxyFlowIdentityVerifying {
 
     let auditTokenByteCount = MemoryLayout<audit_token_t>.size
     let mode: Mode
+    var codeIdentityValid: Bool = true
 
     func processIdentifier(from auditToken: Data) throws -> pid_t {
         switch mode {
@@ -251,6 +286,10 @@ private struct StubIdentityVerifier: TransparentProxyFlowIdentityVerifying {
         case .pidFailure:
             throw StubError.expectedFailure
         }
+    }
+
+    func verifySelfCodeIdentity(for auditToken: Data) -> Bool {
+        codeIdentityValid
     }
 
     private enum StubError: Error {

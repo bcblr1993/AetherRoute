@@ -21,7 +21,8 @@ enum SystemExtensionActivationRegression {
             try await queryFailureAndStaleCallbacks()
             try await queryTimeoutFallsBack()
             try await missingMetadataUsesActivation()
-            print("System extension regression passed: reuse policy, query failure/timeout fallback, request identity, authorization, and missing metadata. No system requests submitted.")
+            try await siblingUpgradeChecks()
+            print("System extension regression passed: reuse policy, sibling silent upgrade, query failure/timeout fallback, request identity, authorization, and missing metadata. No system requests submitted.")
         } catch {
             FileHandle.standardError.write(Data("\(error)\n".utf8))
             exit(1)
@@ -103,6 +104,23 @@ enum SystemExtensionActivationRegression {
                 && NetworkSetupProgress.primaryAction(for: [.rebootRequired, .rebootRequired], isRunning: false) == .restartRequired,
             "Both engines awaiting restart should still require restart."
         )
+        let outdated = installation(.init(identifier: version.identifier, build: "1469", release: version.release), enabled: true)
+        try expect(
+            SystemExtensionActivationPolicy.shouldSilentlyUpgradeSibling(expected: version, installations: [outdated]),
+            "Enabled outdated sibling installation should qualify for silent upgrade."
+        )
+        try expect(
+            !SystemExtensionActivationPolicy.shouldSilentlyUpgradeSibling(expected: version, installations: [installation()]),
+            "Already-current sibling installation must not trigger upgrade."
+        )
+        try expect(
+            !SystemExtensionActivationPolicy.shouldSilentlyUpgradeSibling(expected: version, installations: [installation(.init(identifier: version.identifier, build: "1469", release: version.release), enabled: false)]),
+            "Disabled sibling installation must not silently activate."
+        )
+        try expect(
+            !SystemExtensionActivationPolicy.shouldSilentlyUpgradeSibling(expected: version, installations: []),
+            "Absent sibling installation must not silently activate."
+        )
     }
 
     static func queryFailureAndStaleCallbacks() async throws {
@@ -167,6 +185,50 @@ enum SystemExtensionActivationRegression {
         coordinator.request(recorder.requests[0], didFinishWithResult: .completed)
         try await operation.value
         try expect(recorder.requests.count == 1, "Missing metadata introduced a property-query dependency.")
+    }
+
+    static func siblingUpgradeChecks() async throws {
+        // 1. Not-installed sibling must only query properties, never submit activationRequest.
+        let notInstalledRecorder = Recorder()
+        let coordinator1 = SystemExtensionActivationCoordinator(
+            submitRequest: { notInstalledRecorder.requests.append($0) },
+            bundledVersion: { _ in version }
+        )
+        let op1 = Task { await coordinator1.upgradeEnabledIfOutdated(identifier: version.identifier) }
+        try await waitUntil { notInstalledRecorder.requests.count == 1 }
+        coordinator1.request(notInstalledRecorder.requests[0], foundProperties: [])
+        await op1.value
+        try expect(notInstalledRecorder.requests.count == 1, "Absent sibling should not trigger activationRequest")
+
+        // 2. Unexpected requestNeedsUserApproval during silent sibling upgrade must clear pendingActivation cleanly.
+        let approvalRecorder = Recorder()
+        let coordinator2 = SystemExtensionActivationCoordinator(
+            submitRequest: { approvalRecorder.requests.append($0) },
+            bundledVersion: { _ in version }
+        )
+        let op2 = Task { await coordinator2.upgradeEnabledIfOutdated(identifier: version.identifier) }
+        try await waitUntil { approvalRecorder.requests.count == 1 }
+        coordinator2.request(approvalRecorder.requests[0], didFailWithError: Failure(message: "skip query"))
+        // Even if query failed, upgradeEnabledIfOutdated must NOT activate blindly.
+        await op2.value
+        // 3. Query timeout during silent sibling upgrade must abort cleanly without prompting/activating,
+        // and leave coordinator free for a subsequent foreground activation.
+        let timeoutRecorder = Recorder()
+        let coordinator3 = SystemExtensionActivationCoordinator(
+            submitRequest: { timeoutRecorder.requests.append($0) },
+            bundledVersion: { _ in version },
+            propertiesTimeoutDuration: .milliseconds(10)
+        )
+        await coordinator3.upgradeEnabledIfOutdated(identifier: version.identifier)
+        try expect(timeoutRecorder.requests.count == 1, "Timed-out sibling query must not fall back to activation")
+
+        let fgOp = Task { try await coordinator3.activate(identifier: version.identifier) {} }
+        try await waitUntil { timeoutRecorder.requests.count >= 2 }
+        let fgQuery = timeoutRecorder.requests[1]
+        coordinator3.request(fgQuery, didFailWithError: Failure(message: "query fail"))
+        try await waitUntil { timeoutRecorder.requests.count >= 3 }
+        coordinator3.request(timeoutRecorder.requests[2], didFinishWithResult: .completed)
+        try await fgOp.value
     }
 
     static func waitUntil(_ condition: @MainActor () -> Bool) async throws {

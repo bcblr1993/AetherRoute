@@ -24,6 +24,10 @@ test "$bootstrap_line" -lt "$dmg_line" || {
   exit 1
 }
 
+grep -F '  Distribution \' "$CONTROLLER" >/dev/null || {
+  echo "Remote controller payload is missing Distribution" >&2
+  exit 1
+}
 grep -F '  Services \' "$CONTROLLER" >/dev/null || {
   echo "Remote controller payload is missing Services" >&2
   exit 1

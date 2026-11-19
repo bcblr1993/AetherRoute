@@ -23,7 +23,8 @@ public enum ProviderMessageClass: Sendable, Equatable {
         case .snapshot, .select, .telemetry, .diagnostics,
              .setRoutingMode, .resetNetwork, .reloadProfile(_),
              .closeConnections(_), .recentLog, .setDiagnosticLogLevel,
-             .traceRoute(_):
+             .traceRoute(_), .stageRoutingResourceChunk(_),
+             .installedRoutingResourceDigests:
             self = .control
         }
     }

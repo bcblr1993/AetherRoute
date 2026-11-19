@@ -643,14 +643,79 @@ public enum NetworkExtensionFlowLifecycle {
             flow.remoteFlowEndpoint,
             transport: .tcp
         )
-        guard let hostname = flow.remoteHostname, !hostname.isEmpty else {
-            return decoded
+        return try resolveTCPDestination(
+            decodedEndpoint: decoded,
+            remoteHostname: flow.remoteHostname
+        )
+    }
+
+    public static func resolveTCPDestination(
+        decodedEndpoint: FlowEndpoint,
+        remoteHostname: String?
+    ) throws -> FlowEndpoint {
+        guard let rawHostname = remoteHostname?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawHostname.isEmpty else {
+            return decodedEndpoint
         }
-        return try FlowEndpoint(
-            host: .name(hostname),
-            port: decoded.port,
+
+        var candidateHost = rawHostname
+        if candidateHost.hasPrefix("["), candidateHost.hasSuffix("]"), candidateHost.count >= 2 {
+            candidateHost = String(candidateHost.dropFirst().dropLast())
+        }
+
+        // Encode IPv4/IPv6 literals as IP endpoints rather than `.name(...)` so
+        // the core's Fake-IP reverse lookup and ClientHello SNI recovery run.
+        var addr4 = in_addr()
+        if candidateHost.withCString({ inet_pton(AF_INET, $0, &addr4) }) == 1 {
+            let bytes = withUnsafeBytes(of: addr4) { Array($0) }
+            return try FlowEndpoint(
+                host: .ipv4(bytes),
+                port: decodedEndpoint.port,
+                transport: .tcp
+            ).validated()
+        }
+
+        let ipv6Parts = candidateHost.split(separator: "%", maxSplits: 1, omittingEmptySubsequences: false)
+        let ipv6Literal = String(ipv6Parts[0])
+        var addr6 = in6_addr()
+        if ipv6Literal.withCString({ inet_pton(AF_INET6, $0, &addr6) }) == 1 {
+            let bytes = withUnsafeBytes(of: addr6) { Array($0) }
+            let defaultScope: UInt32 = if case let .ipv6(_, existingScope) = decodedEndpoint.host {
+                existingScope
+            } else {
+                0
+            }
+            let scopeID: UInt32
+            if ipv6Parts.count == 2 {
+                let zone = String(ipv6Parts[1])
+                if let numericScope = UInt32(zone) {
+                    scopeID = numericScope
+                } else {
+                    let resolvedIndex = zone.withCString { if_nametoindex($0) }
+                    scopeID = resolvedIndex > 0 ? resolvedIndex : defaultScope
+                }
+            } else {
+                scopeID = defaultScope
+            }
+            return try FlowEndpoint(
+                host: .ipv6(bytes, scopeID: scopeID),
+                port: decodedEndpoint.port,
+                transport: .tcp
+            ).validated()
+        }
+
+        if let namedEndpoint = try? FlowEndpoint(
+            host: .name(candidateHost),
+            port: decodedEndpoint.port,
             transport: .tcp
-        ).validated()
+        ).validated() {
+            return namedEndpoint
+        }
+
+        // Fall back to the already-validated socket remote endpoint instead of
+        // failing closed with ECONNREFUSED on non-standard host metadata.
+        return decodedEndpoint
     }
 
     public static func udpLocalSource(
@@ -670,11 +735,13 @@ public enum NetworkExtensionFlowLifecycle {
         guard !NetworkFlowEndpointCodec.hasUnspecifiedPort(rawEndpoint) else {
             return nil
         }
-        let endpoint = try NetworkFlowEndpointCodec.decode(
+        guard let endpoint = try? NetworkFlowEndpointCodec.decode(
             rawEndpoint,
             transport: .udp
-        )
-        return try normalizeUDPLocalSource(endpoint)
+        ) else {
+            return nil
+        }
+        return try? normalizeUDPLocalSource(endpoint)
     }
 
     /// Wildcard addresses do not identify an actual socket namespace. Treat

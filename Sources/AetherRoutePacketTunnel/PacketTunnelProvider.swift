@@ -6,21 +6,39 @@ import SystemConfiguration
 
 final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private static let runtimeLogger = AppLog.logger(category: AppLog.Category.tunnelRuntime)
+    private static let diagnosticLog = DiagnosticLogCenter.current.log(
+        category: AppLog.Category.tunnelRuntime
+    )
     /// Short enough that ten attempts still fit inside the recovery window,
     /// long enough that a link which has just come up is not failed early.
     private static let healthProbeTimeoutMilliseconds: UInt32 = 3_000
+    private static let rebuildAttemptIndex = 2
+    private static let rebuildWaitSeconds: TimeInterval = 20
 
     private let coreLock = NSLock()
-    private lazy var core: any CoreBridge = RustCoreBridge(packetFlow: packetFlow)
+    private var coreStorage: (any CoreBridge)?
+
+    private func makeCoreBridge() -> RustCoreBridge {
+        RustCoreBridge(packetFlow: packetFlow) { [weak self] error in
+            self?.handleCoreUnexpectedExit(error)
+        }
+    }
 
     private func currentCore() -> any CoreBridge {
-        coreLock.withLock { core }
+        coreLock.withLock {
+            if let existing = coreStorage {
+                return existing
+            }
+            let created = makeCoreBridge()
+            coreStorage = created
+            return created
+        }
     }
 
     private func swapCore(with replacement: any CoreBridge) -> any CoreBridge {
         coreLock.withLock {
-            let previous = core
-            core = replacement
+            let previous = coreStorage ?? makeCoreBridge()
+            coreStorage = replacement
             return previous
         }
     }
@@ -37,6 +55,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         attributes: .concurrent,
         autoreleaseFrequency: .workItem
     )
+    private let reloadWorkerQueue = DispatchQueue(
+        label: "com.aetherroute.packet-provider.reload",
+        qos: .userInitiated
+    )
+    private let reloadGate = AsyncSerialOperationGate()
+    private let resourceChunkReceiver = RoutingResourceChunkStagingReceiver {
+        try RoutingResourceStore.applicationGroup()
+    }
+    private let pathStateLock = NSLock()
     private var pathMonitor: NWPathMonitor?
     private var uplinkStore: SCDynamicStore?
     private final class UplinkObserverContext {
@@ -48,12 +75,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         qos: .utility
     )
     private static let pathChangeDebounceMilliseconds: Int = 150
-    // Accessed only on pathMonitorQueue.
     private var pendingPathChangeWorkItem: DispatchWorkItem?
     private var lastPathSignature: String?
     private struct TunnelRecipe: Sendable {
-        let configuration: TunnelConfiguration
-        let snapshot: ProviderLaunchSnapshot
+        var configuration: TunnelConfiguration
+        var snapshot: ProviderLaunchSnapshot
     }
 
     private let uplinkLock = NSLock()
@@ -61,7 +87,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private var activeRecipe: TunnelRecipe?
     private var cachedSummary: (digest: String, summary: ProfileConfigurationSummary)?
     private var physicalInterfaces: [NWInterface] = []
-    // Accessed only on the recovery coordinator's serial queue.
+    private let resetLedgerLock = NSLock()
     private var resetLedger = UplinkResetLedger()
     private var providerStopping = false
     private var recoveryRoutingMode: RoutingMode = .rule
@@ -91,25 +117,42 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 guard let self else { return }
                 switch event {
                 case let .started(reason):
-                    self.resetLedger.runStarted(reason: reason)
-                    // Only enter `.reasserting` immediately if there is no
-                    // physical uplink. When a physical uplink is already
-                    // present, keep the tunnel state connected during the first
-                    // fast health probe so transient path echoes do not flash
-                    // "Recovering..." in the host UI.
+                    self.resetLedgerLock.withLock {
+                        self.resetLedger.runStarted(reason: reason)
+                    }
+                    // Enter `.reasserting` immediately if there is no physical
+                    // uplink or the core has unexpectedly exited.
                     self.reasserting = self.currentPhysicalUplink() == nil
+                        || !self.currentCore().isBridgeRunning
                 case .attemptFailed:
                     self.reasserting = true
                 case .recovered:
                     self.reasserting = false
-                case .exhausted:
-                    // Probe exhaustion does not prove an engine failure. Keep
-                    // routes, existing flows and physical-link monitoring alive.
-                    // In rule mode GLOBAL may not even be the user's active route.
-                    self.reasserting = self.currentPhysicalUplink() == nil
-                    // With no uplink, remain reasserting until a physical-link
-                    // event resumes recovery. Reporting connected here starts
-                    // host readiness probes while the machine is still offline.
+                case let .exhausted(reason, _):
+                    // If the core is still not running after recovery attempts
+                    // (or one final emergency rebuild fails), tear down the
+                    // tunnel so routes/DNS are released instead of black-holing.
+                    if !self.currentCore().isBridgeRunning,
+                       !self.uplinkLock.withLock({ self.providerStopping }) {
+                        if !self.rebuildCoreForRecovery(reason: "exhausted-\(reason)") {
+                            Self.runtimeLogger.error(
+                                "stage=recoveryExhausted cancellingTunnel reason=deadCoreUnrecoverable"
+                            )
+                            Self.diagnosticLog.failure(
+                                "stage=recoveryExhausted cancellingTunnel reason=deadCoreUnrecoverable"
+                            )
+                            self.cancelTunnelWithError(PacketTunnelError.engineStoppedUnexpectedly)
+                            return
+                        }
+                        if self.dataPathIsHealthy() {
+                            self.reasserting = false
+                            return
+                        }
+                    }
+                    // Never clear `reasserting = false` on probe exhaustion:
+                    // falsely reporting `.connected` hides an unhealthy data
+                    // plane from the host watchdog.
+                    self.reasserting = true
                 case .cancelled:
                     self.reasserting = false
                 default: break
@@ -122,11 +165,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         options: [String: NSObject]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
+        let initialSignature = sampleCurrentPathSignature()
         uplinkLock.withLock {
             providerStopping = false
-            lastPathSignature = nil
+            lastPathSignature = initialSignature
         }
-        resetLedger.invalidate()
+        resetLedgerLock.withLock {
+            resetLedger.invalidate()
+        }
         Self.runtimeLogger.info("stage=startTunnel requested")
         let completion = TunnelStartCompletion(completionHandler)
         do {
@@ -137,6 +183,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             DiagnosticLogCenter.current.applyLevelOverride(
                 snapshot.diagnosticLogLevel
             )
+            Self.diagnosticLog.lifecycle("stage=startTunnel requested")
             uplinkLock.withLock {
                 launchFakeIPCacheKey = snapshot.fakeIPCacheKey
                 launchDiagnosticLogLevel = snapshot.diagnosticLogLevel
@@ -181,6 +228,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     Self.runtimeLogger.error(
                         "stage=startCore failed error=\(String(reflecting: coreError), privacy: .public)"
                     )
+                    let nsError = coreError as NSError
+                    Self.diagnosticLog.failure(
+                        "stage=startCore failed domain=\(nsError.domain) code=\(nsError.code)"
+                    )
                     self.diagnostics.record(.startupFailure)
                     self.currentCore().stop { completion.call(coreError) }
                     return
@@ -204,11 +255,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                         Self.runtimeLogger.error(
                             "stage=installNetworkSettings failed error=\(String(reflecting: settingsError), privacy: .public)"
                         )
+                        let nsError = settingsError as NSError
+                        Self.diagnosticLog.failure(
+                            "stage=installNetworkSettings failed domain=\(nsError.domain) code=\(nsError.code)"
+                        )
                         self.diagnostics.record(.networkSettingsFailure)
                         self.currentCore().stop { completion.call(settingsError) }
                         return
                     }
                     Self.runtimeLogger.info("stage=installNetworkSettings success")
+                    Self.diagnosticLog.lifecycle("stage=startTunnel ready")
                     self.recipeLock.withLock {
                         self.activeRecipe = TunnelRecipe(
                             configuration: configuration,
@@ -225,6 +281,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             Self.runtimeLogger.error(
                 "stage=startTunnel failed error=\(String(reflecting: error), privacy: .public)"
             )
+            let nsError = error as NSError
+            Self.diagnosticLog.failure(
+                "stage=startTunnel failed domain=\(nsError.domain) code=\(nsError.code)"
+            )
             diagnostics.record(.startupFailure)
             currentCore().stop { completion.call(error) }
         }
@@ -237,13 +297,19 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         Self.runtimeLogger.info(
             "stage=stopTunnel requested reason=\(reason.rawValue, privacy: .public)"
         )
-        stopPathMonitoring()
-        dataPlaneSampler.stop()
+        Self.diagnosticLog.lifecycle("stage=stopTunnel requested")
+        Self.diagnosticLog.aggregate("stage=stopTunnel reason=\(reason.rawValue)")
+        // Mark stopping FIRST under lock before tearing down path monitors so
+        // concurrent callbacks immediately bail out without racing on monitor state.
         uplinkLock.withLock {
             providerStopping = true
             lastPathSignature = nil
         }
-        resetLedger.invalidate()
+        resetLedgerLock.withLock {
+            resetLedger.invalidate()
+        }
+        stopPathMonitoring()
+        dataPlaneSampler.stop()
         recipeLock.withLock { activeRecipe = nil }
         recovery.cancel(reason: "stopTunnel")
         // macOS keeps the tunnel's interface, routes and DNS installed until
@@ -259,12 +325,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
     override func sleep(completionHandler: @escaping () -> Void) {
         Self.runtimeLogger.info("stage=sleep requested")
+        Self.diagnosticLog.lifecycle("stage=sleep requested")
         recovery.cancel(reason: "sleep")
         completionHandler()
     }
 
     override func wake() {
         Self.runtimeLogger.info("stage=wake requested")
+        Self.diagnosticLog.lifecycle("stage=wake requested")
         recovery.trigger(reason: "wake", supersedes: true)
     }
 
@@ -320,7 +388,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 case let .snapshot(group):
                     .snapshot(try activeCore.selectorSnapshot(group: group))
                 case let .select(group, member):
-                    .snapshot(try activeCore.selectProxy(group: group, member: member))
+                    .snapshot(try applySelection(group: group, member: member))
                 case let .latency(group, url, timeoutMilliseconds, unifiedDelay):
                     .latency(
                         try activeCore.testProxyLatency(
@@ -367,6 +435,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     applyDiagnosticLogLevel(level)
                 case let .traceRoute(traceRequest):
                     try handleTraceRoute(traceRequest, core: activeCore)
+                case let .stageRoutingResourceChunk(chunk):
+                    try handleStageRoutingResourceChunk(chunk)
+                case .installedRoutingResourceDigests:
+                    .routingResourceDigests(resourceChunkReceiver.installedDigests())
                 case .reloadProfile:
                     // Answered by the early branch above; never crash the
                     // extension (and the user's network) if that changes.
@@ -402,57 +474,87 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     }
 
     private func startPathMonitoring() {
-        guard pathMonitor == nil else { return }
-        let monitor = NWPathMonitor()
-        pathMonitor = monitor
-        monitor.pathUpdateHandler = { [weak self] path in
-            guard let self else { return }
-            Self.runtimeLogger.debug(
-                "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
-            )
-            self.uplinkLock.withLock { self.physicalInterfaces = path.availableInterfaces }
-            self.physicalPathDidChange(reason: "pathChanged")
+        pathMonitorQueue.async { [weak self] in
+            guard let self, !self.uplinkLock.withLock({ self.providerStopping }) else { return }
+            let alreadyStarted = self.pathStateLock.withLock { self.pathMonitor != nil }
+            guard !alreadyStarted else { return }
+
+            let monitor = NWPathMonitor()
+            monitor.pathUpdateHandler = { [weak self] path in
+                guard let self, !self.uplinkLock.withLock({ self.providerStopping }) else { return }
+                Self.runtimeLogger.debug(
+                    "stage=pathUpdate status=\(String(describing: path.status), privacy: .public) isExpensive=\(path.isExpensive, privacy: .public)"
+                )
+                self.uplinkLock.withLock { self.physicalInterfaces = path.availableInterfaces }
+                self.physicalPathDidChange(reason: "pathChanged")
+            }
+            let observerContext = UplinkObserverContext(self)
+            var context = SCDynamicStoreContext(version: 0,
+                info: Unmanaged.passUnretained(observerContext).toOpaque(),
+                retain: { pointer in
+                    _ = Unmanaged<UplinkObserverContext>.fromOpaque(pointer).retain()
+                    return pointer
+                },
+                release: { pointer in
+                    Unmanaged<UplinkObserverContext>.fromOpaque(pointer).release()
+                }, copyDescription: nil)
+            let createdStore = SCDynamicStoreCreate(nil, "AetherRoute link changes" as CFString,
+                { _, _, context in
+                    guard let context else { return }
+                    guard let provider = Unmanaged<UplinkObserverContext>.fromOpaque(context)
+                        .takeUnretainedValue().provider else { return }
+                    guard !provider.uplinkLock.withLock({ provider.providerStopping }) else { return }
+                    provider.physicalPathDidChange(reason: "physicalLinkChanged")
+                }, &context)
+            if let createdStore {
+                SCDynamicStoreSetNotificationKeys(
+                    createdStore,
+                    nil,
+                    [
+                        "State:/Network/Interface/en[0-9]+/(Link|IPv4|IPv6)",
+                        "State:/Network/Interface/pdp_ip[0-9]+/(Link|IPv4|IPv6)",
+                        "State:/Network/Global/IPv4",
+                    ] as CFArray
+                )
+                SCDynamicStoreSetDispatchQueue(createdStore, self.pathMonitorQueue)
+            }
+            self.pathStateLock.withLock {
+                self.pathMonitor = monitor
+                self.uplinkStore = createdStore
+            }
+            monitor.start(queue: self.pathMonitorQueue)
         }
-        let observerContext = UplinkObserverContext(self)
-        var context = SCDynamicStoreContext(version: 0,
-            info: Unmanaged.passUnretained(observerContext).toOpaque(),
-            retain: { pointer in
-                _ = Unmanaged<UplinkObserverContext>.fromOpaque(pointer).retain()
-                return pointer
-            },
-            release: { pointer in
-                Unmanaged<UplinkObserverContext>.fromOpaque(pointer).release()
-            }, copyDescription: nil)
-        uplinkStore = SCDynamicStoreCreate(nil, "AetherRoute link changes" as CFString,
-            { _, _, context in
-                guard let context else { return }
-                guard let provider = Unmanaged<UplinkObserverContext>.fromOpaque(context)
-                    .takeUnretainedValue().provider else { return }
-                guard !provider.uplinkLock.withLock({ provider.providerStopping }) else { return }
-                provider.physicalPathDidChange(reason: "physicalLinkChanged")
-            }, &context)
-        if let uplinkStore {
-            SCDynamicStoreSetNotificationKeys(
-                uplinkStore,
-                nil,
-                [
-                    "State:/Network/Interface/en[0-9]+/(Link|IPv4|IPv6)",
-                    "State:/Network/Interface/pdp_ip[0-9]+/(Link|IPv4|IPv6)",
-                    "State:/Network/Global/IPv4",
-                ] as CFArray
-            )
-            SCDynamicStoreSetDispatchQueue(uplinkStore, pathMonitorQueue)
-        }
-        monitor.start(queue: pathMonitorQueue)
     }
 
     private func stopPathMonitoring() {
-        pendingPathChangeWorkItem?.cancel()
-        pendingPathChangeWorkItem = nil
-        if let uplinkStore { SCDynamicStoreSetDispatchQueue(uplinkStore, nil) }
-        uplinkStore = nil
-        pathMonitor?.cancel()
-        pathMonitor = nil
+        let (workItem, store, monitor) = pathStateLock.withLock {
+            () -> (DispatchWorkItem?, SCDynamicStore?, NWPathMonitor?) in
+            let w = pendingPathChangeWorkItem
+            let s = uplinkStore
+            let m = pathMonitor
+            pendingPathChangeWorkItem = nil
+            uplinkStore = nil
+            pathMonitor = nil
+            return (w, s, m)
+        }
+        workItem?.cancel()
+        if let store { SCDynamicStoreSetDispatchQueue(store, nil) }
+        monitor?.cancel()
+    }
+
+    private func sampleCurrentPathSignature() -> String? {
+        guard let store = SCDynamicStoreCreate(
+            nil,
+            "AetherRoute initial uplink signature" as CFString,
+            nil,
+            nil
+        ) else { return nil }
+        let cached = uplinkLock.withLock { physicalInterfaces }
+        let uplink = PhysicalUplinkDetector.currentPhysicalUplink(
+            store: store,
+            cachedPathInterfaces: cached
+        )
+        return PhysicalUplinkDetector.pathSignature(store: store, uplink: uplink)
     }
 
     /// Both notification sources run on pathMonitorQueue. A secondary link or
@@ -463,12 +565,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     /// dynamic store queries.
     private func physicalPathDidChange(reason: String) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
-        pendingPathChangeWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self, !self.uplinkLock.withLock({ self.providerStopping }) else { return }
             self.evaluatePhysicalPathChange(reason: reason)
         }
-        pendingPathChangeWorkItem = workItem
+        pathStateLock.withLock {
+            pendingPathChangeWorkItem?.cancel()
+            pendingPathChangeWorkItem = workItem
+        }
         pathMonitorQueue.asyncAfter(
             deadline: .now() + .milliseconds(Self.pathChangeDebounceMilliseconds),
             execute: workItem
@@ -477,7 +581,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 
     private func evaluatePhysicalPathChange(reason: String) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
-        let store = uplinkStore ?? SCDynamicStoreCreate(nil, "AetherRoute uplink identity" as CFString, nil, nil)
+        let existingStore = pathStateLock.withLock { uplinkStore }
+        let store = existingStore ?? SCDynamicStoreCreate(nil, "AetherRoute uplink identity" as CFString, nil, nil)
         guard let store else { return }
         let cached = uplinkLock.withLock { physicalInterfaces }
         let uplink = PhysicalUplinkDetector.currentPhysicalUplink(
@@ -511,20 +616,102 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         )
     }
 
+    private func handleCoreUnexpectedExit(_ error: Error) {
+        guard !uplinkLock.withLock({ providerStopping }) else { return }
+        Self.runtimeLogger.error(
+            "stage=coreUnexpectedExit scheduling recovery error=\(String(reflecting: error), privacy: .public)"
+        )
+        let nsError = error as NSError
+        Self.diagnosticLog.failure(
+            "stage=coreUnexpectedExit schedulingRecovery domain=\(nsError.domain) code=\(nsError.code)"
+        )
+        reasserting = true
+        resetLedgerLock.withLock {
+            resetLedger.invalidate()
+        }
+        recovery.trigger(reason: "engineUnexpectedExit", supersedes: true)
+    }
+
+    @discardableResult
+    private func rebuildCoreForRecovery(reason: String) -> Bool {
+        guard !uplinkLock.withLock({ providerStopping }),
+              let recipe = recipeLock.withLock({ activeRecipe }) else {
+            return false
+        }
+        Self.runtimeLogger.info(
+            "stage=networkRecovery rebuildCore begin reason=\(reason, privacy: .public)"
+        )
+        let stopGate = DispatchSemaphore(value: 0)
+        currentCore().stop { stopGate.signal() }
+        _ = stopGate.wait(timeout: .now() + 5)
+
+        guard !uplinkLock.withLock({ providerStopping }) else { return false }
+        let replacement = makeCoreBridge()
+        _ = swapCore(with: replacement)
+
+        let startOutcome = PacketCoreRebuildResult()
+        do {
+            try replacement.start(
+                configuration: recipe.configuration,
+                snapshot: recipe.snapshot
+            ) { startError in
+                startOutcome.finish(startError == nil)
+            }
+        } catch {
+            Self.runtimeLogger.error(
+                "stage=networkRecovery rebuildCore startThrew error=\(String(reflecting: error), privacy: .public)"
+            )
+            replacement.stop {}
+            return false
+        }
+
+        let started = startOutcome.wait(seconds: Self.rebuildWaitSeconds)
+        if !started {
+            Self.runtimeLogger.error(
+                "stage=networkRecovery rebuildCore failed reason=\(reason, privacy: .public)"
+            )
+            replacement.stop {}
+            return false
+        }
+        Self.runtimeLogger.info(
+            "stage=networkRecovery rebuildCore succeeded reason=\(reason, privacy: .public)"
+        )
+        return true
+    }
+
     private func performNetworkRecovery(reason: String, attempt: Int) {
         guard !uplinkLock.withLock({ providerStopping }) else { return }
+        let coreAlive = currentCore().isBridgeRunning
         guard let interface = currentPhysicalUplink() else {
-            resetLedger.invalidate()
+            resetLedgerLock.withLock {
+                resetLedger.invalidate()
+            }
             Self.runtimeLogger.info("stage=networkRecovery waitingForPhysicalUplink attempt=\(attempt, privacy: .public)")
             return
         }
         let index = UInt32(interface.index)
         let store = SCDynamicStoreCreate(nil, "AetherRoute recovery signature" as CFString, nil, nil)
         let signature = store.flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: interface) }
+
+        if !coreAlive || (attempt >= Self.rebuildAttemptIndex && resetLedgerLock.withLock({ resetLedger.claimRebuild() })) {
+            if rebuildCoreForRecovery(reason: reason) {
+                resetLedgerLock.withLock {
+                    resetLedger.resetCompleted(interfaceIndex: index, signature: signature)
+                }
+                return
+            }
+            if !currentCore().isBridgeRunning {
+                return
+            }
+        }
+
         // Once an interface and IP signature was reset, retry the probe without destroying the
         // connections/DNS transports that are only just becoming usable, unless the physical uplink
         // signature changed or reset has not yet succeeded.
-        guard resetLedger.needsReset(interfaceIndex: index, signature: signature) else {
+        let needsReset = resetLedgerLock.withLock {
+            resetLedger.needsReset(interfaceIndex: index, signature: signature)
+        }
+        guard needsReset else {
             if attempt == 0 {
                 Self.runtimeLogger.info(
                     "stage=networkRecovery coreReset skipped reason=\(reason, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public) cause=unchangedUplink"
@@ -532,13 +719,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             }
             return
         }
-        resetLedger.invalidate()
+        resetLedgerLock.withLock {
+            resetLedger.invalidate()
+        }
         Self.runtimeLogger.info(
             "stage=networkRecovery begin reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public) interface=\(interface.name, privacy: .public) index=\(index, privacy: .public) signature=\(signature ?? "unknown", privacy: .public)"
         )
         do {
             try currentCore().resetNetworkState(interfaceIndex: index)
-            resetLedger.resetCompleted(interfaceIndex: index, signature: signature)
+            resetLedgerLock.withLock {
+                resetLedger.resetCompleted(interfaceIndex: index, signature: signature)
+            }
             Self.runtimeLogger.info("stage=networkRecovery coreReset success")
         } catch {
             Self.runtimeLogger.error(
@@ -556,16 +747,20 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     /// route exercises the real outbound path — interface binding, DNS and the
     /// proxy connection — which is exactly the state a sleep invalidates.
     private func dataPathIsHealthy() -> Bool {
+        let activeCore = currentCore()
         guard !uplinkLock.withLock({ providerStopping }),
+              activeCore.isBridgeRunning,
               let uplink = currentPhysicalUplink() else { return false }
         let store = SCDynamicStoreCreate(nil, "AetherRoute health signature" as CFString, nil, nil)
         let signature = store.flatMap { PhysicalUplinkDetector.pathSignature(store: $0, uplink: uplink) }
-        guard !resetLedger.needsReset(interfaceIndex: UInt32(uplink.index), signature: signature) else {
+        let needsReset = resetLedgerLock.withLock {
+            resetLedger.needsReset(interfaceIndex: UInt32(uplink.index), signature: signature)
+        }
+        guard !needsReset else {
             return false
         }
         // Received bytes are no evidence: flows that bypass the engine's
         // outbound path count too. Only a probe through the engine is.
-        let activeCore = currentCore()
         let healthy = NetworkRecoveryHealthPolicy.isReachable(
             groups: NetworkRecoveryHealthPolicy.probeGroups(
                 routingMode: uplinkLock.withLock { recoveryRoutingMode }
@@ -588,6 +783,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             runtimeLogger.info(
                 "stage=recoveryRun started reason=\(reason, privacy: .public)"
             )
+            diagnosticLog.aggregate("stage=recoveryRun started reason=\(reason)")
         case let .coalesced(reason):
             runtimeLogger.info(
                 "stage=recoveryRun coalesced reason=\(reason, privacy: .public)"
@@ -596,14 +792,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             runtimeLogger.info(
                 "stage=recoveryRun attemptFailed reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public)"
             )
+            diagnosticLog.aggregate("stage=recoveryRun attemptFailed reason=\(reason) attempt=\(attempt)")
         case let .recovered(reason, attempt):
             runtimeLogger.info(
                 "stage=recoveryRun recovered reason=\(reason, privacy: .public) attempt=\(attempt, privacy: .public)"
             )
+            diagnosticLog.aggregate("stage=recoveryRun recovered reason=\(reason) attempt=\(attempt)")
         case let .exhausted(reason, attempts):
             runtimeLogger.error(
                 "stage=recoveryRun exhausted reason=\(reason, privacy: .public) attempts=\(attempts, privacy: .public)"
             )
+            diagnosticLog.failure("stage=recoveryRun exhausted reason=\(reason) attempts=\(attempts)")
         case let .cancelled(reason):
             runtimeLogger.info(
                 "stage=recoveryRun cancelled reason=\(reason, privacy: .public)"
@@ -616,7 +815,43 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     ) throws -> ProxySelectionProviderResponse {
         try currentCore().setRoutingMode(mode)
         uplinkLock.withLock { recoveryRoutingMode = mode }
+        recipeLock.withLock { activeRecipe?.configuration.mode = mode }
         return .routingMode(mode)
+    }
+
+    private func applySelection(
+        group: String,
+        member: String
+    ) throws -> ProxySelectionState {
+        let state = try currentCore().selectProxy(group: group, member: member)
+        recipeLock.withLock {
+            guard let recipe = activeRecipe else { return }
+            var selections = recipe.snapshot.proxySelections
+            selections[group] = member
+            if let updatedSnapshot = try? ProviderLaunchSnapshot(
+                profileYAML: recipe.snapshot.profileYAML,
+                routingMode: recipe.configuration.mode,
+                bypassPolicy: recipe.snapshot.bypassPolicy,
+                dnsPolicy: recipe.snapshot.dnsPolicy,
+                proxySelections: selections,
+                routingResources: recipe.snapshot.routingResources,
+                fakeIPCacheKey: recipe.snapshot.fakeIPCacheKey,
+                diagnosticLogLevel: recipe.snapshot.diagnosticLogLevel
+            ) {
+                activeRecipe = TunnelRecipe(
+                    configuration: recipe.configuration,
+                    snapshot: updatedSnapshot
+                )
+            }
+        }
+        return state
+    }
+
+    private func handleStageRoutingResourceChunk(
+        _ chunk: RoutingResourceTransferChunk
+    ) throws -> ProxySelectionProviderResponse {
+        try resourceChunkReceiver.receive(chunk)
+        return .routingResourceChunkStaged
     }
 
     /// Applies the level now and keeps it for later profile reloads, which
@@ -690,206 +925,277 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         return .networkReset
     }
 
+    private static func isUnrecoverableLifecycleError(_ error: Error) -> Bool {
+        guard let tunnelError = error as? PacketTunnelError else { return false }
+        switch tunnelError {
+        case .lifecycleBusy, .engineHandoffTimedOut:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func handleReloadProfile(
         payloadData: Data,
-        completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+        outerCompletion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
     ) {
-        Self.runtimeLogger.info("stage=handleReloadProfile requested bytes=\(payloadData.count, privacy: .public)")
-        guard !uplinkLock.withLock({ providerStopping }) else {
-            Self.runtimeLogger.error("stage=handleReloadProfile rejected providerStopping")
-            completion(.failure(.unavailable))
-            return
-        }
-
-        do {
-            let store = try ActiveProfileStore.applicationGroup()
-            let (fakeIPCacheKey, diagnosticLogLevel) = uplinkLock.withLock {
-                (launchFakeIPCacheKey, launchDiagnosticLogLevel)
+        reloadGate.enqueue { [weak self] finishReload in
+            let completion: @Sendable (ProxySelectionProviderResponse) -> Void = { response in
+                finishReload()
+                outerCompletion(response)
             }
-            let snapshot: ProviderLaunchSnapshot
-            if !payloadData.isEmpty {
-                Self.runtimeLogger.info("stage=handleReloadProfile decoding payload from message")
-                let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
-                let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? diagnosticLogLevel
-                if reloadPayload.diagnosticLogLevel != nil {
-                    DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
-                    uplinkLock.withLock { launchDiagnosticLogLevel = effectiveDiagnosticLevel }
-                }
-                let resourceStore = RoutingResourceStore(
-                    applicationSupportDirectory: store.directoryURL
-                )
-                let resources = try resourceStore.launchResourceSnapshot(
-                    for: reloadPayload.profileYAML
-                )
-                snapshot = try ProviderLaunchSnapshot(
-                    profileYAML: reloadPayload.profileYAML,
-                    routingMode: reloadPayload.routingMode,
-                    bypassPolicy: reloadPayload.bypassPolicy,
-                    dnsPolicy: reloadPayload.dnsPolicy,
-                    proxySelections: reloadPayload.proxySelections,
-                    routingResources: resources,
-                    fakeIPCacheKey: fakeIPCacheKey,
-                    diagnosticLogLevel: effectiveDiagnosticLevel
-                )
-            } else {
-                Self.runtimeLogger.info("stage=handleReloadProfile loading active profile from store")
-                let activeProfile = try store.loadValidated()
-                let provider = protocolConfiguration as? NETunnelProviderProtocol
-                let routingMode = (try? TunnelProviderConfigurationCodec.routingMode(
-                    from: provider?.providerConfiguration
-                )) ?? recoveryRoutingMode
-                let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
-                let resources = (try? resourceStore.launchResourceSnapshot(for: activeProfile.runtimeYAML)) ?? [:]
-                let persistedSelections = (try? ProxySelectionStore.applicationGroup()
-                    .selections(forProfileYAML: activeProfile.runtimeYAML)) ?? [:]
-                snapshot = try ProviderLaunchSnapshot(
-                    profileYAML: activeProfile.runtimeYAML,
-                    routingMode: routingMode,
-                    bypassPolicy: (try? BypassPolicyStore.applicationGroup().load()) ?? .empty,
-                    dnsPolicy: .inherited,
-                    proxySelections: persistedSelections,
-                    routingResources: resources,
-                    fakeIPCacheKey: fakeIPCacheKey,
-                    diagnosticLogLevel: diagnosticLogLevel
-                )
-            }
-
-            let previousRecipe = recipeLock.withLock { activeRecipe }
-            let provider = protocolConfiguration as? NETunnelProviderProtocol
-            let routingMode = snapshot.routingMode
-            let localProxy = (try? TunnelProviderConfigurationCodec.localProxySettings(
-                from: provider?.providerConfiguration
-            )) ?? LocalProxySettings()
-            let enableIPv6 = ProfileConfigurationInspector
-                .inspect(yaml: snapshot.profileYAML)
-                .allowsIPv6
-            let configuration = try TunnelConfiguration(
-                mode: routingMode,
-                enableIPv6: enableIPv6,
-                localProxy: localProxy
-            ).validated()
-            let bypassPlan = try BypassNetworkSettingsPlan(
-                policy: snapshot.bypassPolicy
-            )
-            let settingsPlan = PacketTunnelNetworkSettingsPlan(
-                configuration: configuration,
-                bypassPlan: bypassPlan
-            )
-
-            guard !uplinkLock.withLock({ providerStopping }) else {
+            guard let self else {
                 completion(.failure(.unavailable))
                 return
             }
-            Self.runtimeLogger.info("stage=handleReloadProfile stopping current core")
-            let oldCore = currentCore()
-            oldCore.stop { [weak self] in
+            self.reloadWorkerQueue.async { [weak self] in
                 guard let self else {
                     completion(.failure(.unavailable))
                     return
                 }
+                Self.runtimeLogger.info("stage=handleReloadProfile requested bytes=\(payloadData.count, privacy: .public)")
                 guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    Self.runtimeLogger.error("stage=handleReloadProfile rejected providerStopping")
                     completion(.failure(.unavailable))
                     return
                 }
-                Self.runtimeLogger.info("stage=handleReloadProfile starting replacement core")
-                let newCore = RustCoreBridge(packetFlow: self.packetFlow)
-                _ = self.swapCore(with: newCore)
-                guard !self.uplinkLock.withLock({ self.providerStopping }) else {
-                    newCore.stop { completion(.failure(.unavailable)) }
-                    return
-                }
-                do {
-                    try newCore.start(
-                        configuration: configuration,
-                        snapshot: snapshot
-                    ) { [weak self] coreError in
-                        guard let self else {
-                            newCore.stop { completion(.failure(.unavailable)) }
-                            return
-                        }
-                        if self.uplinkLock.withLock({ self.providerStopping }) {
-                            newCore.stop { completion(.failure(.unavailable)) }
-                            return
-                        }
-                        if let coreError {
-                            Self.runtimeLogger.error(
-                                "stage=handleReloadProfile coreStartFailed error=\(String(reflecting: coreError), privacy: .public)"
-                            )
-                            self.diagnostics.record(.startupFailure)
-                            self.rollbackReloadedCore(
-                                to: previousRecipe,
-                                triggerError: coreError,
-                                completion: completion
-                            )
-                            return
-                        }
 
-                        Self.runtimeLogger.info("stage=handleReloadProfile updating network settings")
-                        let settings = self.makeNetworkSettings(settingsPlan)
-                        self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
+                do {
+                    let store = try ActiveProfileStore.applicationGroup()
+                    let (fakeIPCacheKey, diagnosticLogLevel) = self.uplinkLock.withLock {
+                        (self.launchFakeIPCacheKey, self.launchDiagnosticLogLevel)
+                    }
+                    let previousRecipe = self.recipeLock.withLock { self.activeRecipe }
+                    let snapshot: ProviderLaunchSnapshot
+                    if !payloadData.isEmpty {
+                        Self.runtimeLogger.info("stage=handleReloadProfile decoding payload from message")
+                        let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
+                        let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? diagnosticLogLevel
+                        if reloadPayload.diagnosticLogLevel != nil {
+                            DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
+                            self.uplinkLock.withLock { self.launchDiagnosticLogLevel = effectiveDiagnosticLevel }
+                        }
+                        let resourceStore = RoutingResourceStore(
+                            applicationSupportDirectory: store.directoryURL
+                        )
+                        let resources = try resourceStore.resolveReloadResourceSnapshot(
+                            for: reloadPayload.profileYAML,
+                            inlineResources: reloadPayload.routingResources
+                        )
+                        snapshot = try ProviderLaunchSnapshot(
+                            profileYAML: reloadPayload.profileYAML,
+                            routingMode: reloadPayload.routingMode,
+                            bypassPolicy: reloadPayload.bypassPolicy,
+                            dnsPolicy: reloadPayload.dnsPolicy,
+                            proxySelections: reloadPayload.proxySelections,
+                            routingResources: resources,
+                            fakeIPCacheKey: fakeIPCacheKey,
+                            diagnosticLogLevel: effectiveDiagnosticLevel
+                        )
+                    } else {
+                        Self.runtimeLogger.info("stage=handleReloadProfile loading active profile from store")
+                        let activeProfile = try store.loadValidated()
+                        let provider = self.protocolConfiguration as? NETunnelProviderProtocol
+                        let routingMode = (try? TunnelProviderConfigurationCodec.routingMode(
+                            from: provider?.providerConfiguration
+                        )) ?? self.uplinkLock.withLock({ self.recoveryRoutingMode })
+                        let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
+                        let resources = try resourceStore.resolveReloadResourceSnapshot(
+                            for: activeProfile.runtimeYAML
+                        )
+                        let persistedSelections = (try? ProxySelectionStore.applicationGroup()
+                            .selections(forProfileYAML: activeProfile.runtimeYAML))
+                            ?? previousRecipe?.snapshot.proxySelections
+                            ?? [:]
+                        snapshot = try ProviderLaunchSnapshot(
+                            profileYAML: activeProfile.runtimeYAML,
+                            routingMode: routingMode,
+                            bypassPolicy: (try? BypassPolicyStore.applicationGroup().load())
+                                ?? previousRecipe?.snapshot.bypassPolicy
+                                ?? .empty,
+                            dnsPolicy: previousRecipe?.snapshot.dnsPolicy ?? .inherited,
+                            proxySelections: persistedSelections,
+                            routingResources: resources,
+                            fakeIPCacheKey: fakeIPCacheKey,
+                            diagnosticLogLevel: diagnosticLogLevel
+                        )
+                    }
+
+                    let provider = self.protocolConfiguration as? NETunnelProviderProtocol
+                    let routingMode = snapshot.routingMode
+                    let localProxy = (try? TunnelProviderConfigurationCodec.localProxySettings(
+                        from: provider?.providerConfiguration
+                    )) ?? previousRecipe?.configuration.localProxy ?? LocalProxySettings()
+                    let enableIPv6 = ProfileConfigurationInspector
+                        .inspect(yaml: snapshot.profileYAML)
+                        .allowsIPv6
+                    let configuration = try TunnelConfiguration(
+                        mode: routingMode,
+                        enableIPv6: enableIPv6,
+                        localProxy: localProxy
+                    ).validated()
+                    let bypassPlan = try BypassNetworkSettingsPlan(
+                        policy: snapshot.bypassPolicy
+                    )
+                    let settingsPlan = PacketTunnelNetworkSettingsPlan(
+                        configuration: configuration,
+                        bypassPlan: bypassPlan
+                    )
+
+                    guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                        completion(.failure(.unavailable))
+                        return
+                    }
+                    Self.runtimeLogger.info("stage=handleReloadProfile stopping current core")
+                    let oldCore = self.currentCore()
+                    oldCore.stop { [weak self] in
+                        guard let self else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        self.reloadWorkerQueue.async { [weak self] in
                             guard let self else {
+                                completion(.failure(.unavailable))
+                                return
+                            }
+                            guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                                completion(.failure(.unavailable))
+                                return
+                            }
+                            Self.runtimeLogger.info("stage=handleReloadProfile starting replacement core")
+                            let newCore = self.makeCoreBridge()
+                            _ = self.swapCore(with: newCore)
+                            guard !self.uplinkLock.withLock({ self.providerStopping }) else {
                                 newCore.stop { completion(.failure(.unavailable)) }
                                 return
                             }
-                            if self.uplinkLock.withLock({ self.providerStopping }) {
-                                newCore.stop { completion(.failure(.unavailable)) }
-                                return
-                            }
-                            if let settingsError {
+                            do {
+                                try newCore.start(
+                                    configuration: configuration,
+                                    snapshot: snapshot
+                                ) { [weak self] coreError in
+                                    guard let self else {
+                                        newCore.stop { completion(.failure(.unavailable)) }
+                                        return
+                                    }
+                                    if self.uplinkLock.withLock({ self.providerStopping }) {
+                                        newCore.stop { completion(.failure(.unavailable)) }
+                                        return
+                                    }
+                                    if let coreError {
+                                        Self.runtimeLogger.error(
+                                            "stage=handleReloadProfile coreStartFailed error=\(String(reflecting: coreError), privacy: .public)"
+                                        )
+                                        let nsError = coreError as NSError
+                                        Self.diagnosticLog.failure(
+                                            "stage=handleReloadProfile failed domain=\(nsError.domain) code=\(nsError.code)"
+                                        )
+                                        self.diagnostics.record(.startupFailure)
+                                        if Self.isUnrecoverableLifecycleError(coreError) {
+                                            completion(.failure(.unavailable))
+                                            self.cancelTunnelWithError(coreError)
+                                            return
+                                        }
+                                        newCore.stop { [weak self] in
+                                            guard let self else {
+                                                completion(.failure(.unavailable))
+                                                return
+                                            }
+                                            self.reloadWorkerQueue.async { [weak self] in
+                                                self?.rollbackReloadedCore(
+                                                    to: previousRecipe,
+                                                    triggerError: coreError,
+                                                    completion: completion
+                                                ) ?? completion(.failure(.unavailable))
+                                            }
+                                        }
+                                        return
+                                    }
+
+                                    Self.runtimeLogger.info("stage=handleReloadProfile updating network settings")
+                                    let settings = self.makeNetworkSettings(settingsPlan)
+                                    self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
+                                        guard let self else {
+                                            newCore.stop { completion(.failure(.unavailable)) }
+                                            return
+                                        }
+                                        if self.uplinkLock.withLock({ self.providerStopping }) {
+                                            newCore.stop { completion(.failure(.unavailable)) }
+                                            return
+                                        }
+                                        if let settingsError {
+                                            Self.runtimeLogger.error(
+                                                "stage=handleReloadProfile setSettingsFailed error=\(String(reflecting: settingsError), privacy: .public)"
+                                            )
+                                            self.diagnostics.record(.networkSettingsFailure)
+                                            newCore.stop { [weak self] in
+                                                guard let self else {
+                                                    completion(.failure(.unavailable))
+                                                    return
+                                                }
+                                                self.reloadWorkerQueue.async { [weak self] in
+                                                    self?.rollbackReloadedCore(
+                                                        to: previousRecipe,
+                                                        triggerError: settingsError,
+                                                        completion: completion
+                                                    ) ?? completion(.failure(.unavailable))
+                                                }
+                                            }
+                                            return
+                                        }
+                                        self.recipeLock.withLock {
+                                            self.activeRecipe = TunnelRecipe(
+                                                configuration: configuration,
+                                                snapshot: snapshot
+                                            )
+                                        }
+                                        self.uplinkLock.withLock {
+                                            self.recoveryRoutingMode = routingMode
+                                        }
+                                        Self.runtimeLogger.info("stage=handleReloadProfile success")
+                                        Self.diagnosticLog.aggregate("stage=handleReloadProfile success")
+                                        completion(.profileReloaded)
+                                    }
+                                }
+                            } catch {
                                 Self.runtimeLogger.error(
-                                    "stage=handleReloadProfile setSettingsFailed error=\(String(reflecting: settingsError), privacy: .public)"
+                                    "stage=handleReloadProfile newCoreStartException error=\(String(reflecting: error), privacy: .public)"
                                 )
-                                self.diagnostics.record(.networkSettingsFailure)
+                                self.diagnostics.record(.startupFailure)
+                                if Self.isUnrecoverableLifecycleError(error) {
+                                    newCore.stop { [weak self] in
+                                        completion(.failure(.unavailable))
+                                        self?.cancelTunnelWithError(error)
+                                    }
+                                    return
+                                }
                                 newCore.stop { [weak self] in
                                     guard let self else {
                                         completion(.failure(.unavailable))
                                         return
                                     }
-                                    self.rollbackReloadedCore(
-                                        to: previousRecipe,
-                                        triggerError: settingsError,
-                                        completion: completion
-                                    )
+                                    self.reloadWorkerQueue.async { [weak self] in
+                                        self?.rollbackReloadedCore(
+                                            to: previousRecipe,
+                                            triggerError: error,
+                                            completion: completion
+                                        ) ?? completion(.failure(.unavailable))
+                                    }
                                 }
-                                return
                             }
-                            self.recipeLock.withLock {
-                                self.activeRecipe = TunnelRecipe(
-                                    configuration: configuration,
-                                    snapshot: snapshot
-                                )
-                            }
-                            self.uplinkLock.withLock {
-                                self.recoveryRoutingMode = routingMode
-                            }
-                            Self.runtimeLogger.info("stage=handleReloadProfile success")
-                            completion(.profileReloaded)
                         }
                     }
+                } catch is ProxySelectionProviderMessageError {
+                    self.diagnostics.record(.invalidControlRequest)
+                    completion(.failure(.invalidRequest))
                 } catch {
                     Self.runtimeLogger.error(
-                        "stage=handleReloadProfile newCoreStartException error=\(String(reflecting: error), privacy: .public)"
+                        "stage=handleReloadProfile failed error=\(String(reflecting: error), privacy: .public)"
                     )
-                    self.diagnostics.record(.startupFailure)
-                    newCore.stop { [weak self] in
-                        guard let self else {
-                            completion(.failure(.unavailable))
-                            return
-                        }
-                        self.rollbackReloadedCore(
-                            to: previousRecipe,
-                            triggerError: error,
-                            completion: completion
-                        )
-                    }
+                    self.diagnostics.record(.internalControlFailure)
+                    completion(.failure(.internalFailure))
                 }
             }
-        } catch {
-            Self.runtimeLogger.error(
-                "stage=handleReloadProfile failed error=\(String(reflecting: error), privacy: .public)"
-            )
-            diagnostics.record(.internalControlFailure)
-            completion(.failure(.internalFailure))
         }
     }
 
@@ -909,7 +1215,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             return
         }
         Self.runtimeLogger.info("stage=handleReloadProfile rollingBackToPreviousRecipe")
-        let rollbackCore = RustCoreBridge(packetFlow: packetFlow)
+        let rollbackCore = makeCoreBridge()
         _ = swapCore(with: rollbackCore)
         guard !uplinkLock.withLock({ providerStopping }) else {
             rollbackCore.stop { completion(.failure(.unavailable)) }
@@ -1078,14 +1384,45 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
 }
 
 private final class TunnelStartCompletion: @unchecked Sendable {
-    private let handler: (Error?) -> Void
+    private let lock = NSLock()
+    private var handler: ((Error?) -> Void)?
 
     init(_ handler: @escaping (Error?) -> Void) {
         self.handler = handler
     }
 
     func call(_ error: Error?) {
-        handler(error)
+        let handler = lock.withLock { () -> ((Error?) -> Void)? in
+            defer { self.handler = nil }
+            return self.handler
+        }
+        handler?(error)
+    }
+}
+
+private final class PacketCoreRebuildResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private let signal = DispatchSemaphore(value: 0)
+    private var completed = false
+    private var succeeded = false
+
+    func finish(_ succeeded: Bool) {
+        let shouldSignal = lock.withLock { () -> Bool in
+            guard !completed else { return false }
+            completed = true
+            self.succeeded = succeeded
+            return true
+        }
+        if shouldSignal {
+            signal.signal()
+        }
+    }
+
+    func wait(seconds: TimeInterval) -> Bool {
+        guard signal.wait(timeout: .now() + seconds) == .success else {
+            return false
+        }
+        return lock.withLock { succeeded }
     }
 }
 

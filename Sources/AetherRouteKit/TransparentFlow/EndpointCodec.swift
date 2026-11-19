@@ -235,6 +235,7 @@ public enum FlowEndpointCodec {
                         || (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte)
                         || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
                         || byte == UInt8(ascii: "-")
+                        || byte == UInt8(ascii: "_")
                 })
             else {
                 throw FlowEndpointCodecError.invalidName

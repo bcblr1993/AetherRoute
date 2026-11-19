@@ -606,7 +606,7 @@ public extension AetherNode {
                 throw AetherNodeValidationError.missingField("Password")
             }
             if !hysteriaProtocol.isEmpty {
-                guard ["udp", "wechat-video"].contains(hysteriaProtocol.lowercased()) else {
+                guard hysteriaProtocol.lowercased() == "udp" else {
                     throw AetherNodeValidationError.invalidField("Hysteria protocol")
                 }
             }

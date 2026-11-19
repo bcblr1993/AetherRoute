@@ -38,6 +38,7 @@ struct CustomProxyGroupSheet: View {
         }
     }
 
+    @State private var draftID: UUID
     @State private var name: String
     @State private var regions: Set<String>
     @State private var includeText: String
@@ -50,6 +51,9 @@ struct CustomProxyGroupSheet: View {
     @State private var loadBalanceStrategy: LoadBalanceStrategy
     @State private var parentGroup: String
     @State private var position: CustomProxyGroup.Position
+    @State private var cachedNodes: [String] = []
+    @State private var cachedRegions: [ProfileOverrideSuggestions.Region] = []
+    @State private var cachedPreview: (members: [String], conflict: Bool)?
     @State private var isSaving = false
     @State private var saveFailed = false
     @State private var requestsCancel = false
@@ -61,6 +65,7 @@ struct CustomProxyGroupSheet: View {
 
     init(initial: CustomProxyGroup? = nil, defaultParent: String? = nil) {
         self.initial = initial
+        _draftID = State(initialValue: initial?.id ?? UUID())
         _name = State(initialValue: initial?.name ?? "")
         _regions = State(initialValue: Set(initial?.regions ?? []))
         _includeText = State(initialValue: (initial?.includeKeywords ?? []).joined(separator: ", "))
@@ -115,7 +120,7 @@ struct CustomProxyGroupSheet: View {
 
     private var candidate: CustomProxyGroup {
         CustomProxyGroup(
-            id: initial?.id ?? UUID(),
+            id: draftID,
             name: name,
             regions: Array(regions),
             includeKeywords: Self.keywords(includeText),
@@ -143,24 +148,37 @@ struct CustomProxyGroupSheet: View {
     }
 
     private var preview: (members: [String], conflict: Bool)? {
-        guard case let .success(overrides) = proposed,
-              let result = tunnel.activeOverrideResult(overrides) else { return nil }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let conflict = result.diagnostics.contains(.nameConflict(group: trimmed))
-        return (result.customGroupMembers[trimmed] ?? [], conflict)
+        cachedPreview
     }
 
     private var nodes: [String] {
-        ProfileOverrideCompiler.availableProxyNames(
+        cachedNodes
+    }
+
+    private var regionOptions: [ProfileOverrideSuggestions.Region] {
+        cachedRegions
+    }
+
+    private func refreshNodeInventoryCache() {
+        let resolvedNodes = ProfileOverrideCompiler.availableProxyNames(
             in: tunnel.activeProfile?.yaml ?? "",
             proxyOverride: tunnel.activeProfileOverrides,
             globalOverride: tunnel.loadGlobalProfileOverride(),
             additionalProviderNodes: (tunnel.activeProfileSummary?.proxies ?? []).map(\.name)
         )
+        cachedNodes = resolvedNodes
+        cachedRegions = ProfileOverrideSuggestions.regions(in: resolvedNodes)
     }
 
-    private var regionOptions: [ProfileOverrideSuggestions.Region] {
-        ProfileOverrideSuggestions.regions(in: nodes)
+    private func recomputePreviewNow() {
+        guard case let .success(overrides) = proposed,
+              let result = tunnel.activeOverrideResult(overrides) else {
+            cachedPreview = nil
+            return
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let conflict = result.diagnostics.contains(.nameConflict(group: trimmed))
+        cachedPreview = (result.customGroupMembers[trimmed] ?? [], conflict)
     }
 
     /// Groups this one can be listed in: the profile's own select groups.
@@ -223,6 +241,19 @@ struct CustomProxyGroupSheet: View {
         // A container's identifier would otherwise replace every child's.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("custom-group-sheet")
+        .onAppear {
+            refreshNodeInventoryCache()
+            recomputePreviewNow()
+        }
+        .onChange(of: tunnel.activeProfile?.yaml) { _, _ in
+            refreshNodeInventoryCache()
+            recomputePreviewNow()
+        }
+        .task(id: candidate) {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            recomputePreviewNow()
+        }
     }
 
     private var settingsCard: some View {
@@ -804,6 +835,7 @@ struct ChainedProxySheet: View {
 
     let initial: ChainedProxyOverride?
 
+    @State private var draftID: UUID
     @State private var name: String
     @State private var dialerProxy: String
     @State private var landingMode: LandingMode
@@ -812,6 +844,8 @@ struct ChainedProxySheet: View {
     @State private var portText: String
     @State private var parentGroup: String
     @State private var position: CustomProxyGroup.Position
+    @State private var cachedProfileNodes: [String] = []
+    @State private var cachedDiagnostics: [ProfileOverrideDiagnostic] = []
     @State private var showsFullNodeEditor = false
     @State private var pasteFeedback: (message: String, isError: Bool)?
     @State private var isSaving = false
@@ -823,6 +857,7 @@ struct ChainedProxySheet: View {
 
     init(initial: ChainedProxyOverride? = nil, defaultParent: String? = nil) {
         self.initial = initial
+        _draftID = State(initialValue: initial?.id ?? UUID())
         _name = State(initialValue: initial?.name ?? "")
         _dialerProxy = State(initialValue: initial?.dialerProxy ?? "")
         _parentGroup = State(
@@ -883,7 +918,7 @@ struct ChainedProxySheet: View {
             .existingNode(name: existingNodeName)
         }
         return ChainedProxyOverride(
-            id: initial?.id ?? UUID(),
+            id: draftID,
             name: name,
             dialerProxy: dialerProxy,
             target: target,
@@ -912,20 +947,7 @@ struct ChainedProxySheet: View {
     }
 
     private var diagnosticsForCandidate: [ProfileOverrideDiagnostic] {
-        guard case let .success(overrides) = proposed,
-              let result = tunnel.activeOverrideResult(overrides) else { return [] }
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return result.diagnostics.filter { diagnostic in
-            switch diagnostic {
-            case let .nameConflict(group):
-                return group == trimmed
-            case let .dialerProxyMissing(chainedProxy, _),
-                 let .targetNodeMissing(chainedProxy, _):
-                return chainedProxy == trimmed
-            case .parentGroupMissing, .noMatchingNodes, .groupNotEditable, .unsupportedProfileLayout:
-                return false
-            }
-        }
+        cachedDiagnostics
     }
 
     private var profileGroups: [String] {
@@ -937,14 +959,38 @@ struct ChainedProxySheet: View {
     }
 
     private var profileNodes: [String] {
+        cachedProfileNodes
+    }
+
+    private func refreshChainedNodeInventory() {
         let editingName = initial?.name
-        return ProfileOverrideCompiler.availableProxyNames(
+        cachedProfileNodes = ProfileOverrideCompiler.availableProxyNames(
             in: tunnel.activeProfile?.yaml ?? "",
             proxyOverride: tunnel.activeProfileOverrides,
             globalOverride: tunnel.loadGlobalProfileOverride(),
             additionalProviderNodes: (tunnel.activeProfileSummary?.proxies ?? []).map(\.name)
         )
         .filter { $0 != editingName }
+    }
+
+    private func recomputeChainedDiagnosticsNow() {
+        guard case let .success(overrides) = proposed,
+              let result = tunnel.activeOverrideResult(overrides) else {
+            cachedDiagnostics = []
+            return
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        cachedDiagnostics = result.diagnostics.filter { diagnostic in
+            switch diagnostic {
+            case let .nameConflict(group):
+                return group == trimmed
+            case let .dialerProxyMissing(chainedProxy, _),
+                 let .targetNodeMissing(chainedProxy, _):
+                return chainedProxy == trimmed
+            case .parentGroupMissing, .noMatchingNodes, .groupNotEditable, .unsupportedProfileLayout:
+                return false
+            }
+        }
     }
 
     private var parentOptions: [String] {
@@ -1003,7 +1049,20 @@ struct ChainedProxySheet: View {
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: parentGroup)
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
-        .onAppear(perform: seedDefaultSelectionsIfNeeded)
+        .onAppear {
+            refreshChainedNodeInventory()
+            seedDefaultSelectionsIfNeeded()
+            recomputeChainedDiagnosticsNow()
+        }
+        .onChange(of: tunnel.activeProfile?.yaml) { _, _ in
+            refreshChainedNodeInventory()
+            recomputeChainedDiagnosticsNow()
+        }
+        .task(id: "\(candidate.id)|\(name)|\(dialerProxy)|\(landingMode)|\(existingNodeName)|\(customNode.server)|\(portText)|\(parentGroup)") {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            recomputeChainedDiagnosticsNow()
+        }
         .onChange(of: parentGroup) { _, newParent in
             if !profileGroups.contains(dialerProxy) && !profileNodes.contains(dialerProxy) {
                 dialerProxy = defaultDialerProxy(forParent: newParent)

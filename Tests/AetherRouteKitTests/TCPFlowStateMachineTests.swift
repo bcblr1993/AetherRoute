@@ -697,6 +697,202 @@ final class TCPFlowStateMachineTests: XCTestCase, @unchecked Sendable {
             sink
         )
     }
+
+    func testClientHalfCloseActiveDownloadRefreshesIdleTimerAndDoesNotPrematurelyTerminate() async throws {
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let sink = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow,
+            bridgeSource: source,
+            bridgeSink: sink,
+            halfCloseIdleTimeout: .milliseconds(80)
+        )
+        try await machine.start()
+
+        // Client finishes uploading request and half-closes write side
+        XCTAssertTrue(flow.completeNextRead(.success(.endOfStream)))
+        let bridgeFinishStarted = await eventually { sink.finishCallCount == 1 }
+        XCTAssertTrue(bridgeFinishStarted)
+        XCTAssertTrue(sink.completeNextFinish(.success(())))
+
+        // Server continuously streams chunks every 30ms across 180ms (> 2x halfCloseIdleTimeout)
+        for index in 0..<6 {
+            try await Task.sleep(for: .milliseconds(30))
+            let snapshot = await machine.snapshot()
+            XCTAssertEqual(
+                snapshot.lifecycle,
+                .running,
+                "Active downstream download must not be killed by halfCloseIdleTimeout at chunk \(index)"
+            )
+            let chunk = Data("chunk-\(index)".utf8)
+            XCTAssertTrue(source.completeNextRead(.success(.bytes(chunk))))
+            let writeStarted = await eventually { flow.writeCallCount == index + 1 }
+            XCTAssertTrue(writeStarted)
+            XCTAssertTrue(flow.completeNextWrite(.success(())))
+            let nextReadStarted = await eventually { source.readCallCount == index + 2 }
+            XCTAssertTrue(nextReadStarted)
+        }
+
+        let finalSnapshot = await machine.snapshot()
+        XCTAssertEqual(finalSnapshot.lifecycle, .running)
+        await machine.cancel()
+    }
+
+    func testSimultaneousPeerCloseOnFlowWriteAfterBidirectionalExchangeFinishesCleanly() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherroute-simul-close-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: dir, baseName: "tp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let aggregate = DiagnosticAggregator(log: log)
+        DiagnosticFlowOpenObserver.shared.attach(aggregate)
+        defer { DiagnosticFlowOpenObserver.shared.detach() }
+
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow,
+            bridgeSource: source,
+            bridgeSink: bridge,
+            diagnosticLog: log
+        )
+        DiagnosticFlowOpenObserver.shared.record(.tcpOpened)
+        try await machine.start()
+
+        // Both directions have already completed at least one real chunk exchange.
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 0x41, count: 100)))))
+        let bridgeWrite1 = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(bridgeWrite1)
+        XCTAssertTrue(bridge.completeNextWrite(.success(())))
+        let flowRead2 = await eventually { flow.readCallCount == 2 }
+        XCTAssertTrue(flowRead2)
+
+        XCTAssertTrue(source.completeNextRead(.success(.bytes(Data(repeating: 0x42, count: 200)))))
+        let flowWrite1 = await eventually { flow.writeCallCount == 1 }
+        XCTAssertTrue(flowWrite1)
+        XCTAssertTrue(flow.completeNextWrite(.success(())))
+        let sourceRead2 = await eventually { source.readCallCount == 2 }
+        XCTAssertTrue(sourceRead2)
+
+        // Trailing chunk hits .closed when client socket closed concurrently before EOF arrived on flowRead.
+        XCTAssertTrue(source.completeNextRead(.success(.bytes(Data(repeating: 0x15, count: 64)))))
+        let flowWrite2 = await eventually { flow.writeCallCount == 2 }
+        XCTAssertTrue(flowWrite2)
+        XCTAssertTrue(flow.completeNextWrite(.failure(.closed)))
+
+        let finished = await eventually(machine) { $0.lifecycle == .finished }
+        XCTAssertTrue(finished, "Simultaneous peer close on flow.write after completed bidirectional exchange must finish cleanly")
+
+        aggregate.emit()
+        let flushed = expectation(description: "simulClose flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("sessionsFailed=0"), "Expected sessionsFailed=0, got: \(text)")
+        XCTAssertFalse(text.contains("outcome=failed"), "Must not log failure record: \(text)")
+    }
+
+    func testBridgeWriteClosedDuringFirstPacketAfterUpstreamEOFIsCleanPostEOF() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherroute-first-upstream-eof-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: dir, baseName: "tp"))
+        let log = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let aggregate = DiagnosticAggregator(log: log)
+        DiagnosticFlowOpenObserver.shared.attach(aggregate)
+        defer { DiagnosticFlowOpenObserver.shared.detach() }
+
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow,
+            bridgeSource: source,
+            bridgeSink: bridge,
+            diagnosticLog: log
+        )
+        DiagnosticFlowOpenObserver.shared.record(.tcpOpened)
+        try await machine.start()
+
+        // Client sent first packet (flowReadBytes = 517), upstream rejects/closes before ACK.
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 0x47, count: 517)))))
+        let bridgeWrite1 = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(bridgeWrite1)
+        XCTAssertTrue(source.completeNextRead(.success(.endOfStream)))
+        let flowFinish1 = await eventually { flow.finishCallCount == 1 }
+        XCTAssertTrue(flowFinish1)
+        XCTAssertTrue(bridge.completeNextWrite(.failure(.closed)))
+
+        let finished = await eventually(machine) { $0.lifecycle == .finished }
+        XCTAssertTrue(finished, "Bridge write .closed after upstream EOF while forwarding first client packet must finish cleanly")
+
+        aggregate.emit()
+        let flushed = expectation(description: "upstreamEOFFirstPacket flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        let text = sink.tail(maximumBytes: 8192)
+        XCTAssertTrue(text.contains("sessionsFailed=0"), "Expected sessionsFailed=0, got: \(text)")
+        XCTAssertFalse(text.contains("outcome=failed"), "Must not log failure record: \(text)")
+    }
+
+    func testPostExchangeClientHalfCloseReclaimsPromptlyAndStaysQuietAtStandardLevel() async throws {
+        XCTAssertEqual(
+            TCPFlowStateMachine.defaultPostExchangeClientHalfCloseTimeout,
+            .seconds(2),
+            "Default post-exchange client half-close timeout should be bounded to 2 seconds"
+        )
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherroute-client-halfclose-quiet-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sink = RotatingLogSink(configuration: .init(directoryURL: dir, baseName: "tp"))
+        let standardLog = DiagnosticLog(category: "test", sink: sink, levelProvider: { .standard })
+        let flow = FakeTCPFlow()
+        let source = FakeRustTCPSource()
+        let bridge = FakeRustTCPSink()
+        let machine = try TCPFlowStateMachine(
+            flow: flow,
+            bridgeSource: source,
+            bridgeSink: bridge,
+            halfCloseIdleTimeout: .seconds(10),
+            postExchangeClientHalfCloseTimeout: .milliseconds(80),
+            diagnosticLog: standardLog
+        )
+        try await machine.start()
+
+        // Completed request + response exchange.
+        XCTAssertTrue(flow.completeNextRead(.success(.bytes(Data(repeating: 0x41, count: 64)))))
+        let bridgeWrite1 = await eventually { bridge.writeCallCount == 1 }
+        XCTAssertTrue(bridgeWrite1)
+        XCTAssertTrue(bridge.completeNextWrite(.success(())))
+        let flowRead2 = await eventually { flow.readCallCount == 2 }
+        XCTAssertTrue(flowRead2)
+
+        XCTAssertTrue(source.completeNextRead(.success(.bytes(Data(repeating: 0x42, count: 128)))))
+        let flowWrite1 = await eventually { flow.writeCallCount == 1 }
+        XCTAssertTrue(flowWrite1)
+        XCTAssertTrue(flow.completeNextWrite(.success(())))
+        let sourceRead2 = await eventually { source.readCallCount == 2 }
+        XCTAssertTrue(sourceRead2)
+
+        // Client half-closes while server keep-alive stays open.
+        XCTAssertTrue(flow.completeNextRead(.success(.endOfStream)))
+        let bridgeFinish1 = await eventually { bridge.finishCallCount == 1 }
+        XCTAssertTrue(bridgeFinish1)
+        XCTAssertTrue(bridge.completeNextFinish(.success(())))
+
+        let started = ContinuousClock.now
+        let finished = await eventually(machine, timeout: .seconds(2)) { $0.lifecycle == .finished }
+        let elapsed = started.duration(to: .now)
+        XCTAssertTrue(finished, "Post-exchange client half-close must reclaim cleanly using postExchangeClientHalfCloseTimeout instead of full halfCloseIdleTimeout")
+        XCTAssertLessThan(elapsed, .seconds(2), "Reclamation took too long: \(elapsed)")
+
+        let flushed = expectation(description: "quiet halfClose flushed")
+        sink.flush { flushed.fulfill() }
+        await fulfillment(of: [flushed], timeout: 5)
+        XCTAssertEqual(sink.tail(maximumBytes: 8192), "", "Routine clean client half-close reclamation must not emit logs at .standard level")
+    }
 }
 
 private final class SharedRustTCPBridge:

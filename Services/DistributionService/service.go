@@ -1,6 +1,7 @@
 package distributionservice
 
 import (
+	"container/list"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -114,22 +115,13 @@ func (service *Service) serveLicense(response http.ResponseWriter, request *http
 		return
 	}
 	var licenseRequest LicenseRequest
-	if err := decodeExactJSON(body, &licenseRequest); err != nil ||
-		licenseRequest.Validate(service.productID) != nil {
+	if err := decodeExactJSON(body, &licenseRequest); err != nil {
 		service.reject(response, http.StatusBadRequest)
 		return
 	}
-	identities := []string{
-		"device:" + DigestHex([]byte(strings.ToLower(licenseRequest.DeviceID))),
-	}
-	if licenseRequest.LicenseKey != nil {
-		identities = append(
-			identities,
-			"key:"+service.store.activationDigest(*licenseRequest.LicenseKey),
-		)
-	}
-	if !service.identityLimiter.AllowAll(identities, service.now()) {
-		service.reject(response, http.StatusTooManyRequests)
+	licenseRequest.DeviceID = strings.ToLower(strings.TrimSpace(licenseRequest.DeviceID))
+	if licenseRequest.Validate(service.productID) != nil {
+		service.reject(response, http.StatusBadRequest)
 		return
 	}
 	switch licenseRequest.Action {
@@ -145,6 +137,20 @@ func (service *Service) serveLicense(response http.ResponseWriter, request *http
 }
 
 func (service *Service) activate(response http.ResponseWriter, ctx context.Context, request LicenseRequest) {
+	if err := service.store.ReadLicenseByKey(*request.LicenseKey, func(_ *LicenseRecord) error {
+		return nil
+	}); err != nil {
+		service.reject(response, http.StatusForbidden)
+		return
+	}
+	identities := []string{
+		"device:" + DigestHex([]byte(request.DeviceID)),
+		"key:" + service.store.activationDigest(*request.LicenseKey),
+	}
+	if !service.identityLimiter.AllowAll(identities, service.now()) {
+		service.reject(response, http.StatusTooManyRequests)
+		return
+	}
 	var entitlement Entitlement
 	err := service.store.WithLicenseByKey(*request.LicenseKey, func(record *LicenseRecord) error {
 		entitlement = service.entitlement(record, request.DeviceID)
@@ -167,7 +173,7 @@ func (service *Service) refresh(response http.ResponseWriter, ctx context.Contex
 		return
 	}
 	var entitlement Entitlement
-	err = service.store.WithLicenseByID(receipt.LicenseID, func(record *LicenseRecord) error {
+	err = service.store.ReadLicenseByID(receipt.LicenseID, func(record *LicenseRecord) error {
 		if !record.Devices[request.DeviceID] {
 			return errors.New("device is not activated")
 		}
@@ -178,6 +184,14 @@ func (service *Service) refresh(response http.ResponseWriter, ctx context.Contex
 		service.reject(response, http.StatusForbidden)
 		return
 	}
+	identities := []string{
+		"device:" + DigestHex([]byte(request.DeviceID)),
+		"license:" + receipt.LicenseID,
+	}
+	if !service.identityLimiter.AllowAll(identities, service.now()) {
+		service.reject(response, http.StatusTooManyRequests)
+		return
+	}
 	service.writeSigned(response, ctx, entitlement)
 }
 
@@ -185,6 +199,23 @@ func (service *Service) deactivate(response http.ResponseWriter, request License
 	receipt, err := service.decodeRequestReceipt(request)
 	if err != nil || receipt.DeviceID != request.DeviceID {
 		service.reject(response, http.StatusForbidden)
+		return
+	}
+	if err := service.store.ReadLicenseByID(receipt.LicenseID, func(record *LicenseRecord) error {
+		if !record.Devices[request.DeviceID] {
+			return errors.New("device is not activated")
+		}
+		return nil
+	}); err != nil {
+		service.reject(response, http.StatusForbidden)
+		return
+	}
+	identities := []string{
+		"device:" + DigestHex([]byte(request.DeviceID)),
+		"license:" + receipt.LicenseID,
+	}
+	if !service.identityLimiter.AllowAll(identities, service.now()) {
+		service.reject(response, http.StatusTooManyRequests)
 		return
 	}
 	err = service.store.WithLicenseByID(receipt.LicenseID, func(record *LicenseRecord) error {
@@ -208,7 +239,12 @@ func (service *Service) decodeRequestReceipt(request LicenseRequest) (Entitlemen
 	if err != nil || len(data) == 0 || len(data) > MaximumResponseBytes {
 		return Entitlement{}, errors.New("invalid receipt")
 	}
-	return DecodeReceipt(data, service.publicKey, service.productID, service.now().UTC())
+	receipt, err := DecodeReceipt(data, service.publicKey, service.productID, service.now().UTC())
+	if err != nil {
+		return Entitlement{}, err
+	}
+	receipt.DeviceID = strings.ToLower(strings.TrimSpace(receipt.DeviceID))
+	return receipt, nil
 }
 
 func (service *Service) entitlement(record *LicenseRecord, deviceID string) Entitlement {
@@ -283,18 +319,27 @@ type fixedWindowLimiter struct {
 	limit        int
 	window       time.Duration
 	maximumItems int
-	items        map[string]windowCounter
+	items        map[string]*windowCounter
+	expiryOrder  *list.List
+	evictableLRU *list.List
 }
 
 type windowCounter struct {
-	started time.Time
-	count   int
+	key        string
+	started    time.Time
+	count      int
+	expiryElem *list.Element
+	lruElem    *list.Element
 }
 
 func newFixedWindowLimiter(limit int, window time.Duration, maximumItems int) *fixedWindowLimiter {
 	return &fixedWindowLimiter{
-		limit: limit, window: window, maximumItems: maximumItems,
-		items: make(map[string]windowCounter),
+		limit:        limit,
+		window:       window,
+		maximumItems: maximumItems,
+		items:        make(map[string]*windowCounter),
+		expiryOrder:  list.New(),
+		evictableLRU: list.New(),
 	}
 }
 
@@ -303,13 +348,22 @@ func (limiter *fixedWindowLimiter) Allow(key string, now time.Time) bool {
 }
 
 func (limiter *fixedWindowLimiter) AllowAll(keys []string, now time.Time) bool {
+	if limiter.limit <= 0 || limiter.maximumItems <= 0 {
+		return false
+	}
 	limiter.mutex.Lock()
 	defer limiter.mutex.Unlock()
-	for item, value := range limiter.items {
-		if now.Sub(value.started) >= limiter.window {
-			delete(limiter.items, item)
+
+	for front := limiter.expiryOrder.Front(); front != nil; {
+		next := front.Next()
+		entry := front.Value.(*windowCounter)
+		if now.Sub(entry.started) < limiter.window {
+			break
 		}
+		limiter.removeEntry(entry)
+		front = next
 	}
+
 	unique := make([]string, 0, len(keys))
 	seen := make(map[string]struct{}, len(keys))
 	newItems := 0
@@ -330,16 +384,61 @@ func (limiter *fixedWindowLimiter) AllowAll(keys []string, now time.Time) bool {
 			return false
 		}
 	}
-	if len(limiter.items)+newItems > limiter.maximumItems {
+	if len(unique) > limiter.maximumItems {
 		return false
 	}
-	for _, key := range unique {
-		counter := limiter.items[key]
-		if counter.started.IsZero() {
-			counter.started = now
+	if overflow := len(limiter.items) + newItems - limiter.maximumItems; overflow > 0 {
+		victims := make([]*windowCounter, 0, overflow)
+		for elem := limiter.evictableLRU.Front(); elem != nil && len(victims) < overflow; elem = elem.Next() {
+			candidate := elem.Value.(*windowCounter)
+			if _, requested := seen[candidate.key]; requested {
+				continue
+			}
+			victims = append(victims, candidate)
 		}
-		counter.count++
-		limiter.items[key] = counter
+		if len(victims) < overflow {
+			return false
+		}
+		for _, victim := range victims {
+			limiter.removeEntry(victim)
+		}
+	}
+	for _, key := range unique {
+		entry, exists := limiter.items[key]
+		if !exists {
+			entry = &windowCounter{
+				key:     key,
+				started: now,
+				count:   1,
+			}
+			entry.expiryElem = limiter.expiryOrder.PushBack(entry)
+			if entry.count < limiter.limit {
+				entry.lruElem = limiter.evictableLRU.PushBack(entry)
+			}
+			limiter.items[key] = entry
+			continue
+		}
+		entry.count++
+		if entry.count >= limiter.limit {
+			if entry.lruElem != nil {
+				limiter.evictableLRU.Remove(entry.lruElem)
+				entry.lruElem = nil
+			}
+		} else if entry.lruElem != nil {
+			limiter.evictableLRU.MoveToBack(entry.lruElem)
+		}
 	}
 	return true
+}
+
+func (limiter *fixedWindowLimiter) removeEntry(entry *windowCounter) {
+	if entry.expiryElem != nil {
+		limiter.expiryOrder.Remove(entry.expiryElem)
+		entry.expiryElem = nil
+	}
+	if entry.lruElem != nil {
+		limiter.evictableLRU.Remove(entry.lruElem)
+		entry.lruElem = nil
+	}
+	delete(limiter.items, entry.key)
 }

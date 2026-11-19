@@ -18,8 +18,10 @@ enum SparkleAutoUpdateDebounceTests {
         await testStartupSilentCheckSuppressedWhenDisabled()
         await testNotificationDeduplicationPerVersion()
         await testAvailabilityLifecycle()
+        await testPrivacyConsentBlocksAutoCheckUntilAccepted()
+        await testScheduledUpdateWindowSuppressedWithoutImmediateFocus()
 
-        print("Sparkle auto-update debounce tests: 11 scenarios passed successfully")
+        print("Sparkle auto-update debounce tests: 13 scenarios passed successfully")
     }
 
     @MainActor
@@ -294,5 +296,61 @@ enum SparkleAutoUpdateDebounceTests {
         // Failed check does not regress upToDate
         state = state.applying(.checkFailed)
         precondition(state == .upToDate, "checkFailed should keep upToDate")
+    }
+
+    @MainActor
+    private static func testPrivacyConsentBlocksAutoCheckUntilAccepted() async {
+        var backgroundCheckCount = 0
+        var consentAccepted = false
+        let controller = SparkleUpdaterController(
+            updaterController: nil,
+            startUpdater: false,
+            debounceDuration: .milliseconds(20),
+            cooldownInterval: 60,
+            now: { Date() },
+            performBackgroundCheckAction: { _ in backgroundCheckCount += 1 },
+            notificationAction: { _ in },
+            userDefaults: UserDefaults(suiteName: "test-sparkle-privacy-\(UUID().uuidString)")!,
+            startupDelay: .milliseconds(20),
+            isPrivacyConsentAccepted: { consentAccepted }
+        )
+
+        controller.setCanCheckForUpdatesForTesting(true)
+        controller.scheduleStartupSilentCheck()
+        try? await Task.sleep(for: .milliseconds(55))
+        precondition(
+            backgroundCheckCount == 0,
+            "Startup silent check must NOT fire before privacy consent is accepted (got \(backgroundCheckCount))"
+        )
+
+        consentAccepted = true
+        controller.handlePrivacyConsentAccepted()
+        try? await Task.sleep(for: .milliseconds(55))
+        precondition(
+            backgroundCheckCount == 1,
+            "Startup silent check must fire once privacy consent is accepted (got \(backgroundCheckCount))"
+        )
+    }
+
+    @MainActor
+    private static func testScheduledUpdateWindowSuppressedWithoutImmediateFocus() async {
+        let controller = SparkleUpdaterController(
+            updaterController: nil,
+            startUpdater: false,
+            debounceDuration: .milliseconds(20),
+            cooldownInterval: 60,
+            now: { Date() },
+            performBackgroundCheckAction: { _ in },
+            notificationAction: { _ in },
+            userDefaults: UserDefaults(suiteName: "test-sparkle-focus-\(UUID().uuidString)")!
+        )
+        precondition(
+            !controller.shouldShowScheduledUpdateWindow(immediateFocus: false),
+            "Background scheduled checks (immediateFocus == false) must suppress Sparkle WKWebView alert"
+        )
+        precondition(
+            controller.shouldShowScheduledUpdateWindow(immediateFocus: true),
+            "Foreground update presentation (immediateFocus == true) must still allow Sparkle window"
+        )
     }
 }

@@ -54,7 +54,8 @@ public enum ProfileSettingsMigration {
         preferenceStore: ProxySelectionStore?,
         dnsStore: DNSRuntimePolicyStore?,
         defaults: UserDefaults,
-        overrides: ProfileOverride? = nil
+        overrides: ProfileOverride? = nil,
+        pruneOldSettings: Bool = true
     ) -> ProfileSettingsMigrationReport {
         var report = ProfileSettingsMigrationReport()
         guard oldYAML != newYAML else { return report }
@@ -118,6 +119,17 @@ public enum ProfileSettingsMigration {
            (try? dnsStore.save(policy, forProfileYAML: newYAML)) != nil {
             report.dnsPolicy = true
         }
+
+        if pruneOldSettings {
+            removeSettings(
+                forYAML: oldYAML,
+                selectionStore: selectionStore,
+                preferenceStore: preferenceStore,
+                dnsStore: dnsStore,
+                defaults: defaults,
+                overrides: overrides
+            )
+        }
         return report
     }
 
@@ -127,11 +139,55 @@ public enum ProfileSettingsMigration {
         fromYAML oldYAML: String,
         toYAML newYAML: String,
         defaults: UserDefaults,
-        overrides: ProfileOverride? = nil
+        overrides: ProfileOverride? = nil,
+        pruneOldSettings: Bool = true
     ) -> ProfileSettingsMigrationReport {
         migrate(
             fromYAML: oldYAML,
             toYAML: newYAML,
+            selectionStore: try? ProxySelectionStore.applicationGroup(kind: .selections),
+            preferenceStore: try? ProxySelectionStore.applicationGroup(kind: .preferences),
+            dnsStore: try? DNSRuntimePolicyStore.applicationGroup(),
+            defaults: defaults,
+            overrides: overrides,
+            pruneOldSettings: pruneOldSettings
+        )
+    }
+
+    public static func removeSettings(
+        forYAML yaml: String,
+        selectionStore: ProxySelectionStore?,
+        preferenceStore: ProxySelectionStore?,
+        dnsStore: DNSRuntimePolicyStore?,
+        defaults: UserDefaults,
+        overrides: ProfileOverride? = nil
+    ) {
+        let effective = ProfileOverrideCompiler.apply(overrides, to: yaml).yaml
+        var groupNames = Set(
+            ProfileConfigurationInspector.inspect(yaml: yaml).proxyGroups.map(\.name)
+                + ProfileConfigurationInspector.inspect(yaml: effective).proxyGroups.map(\.name)
+        )
+        groupNames.insert(ProxyConnectionReadinessPolicy.globalGroupName)
+        for groupName in groupNames {
+            defaults.removeObject(
+                forKey: ProxySelectionPreferenceKeys.mode(profileYAML: yaml, group: groupName)
+            )
+            defaults.removeObject(
+                forKey: ProxySelectionPreferenceKeys.legacyAutomatic(profileYAML: yaml, group: groupName)
+            )
+        }
+        try? selectionStore?.removeSelections(forProfileYAML: yaml)
+        try? preferenceStore?.removeSelections(forProfileYAML: yaml)
+        try? dnsStore?.remove(forProfileYAML: yaml)
+    }
+
+    public static func removeSettingsInApplicationGroup(
+        forYAML yaml: String,
+        defaults: UserDefaults,
+        overrides: ProfileOverride? = nil
+    ) {
+        removeSettings(
+            forYAML: yaml,
             selectionStore: try? ProxySelectionStore.applicationGroup(kind: .selections),
             preferenceStore: try? ProxySelectionStore.applicationGroup(kind: .preferences),
             dnsStore: try? DNSRuntimePolicyStore.applicationGroup(),

@@ -14,6 +14,37 @@ public struct BundledRoutingResources: Sendable {
         self.directoryURL = directoryURL
     }
 
+    /// Resolves the host `.app` bundle's `Contents/Resources/RoutingResources`
+    /// directory from inside a System Extension bundle (`.../Contents/Library/SystemExtensions/...`)
+    /// or directly from the host app bundle.
+    public static func extensionFallbackDirectoryURL(
+        extensionBundle: Bundle = .main
+    ) -> URL? {
+        if let direct = extensionBundle.resourceURL?.appendingPathComponent(
+            "RoutingResources",
+            isDirectory: true
+        ),
+        FileManager.default.fileExists(atPath: direct.appendingPathComponent("manifest.json").path) {
+            return direct
+        }
+        var cursor = extensionBundle.bundleURL.standardizedFileURL
+        for _ in 0..<6 {
+            let parent = cursor.deletingLastPathComponent()
+            if parent.path == cursor.path { break }
+            cursor = parent
+            if cursor.pathExtension.lowercased() == "app" {
+                let candidate = cursor.appendingPathComponent(
+                    "Contents/Resources/RoutingResources",
+                    isDirectory: true
+                )
+                if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("manifest.json").path) {
+                    return candidate
+                }
+            }
+        }
+        return nil
+    }
+
     @discardableResult
     public func installMissingResources(
         for profileYAML: String,

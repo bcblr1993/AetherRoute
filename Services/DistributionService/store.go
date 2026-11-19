@@ -198,6 +198,59 @@ func (store *Store) WithLicenseByID(licenseID string, action func(*LicenseRecord
 	})
 }
 
+func (store *Store) ReadLicenseByKey(key string, action func(*LicenseRecord) error) error {
+	if !ValidActivationKey(key) {
+		return errors.New("license not found")
+	}
+	digest := store.activationDigest(key)
+	return store.read(func(state *PersistentState) error {
+		record, exists := state.Licenses[digest]
+		if !exists {
+			return errors.New("license not found")
+		}
+		cloned := cloneLicenseRecord(record)
+		return action(&cloned)
+	})
+}
+
+func (store *Store) ReadLicenseByID(licenseID string, action func(*LicenseRecord) error) error {
+	if !licenseIDPattern.MatchString(licenseID) {
+		return errors.New("license not found")
+	}
+	return store.read(func(state *PersistentState) error {
+		digest, exists := state.LicenseIndex[licenseID]
+		if !exists {
+			return errors.New("license not found")
+		}
+		record, exists := state.Licenses[digest]
+		if !exists || record.LicenseID != licenseID {
+			return errors.New("license index is inconsistent")
+		}
+		cloned := cloneLicenseRecord(record)
+		return action(&cloned)
+	})
+}
+
+func cloneLicenseRecord(record LicenseRecord) LicenseRecord {
+	devices := make(map[string]bool, len(record.Devices))
+	for device, active := range record.Devices {
+		devices[strings.ToLower(strings.TrimSpace(device))] = active
+	}
+	var expiresAt *time.Time
+	if record.ExpiresAt != nil {
+		copied := *record.ExpiresAt
+		expiresAt = &copied
+	}
+	return LicenseRecord{
+		LicenseID:  record.LicenseID,
+		State:      record.State,
+		MaxDevices: record.MaxDevices,
+		CreatedAt:  record.CreatedAt,
+		ExpiresAt:  expiresAt,
+		Devices:    devices,
+	}
+}
+
 func (store *Store) activationDigest(key string) string {
 	mac := hmac.New(sha256.New, store.pepper)
 	_, _ = io.WriteString(mac, strings.ToUpper(key))
@@ -205,7 +258,7 @@ func (store *Store) activationDigest(key string) string {
 }
 
 func (store *Store) update(action func(*PersistentState) error) error {
-	return store.withLock(true, func(state *PersistentState) error {
+	return store.withLock(true, syscall.LOCK_EX, func(state *PersistentState) error {
 		if err := action(state); err != nil {
 			return err
 		}
@@ -215,15 +268,24 @@ func (store *Store) update(action func(*PersistentState) error) error {
 }
 
 func (store *Store) read(action func(*PersistentState) error) error {
-	return store.withLock(false, action)
+	return store.withLock(false, syscall.LOCK_SH, action)
 }
 
-func (store *Store) withLock(create bool, action func(*PersistentState) error) error {
-	lock, err := os.OpenFile(
-		store.path+".lock",
-		os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW,
-		0o600,
-	)
+func (store *Store) withLock(create bool, lockType int, action func(*PersistentState) error) error {
+	lockPath := store.path + ".lock"
+	var lock *os.File
+	var err error
+	if lockType == syscall.LOCK_SH {
+		lock, err = os.OpenFile(lockPath, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+		if errors.Is(err, os.ErrNotExist) {
+			if _, statErr := os.Lstat(store.path); errors.Is(statErr, os.ErrNotExist) {
+				return statErr
+			}
+			lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+		}
+	} else {
+		lock, err = os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	}
 	if err != nil {
 		return err
 	}
@@ -232,7 +294,7 @@ func (store *Store) withLock(create bool, action func(*PersistentState) error) e
 	if err != nil || !lockInfo.Mode().IsRegular() || lockInfo.Mode().Perm()&0o077 != 0 {
 		return errors.New("state lock must be regular and private")
 	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := syscall.Flock(int(lock.Fd()), lockType); err != nil {
 		return err
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
@@ -271,6 +333,14 @@ func (store *Store) load(create bool) (PersistentState, error) {
 	}
 	if err := validateState(state, store.productID); err != nil {
 		return PersistentState{}, err
+	}
+	for digest, record := range state.Licenses {
+		normalized := make(map[string]bool, len(record.Devices))
+		for device, active := range record.Devices {
+			normalized[strings.ToLower(strings.TrimSpace(device))] = active
+		}
+		record.Devices = normalized
+		state.Licenses[digest] = record
 	}
 	return state, nil
 }

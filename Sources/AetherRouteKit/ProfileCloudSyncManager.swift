@@ -712,11 +712,41 @@ public final class ProfileCloudSyncManager: ObservableObject {
         )
     }
 
+    nonisolated private static let compressedCatalogMagic = Data([0x41, 0x52, 0x43, 0x5A]) // "ARCZ"
+    nonisolated public static let maximumTotalKVSBytes = 980_000
+
+    nonisolated static func encodeCatalogPayloadData(_ payload: CloudSyncCatalogPayload) throws -> Data {
+        let json = try JSONEncoder().encode(payload)
+        // Keep standard JSON wire format for normal catalogs so cross-version peers
+        // decode seamlessly; compress only when approaching the 1 MB KVS ceiling.
+        guard json.count > 750_000 else {
+            return json
+        }
+        if let compressed = try? (json as NSData).compressed(using: .zlib) as Data,
+           compressed.count + compressedCatalogMagic.count < json.count {
+            var framed = compressedCatalogMagic
+            framed.append(compressed)
+            return framed
+        }
+        return json
+    }
+
     nonisolated static func decodeCatalogPayload(from decryptedData: Data) -> CloudSyncCatalogPayload? {
-        if let wrapper = try? JSONDecoder().decode(CloudSyncCatalogPayload.self, from: decryptedData) {
+        let candidateData: Data
+        if decryptedData.starts(with: compressedCatalogMagic) {
+            let body = Data(decryptedData.dropFirst(compressedCatalogMagic.count))
+            guard let decompressed = try? (body as NSData).decompressed(using: .zlib) as Data,
+                  decompressed.count <= 64 * 1_024 * 1_024 else {
+                return nil
+            }
+            candidateData = decompressed
+        } else {
+            candidateData = decryptedData
+        }
+        if let wrapper = try? JSONDecoder().decode(CloudSyncCatalogPayload.self, from: candidateData) {
             return wrapper
         }
-        if let legacyCatalog = try? JSONDecoder().decode(ProfileCatalog.self, from: decryptedData) {
+        if let legacyCatalog = try? JSONDecoder().decode(ProfileCatalog.self, from: candidateData) {
             return CloudSyncCatalogPayload(catalog: legacyCatalog, deletedProfiles: [:])
         }
         return nil
@@ -1010,7 +1040,14 @@ private actor CloudSyncWorker {
 
         var updatedProviders: [RuleProviderMetadata]?
         if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
-            let outcome = await ruleProviderEngine.mergeCloudSyncPayloadOutcome(remoteRuleData)
+            let localKey = (try? keyStore.loadKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID))
+                .flatMap { $0.count == 32 ? $0 : nil }
+            let fallbackKey = resolveAuthenticatedLegacyFallbackKey()
+            let outcome = await ruleProviderEngine.mergeCloudSyncPayloadOutcome(
+                remoteRuleData,
+                encryptionKey: localKey,
+                fallbackKey: fallbackKey
+            )
             if outcome.didChangeLocal {
                 updatedProviders = outcome.providers
             }
@@ -1030,7 +1067,12 @@ private actor CloudSyncWorker {
     func performForcePush() async throws -> SyncOutcome {
         _ = resolveDeviceNameIfNeeded()
         if !(await ruleProviderEngine.allProviders().isEmpty),
-           let localRulePayload = await ruleProviderEngine.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+           let pushKey = (try? resolveEncryptionKeyForPush().key),
+           let localRulePayload = await ruleProviderEngine.exportCloudSyncPayload(
+               deviceIdentifier: deviceID,
+               encryptionKey: pushKey
+           ),
+           totalKVSBytesWouldFit(writing: localRulePayload, forKey: RuleProviderSyncPayload.storageKey) {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
             kvStore.synchronize()
         }
@@ -1064,8 +1106,17 @@ private actor CloudSyncWorker {
     private func syncRuleProvidersAndUserRules() async -> ([RuleProviderMetadata]?, CloudSyncUserRulesSnapshot?) {
         var updatedProviders: [RuleProviderMetadata]?
         var shouldPushProviders = false
+        let localKey = (try? keyStore.loadKey(keyID: ProfileCloudSyncManager.cloudSyncKeyID))
+            .flatMap { $0.count == 32 ? $0 : nil }
+        let fallbackKey = resolveAuthenticatedLegacyFallbackKey()
+            ?? kvStore.data(forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey)
+                .flatMap { $0.count == 32 ? $0 : nil }
         if let remoteRuleData = kvStore.data(forKey: RuleProviderSyncPayload.storageKey) {
-            let outcome = await ruleProviderEngine.mergeCloudSyncPayloadOutcome(remoteRuleData)
+            let outcome = await ruleProviderEngine.mergeCloudSyncPayloadOutcome(
+                remoteRuleData,
+                encryptionKey: localKey,
+                fallbackKey: fallbackKey
+            )
             if outcome.didChangeLocal {
                 updatedProviders = outcome.providers
             }
@@ -1074,12 +1125,30 @@ private actor CloudSyncWorker {
             shouldPushProviders = !(await ruleProviderEngine.allProviders().isEmpty)
         }
         if shouldPushProviders,
-           let localRulePayload = await ruleProviderEngine.exportCloudSyncPayload(deviceIdentifier: deviceID) {
+           let pushKey = localKey ?? (try? resolveEncryptionKeyForPush().key),
+           let localRulePayload = await ruleProviderEngine.exportCloudSyncPayload(
+               deviceIdentifier: deviceID,
+               encryptionKey: pushKey
+           ),
+           totalKVSBytesWouldFit(writing: localRulePayload, forKey: RuleProviderSyncPayload.storageKey) {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
             kvStore.synchronize()
         }
         let updatedUserRules = syncUserRulesSnapshot()
         return (updatedProviders, updatedUserRules)
+    }
+
+    private func totalKVSBytesWouldFit(writing newData: Data, forKey targetKey: String) -> Bool {
+        let trackedKeys = [
+            CloudSyncPayload.storageKey,
+            CloudSyncPayload.userRulesStorageKey,
+            RuleProviderSyncPayload.storageKey,
+        ]
+        var total = newData.count
+        for key in trackedKeys where key != targetKey {
+            total += kvStore.data(forKey: key)?.count ?? 0
+        }
+        return total <= ProfileCloudSyncManager.maximumTotalKVSBytes
     }
 
     private func resolveAuthenticatedLegacyFallbackKey() -> Data? {
@@ -1167,7 +1236,8 @@ private actor CloudSyncWorker {
                    deviceIdentifier: deviceID,
                    keyStore: keyStore,
                    fallbackKey: resolveAuthenticatedLegacyFallbackKey()
-               ) {
+               ),
+               totalKVSBytesWouldFit(writing: encoded, forKey: CloudSyncPayload.userRulesStorageKey) {
                 kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
                 kvStore.synchronize()
             }
@@ -1202,7 +1272,8 @@ private actor CloudSyncWorker {
             deviceIdentifier: deviceID,
             keyStore: keyStore,
             fallbackKey: resolveAuthenticatedLegacyFallbackKey()
-        ) {
+        ),
+        totalKVSBytesWouldFit(writing: encoded, forKey: CloudSyncPayload.userRulesStorageKey) {
             kvStore.set(encoded, forKey: CloudSyncPayload.userRulesStorageKey)
             kvStore.synchronize()
         }
@@ -1210,7 +1281,7 @@ private actor CloudSyncWorker {
 
     private func pushLocalToCloud(_ catalog: ProfileCatalog, tombstones: [UUID: Date]) throws {
         let syncPayload = CloudSyncCatalogPayload(catalog: catalog, deletedProfiles: tombstones)
-        let catalogData = try JSONEncoder().encode(syncPayload)
+        let catalogData = try ProfileCloudSyncManager.encodeCatalogPayloadData(syncPayload)
         let (key, canRetireLegacyKey) = try resolveEncryptionKeyForPush()
 
         let symmetricKey = SymmetricKey(data: key)
@@ -1228,8 +1299,9 @@ private actor CloudSyncWorker {
         )
 
         let payloadData = try JSONEncoder().encode(payload)
-        guard payloadData.count <= 1_000_000 else {
-            Self.logger.error("Cloud sync payload size exceeds 1MB limit: \(payloadData.count) bytes")
+        guard payloadData.count <= 1_000_000,
+              totalKVSBytesWouldFit(writing: payloadData, forKey: CloudSyncPayload.storageKey) else {
+            Self.logger.error("Cloud sync payload size exceeds 1MB KVS quota: \(payloadData.count) bytes")
             throw CloudSyncError.payloadTooLarge
         }
 

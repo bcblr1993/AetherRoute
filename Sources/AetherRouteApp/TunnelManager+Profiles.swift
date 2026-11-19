@@ -1,4 +1,5 @@
 import AetherRouteKit
+import CryptoKit
 import Foundation
 import Network
 import NetworkExtension
@@ -532,19 +533,51 @@ extension TunnelManager {
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
 
-        if !isUIReviewMode, state == .connected {
+        // Preflight target profile existence, syntax/plugin safety, and native
+        // dialer-proxy links BEFORE touching the active profile or tearing down
+        // a healthy running tunnel.
+        guard let candidateManaged = profiles.first(where: { $0.id == id }) else {
+            profileMessage = ProfileCatalogStoreError.activeProfileNotFound.localizedDescription
+            profileMessageIsError = true
+            return
+        }
+        let candidateProfile = candidateManaged.profile
+        let prebuiltReload: PreparedReloadProfile?
+        do {
+            if let nativeNodes = candidateProfile.nativeNodes {
+                try AetherNodeProfileCompiler.validateDialerProxies(in: nativeNodes)
+            }
+            let compiledCandidateYAML = effectiveProfileYAML(for: candidateProfile)
+            _ = try ProfileImportValidator.validate(data: Data(compiledCandidateYAML.utf8))
+            if !isUIReviewMode && shouldReconnect {
+                let currentRoutingMode = sessionRoutingMode ?? routingMode
+                prebuiltReload = try await prepareReloadProfilePayload(
+                    for: candidateProfile,
+                    requestedMode: currentRoutingMode
+                )
+            } else {
+                prebuiltReload = nil
+            }
+        } catch {
+            profileMessage = error.localizedDescription
+            profileMessageIsError = true
+            return
+        }
+
+        if !isUIReviewMode, state == .connected, let preparedReload = prebuiltReload {
             do {
                 profileMessage = AppLocalization.string("Switching profile…")
                 profileMessageIsError = false
-                try await applyProfileActivation(id: id)
-                let currentRoutingMode = sessionRoutingMode ?? routingMode
-                let reloadPayloadData = try await prepareReloadProfilePayload(
-                    requestedMode: currentRoutingMode
-                )
                 let client = makeProxySelectionProviderClient()
-                Self.runtimeLogger.info("stage=activateProfile sending live reload payload bytes=\(reloadPayloadData.count)")
-                try await client.reloadActiveProfile(payload: reloadPayloadData)
+                Self.runtimeLogger.info(
+                    "stage=activateProfile sending live reload payload bytes=\(preparedReload.payloadData.count) resources=\(preparedReload.routingResources.count)"
+                )
+                try await reloadActiveProfileStagingResources(preparedReload, via: client)
                 Self.runtimeLogger.info("stage=activateProfile live reload succeeded")
+                try await applyProfileActivation(
+                    id: id,
+                    preserveConnectedRuntimeState: true
+                )
                 clearProxySelectionRuntimeState()
                 cancelConnectionReadiness()
                 readinessVerifiedConnectionID = nil
@@ -688,36 +721,57 @@ extension TunnelManager {
         }
     }
 
-    func applyProfileActivation(id: UUID) async throws {
+    func applyProfileActivation(
+        id: UUID,
+        preserveConnectedRuntimeState: Bool = false
+    ) async throws {
         if isUIReviewMode {
             guard profiles.contains(where: { $0.id == id }) else {
                 throw ProfileCatalogStoreError.activeProfileNotFound
             }
             installReviewProfileCatalog(
-                ProfileCatalog(activeProfileID: id, profiles: profiles)
+                ProfileCatalog(activeProfileID: id, profiles: profiles),
+                preserveConnectedRuntimeState: preserveConnectedRuntimeState
             )
             return
         }
-        try await performProductionProfileCatalogOperation {
+        try await performProductionProfileCatalogOperation(
+            preserveConnectedRuntimeState: preserveConnectedRuntimeState
+        ) {
             try ProfileCatalogStore.applicationGroup().activate(id: id)
         }
     }
 
+    struct PreparedReloadProfile: Sendable {
+        let payloadData: Data
+        let routingResources: [RoutingResourceKind: Data]
+    }
+
+    func reloadActiveProfileStagingResources(
+        _ prepared: PreparedReloadProfile,
+        via client: ProxySelectionProviderClient
+    ) async throws {
+        try await client.stageRoutingResources(prepared.routingResources)
+        try await client.reloadActiveProfile(payload: prepared.payloadData)
+    }
+
     func prepareReloadProfilePayload(
+        for explicitProfile: ActiveProfile? = nil,
         requestedMode: RoutingMode
-    ) async throws -> Data {
-        guard let activeProfile else {
+    ) async throws -> PreparedReloadProfile {
+        guard let targetProfile = explicitProfile ?? activeProfile else {
             throw ActiveProfileStoreError.noActiveProfile
         }
-        if let nativeNodes = activeProfile.nativeNodes {
+        if let nativeNodes = targetProfile.nativeNodes {
             try AetherNodeProfileCompiler.validateDialerProxies(in: nativeNodes)
         }
         Self.runtimeLogger.info("stage=prepareReloadProfilePayload begin")
         isUpdatingRoutingResources = true
         defer { isUpdatingRoutingResources = false }
-        let rawProfileYAML = activeProfile.yaml
-        let baseProfileYAML = effectiveProfileYAML(for: activeProfile)
-        let currentCustomRules = customRules
+        let rawProfileYAML = targetProfile.yaml
+        let baseProfileYAML = effectiveProfileYAML(for: targetProfile)
+        let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
+        let currentCustomRules = Self.bypassDomainCustomRules(for: requestedBypassPolicy) + customRules
         let remoteRules = await ruleProviderEngine.compileActiveRules()
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
             for: baseProfileYAML,
@@ -736,7 +790,6 @@ extension TunnelManager {
         let storeFactory = routingResourceStoreFactory
         let downloadClient = routingResourceDownloadClient
         let bundleDirectory = bundledResourceDirectoryURL
-        let requestedBypassPolicy = Self.sanitizeBypassPolicy(bypassPolicy)
         let requestedDNSPolicy = dnsRuntimePolicy
         let inMemoryGlobalSelection = proxySelections["GLOBAL"]?.selectedMember
         let reloadInput = try await Task.detached(
@@ -789,7 +842,10 @@ extension TunnelManager {
                     .applicationGroup())?.load() ?? .off
             )
             return (
-                try ReloadProfilePayloadCodec.encode(payload),
+                PreparedReloadProfile(
+                    payloadData: try ReloadProfilePayloadCodec.encode(payload),
+                    routingResources: routingResources
+                ),
                 bundled.union(downloaded)
             )
         }.value
@@ -910,6 +966,7 @@ extension TunnelManager {
 
     func removeProfile(id: UUID) async {
         guard canModifyProfile(id: id) else { return }
+        let removedProfile = profiles.first(where: { $0.id == id })?.profile
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         if isUIReviewMode {
@@ -931,6 +988,14 @@ extension TunnelManager {
                 preserveConnectedRuntimeState: state == .connected
             ) {
                 try ProfileCatalogStore.applicationGroup().remove(id: id)
+            }
+            if let removedProfile,
+               !profiles.contains(where: { $0.profile.yaml == removedProfile.yaml }) {
+                ProfileSettingsMigration.removeSettingsInApplicationGroup(
+                    forYAML: removedProfile.yaml,
+                    defaults: userDefaults,
+                    overrides: removedProfile.overrides
+                )
             }
             recordSubscriptionUpdateError(nil, for: id)
             profileMessage = AppLocalization.string("Profile removed.")
@@ -1068,11 +1133,15 @@ extension TunnelManager {
             id: id,
             with: updated
         )
+        let shouldPrunePrevious = !catalog.profiles.contains {
+            $0.profile.yaml == previous.yaml
+        }
         ProfileSettingsMigration.migrateInApplicationGroup(
             fromYAML: previous.yaml,
             toYAML: updated.yaml,
             defaults: defaults,
-            overrides: previous.overrides
+            overrides: previous.overrides,
+            pruneOldSettings: shouldPrunePrevious
         )
         return catalog
     }
@@ -1189,14 +1258,14 @@ extension TunnelManager {
             let isActiveTarget = id == activeProfileID || activeIsDependentMerge
             if allowLiveReload, isActiveTarget, state == .connected, case .updated = update {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
-                let reloadPayloadData = try await prepareReloadProfilePayload(
+                let preparedReload = try await prepareReloadProfilePayload(
                     requestedMode: currentRoutingMode
                 )
                 let client = makeProxySelectionProviderClient()
                 Self.runtimeLogger.info(
-                    "stage=subscriptionRefresh liveReload sending payload bytes=\(reloadPayloadData.count)"
+                    "stage=subscriptionRefresh liveReload sending payload bytes=\(preparedReload.payloadData.count) resources=\(preparedReload.routingResources.count)"
                 )
-                try await client.reloadActiveProfile(payload: reloadPayloadData)
+                try await reloadActiveProfileStagingResources(preparedReload, via: client)
                 await finalizeLiveProfileReload(client: client)
                 Self.runtimeLogger.info("stage=subscriptionRefresh liveReload succeeded")
             }
@@ -1353,18 +1422,24 @@ extension TunnelManager {
         _ catalog: ProfileCatalog,
         preserveConnectedRuntimeState: Bool = false
     ) {
-        var projection = ProfileCatalogProjectionBuilder.review(catalog)
+        let currentGlobalOverride = loadGlobalProfileOverride()
+        var projection = ProfileCatalogProjectionBuilder.review(
+            catalog,
+            globalOverride: currentGlobalOverride,
+            bypassPolicy: bypassPolicy
+        )
+        let effectiveRules = effectiveRuntimeCustomRules
         if let active = catalog.activeProfile?.profile,
-           !customRules.isEmpty || !compiledRemoteRulesCache.isEmpty {
+           !effectiveRules.isEmpty || !compiledRemoteRulesCache.isEmpty {
             let optimized = DomesticRoutingOptimizer.optimizedProfile(
-                for: active.runtimeYAML,
-                customRules: customRules,
+                for: effectiveProfileYAML(for: active),
+                customRules: effectiveRules,
                 remoteRules: compiledRemoteRulesCache,
                 enableDomesticDirect: isDomesticOptimizationEnabled
             )
             let summary = ProfileConfigurationInspector.inspect(
                 yaml: optimized,
-                customRules: customRules,
+                customRules: effectiveRules,
                 remoteRules: compiledRemoteRulesCache
             )
             projection = ProfileCatalogProjection(
@@ -1413,17 +1488,24 @@ extension TunnelManager {
         _ catalog: ProfileCatalog,
         preserveConnectedRuntimeState: Bool = false
     ) async {
+        cachedGlobalProfileOverride = nil
         await reloadCustomRuleProvidersFromEngine(
             additionalProfileYAMLs: catalog.profiles.map(\.profile.yaml)
         )
         let currentCustomRules = customRules
         let currentRemoteRules = compiledRemoteRulesCache
+        let currentGlobalOverride = loadGlobalProfileOverride()
+        let activeRuleProviders = customRuleProviders.filter(\.isEnabled)
+        let currentBypassPolicy = bypassPolicy
         let currentDomesticEnabled = isDomesticOptimizationEnabled
         let projection = await Task.detached(priority: .userInitiated) {
             ProfileCatalogProjectionBuilder.production(
                 catalog,
                 customRules: currentCustomRules,
                 remoteRules: currentRemoteRules,
+                globalOverride: currentGlobalOverride,
+                externalRuleProviders: activeRuleProviders,
+                bypassPolicy: currentBypassPolicy,
                 enableDomesticDirect: currentDomesticEnabled
             )
         }.value
@@ -1445,12 +1527,18 @@ extension TunnelManager {
         )
         let currentCustomRules = customRules
         let currentRemoteRules = compiledRemoteRulesCache
+        let currentGlobalOverride = loadGlobalProfileOverride()
+        let activeRuleProviders = customRuleProviders.filter(\.isEnabled)
+        let currentBypassPolicy = bypassPolicy
         let currentDomesticEnabled = isDomesticOptimizationEnabled
         let projection = await Task.detached(priority: .userInitiated) {
             ProfileCatalogProjectionBuilder.production(
                 catalog,
                 customRules: currentCustomRules,
                 remoteRules: currentRemoteRules,
+                globalOverride: currentGlobalOverride,
+                externalRuleProviders: activeRuleProviders,
+                bypassPolicy: currentBypassPolicy,
                 enableDomesticDirect: currentDomesticEnabled
             )
         }.value
@@ -1477,6 +1565,7 @@ extension TunnelManager {
         }
         bypassPolicy = policy
         hasLoadedBypassPolicy = true
+        refreshActiveProfileSummary()
     }
 
 #if DEBUG || AETHERROUTE_PERFORMANCE_MEASUREMENT || AETHERROUTE_UI_RESPONSIVENESS || AETHERROUTE_DEVELOPMENT_PREVIEW
@@ -1500,23 +1589,54 @@ extension TunnelManager {
 
     // MARK: - Providers, Global Override & Merged Profiles (V3)
 
-    func effectiveProfileYAML(for profile: ActiveProfile) -> String {
-        let globalOverride = isUIReviewMode
-            ? ProfileOverride()
-            : ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+    func effectiveOverrideResult(
+        for profile: ActiveProfile,
+        overrides overrideCandidate: ProfileOverride? = nil
+    ) -> ProfileOverrideResult {
+        let globalOverride = loadGlobalProfileOverride()
         let activeRuleProviders = isUIReviewMode ? [] : customRuleProviders.filter(\.isEnabled)
-        return ProfileOverrideCompiler.apply(
-            profile.overrides,
+        let effectivePerProfile = overrideCandidate ?? profile.overrides
+        let digest = SHA256.hash(data: Data(profile.yaml.utf8))
+        let cacheKey = EffectiveProfileCompilationKey(
+            yamlDigest: digest,
+            profileOverrides: effectivePerProfile,
+            globalOverride: globalOverride,
+            enabledProviders: activeRuleProviders
+        )
+        if let cached = cachedEffectiveProfileCompilation, cached.key == cacheKey {
+            return cached.result
+        }
+        let canonicalYAML = ProfileRuntimeYAML.canonicalize(profile.yaml)
+        let compiled = ProfileOverrideCompiler.apply(
+            effectivePerProfile,
             globalOverride: globalOverride,
             externalRuleProviders: activeRuleProviders,
-            to: profile.yaml
-        ).yaml
+            to: canonicalYAML
+        )
+        cachedEffectiveProfileCompilation = (cacheKey, compiled)
+        return compiled
+    }
+
+    func effectiveProfileYAML(for profile: ActiveProfile) -> String {
+        effectiveOverrideResult(for: profile).yaml
     }
 
     func loadGlobalProfileOverride() -> ProfileOverride {
+        if let cachedGlobalProfileOverride {
+            return cachedGlobalProfileOverride
+        }
         guard !isUIReviewMode else { return ProfileOverride() }
-        return ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+        let loaded = ProfileOverrideStore.applicationGroup().loadGlobalOverride()
+        cachedGlobalProfileOverride = loaded
+        return loaded
     }
+
+    #if DEBUG
+    func setGlobalProfileOverrideForTesting(_ override: ProfileOverride?) {
+        cachedGlobalProfileOverride = override
+        cachedEffectiveProfileCompilation = nil
+    }
+    #endif
 
     @discardableResult
     func saveGlobalProfileOverride(_ override: ProfileOverride) async -> Bool {
@@ -1528,6 +1648,8 @@ extension TunnelManager {
                     try ProfileOverrideStore.applicationGroup().saveGlobalOverride(validated)
                 }.value
             }
+            cachedGlobalProfileOverride = validated
+            cachedEffectiveProfileCompilation = nil
             refreshActiveProfileSummary()
             if state == .connected {
                 await reloadCustomRulesLive()
@@ -1581,11 +1703,11 @@ extension TunnelManager {
             }
             if state == .connected, !isUIReviewMode {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
-                let reloadPayloadData = try await prepareReloadProfilePayload(
+                let preparedReload = try await prepareReloadProfilePayload(
                     requestedMode: currentRoutingMode
                 )
                 let client = makeProxySelectionProviderClient()
-                try await client.reloadActiveProfile(payload: reloadPayloadData)
+                try await reloadActiveProfileStagingResources(preparedReload, via: client)
                 await finalizeLiveProfileReload(client: client)
             }
             profileMessage = AppLocalization.inline(
@@ -1689,11 +1811,11 @@ extension TunnelManager {
             rebuiltCatalog = true
             if id == activeProfileID, state == .connected, !isUIReviewMode {
                 let currentRoutingMode = sessionRoutingMode ?? routingMode
-                let reloadPayloadData = try await prepareReloadProfilePayload(
+                let preparedReload = try await prepareReloadProfilePayload(
                     requestedMode: currentRoutingMode
                 )
                 let client = makeProxySelectionProviderClient()
-                try await client.reloadActiveProfile(payload: reloadPayloadData)
+                try await reloadActiveProfileStagingResources(preparedReload, via: client)
                 await finalizeLiveProfileReload(client: client)
             }
             profileMessage = AppLocalization.inline(

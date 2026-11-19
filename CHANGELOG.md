@@ -6,6 +6,44 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.0.3] - 2026-11-19
+
+### Fixed
+
+- **Rust Dual-Engine P0 Security, Netstack & Shutdown Audit (`Core/Engine` `9243834`, `54d279c`)**:
+  - **TUN Netstack & RingBuffer Reliability (`clash-netstack`, `clash-lib/proxy/tun`)**: Eliminated TUN runner termination on fragmented/malformed UDP packets (`SplitRead::recv` continues instead of returning `None`) and malformed IP packets (`StackSplitSink` drops safely with automatic `poll_ready` flush/waker registration); fixed 28s TCP FIN delay by setting `write_shutdown` before notifying the stack; replaced shared-slice aliasing UB in `LockFreeRingBuffer` with raw-pointer `copy_nonoverlapping`; switched `TunDatagram` to `PollSender` to prevent burst drops/reordering above 32 packets.
+  - **FFI Shutdown Races & Resource Lifecycles (`clash-ffi`, `clash-lib`)**: Added `ShutdownGuard` to register cancellation tokens at FFI entry with automatic drop cleanup; tracked `JoinHandle`s across `DnsRunner`, `TunRunner`, and `InboundManager` so `stop_all_and_join` awaits port release cleanly without `EADDRINUSE`; unified `EncryptedFileStore` with in-place encryption, a 4096-entry cap, and `spawn_blocking` atomic persistence; integrated GeoData mmap streaming index, `SuccinctMatcherGroup`, Top-K telemetry pre-filtering, and DNS resolver trailing-dot / alias-cycle recursion guards.
+  - **Protocol & Config Hardening (`P0-1`, `P0-6`, `P0-7`)**: Blocked local filesystem certificate/key paths in untrusted `proxy-providers` (requiring inline PEM); eliminated config-driven panics in `nameserver-policy`, URI parsing, `h2-opts`, FakeDNS subnet validation, and composite rule recursion (capped at depth 16); hardened Hysteria2 UDP/hop slicing, ShadowTLS frame validation/splitting, gRPC varint/half-close, AnyTLS duplex shutdown, WireGuard IPv6/port-pool bounds, SSH/ECH outbound interface binding, WebSocket Ping/Pong & early-data handling, TUIC UDP concurrency, and mux error-frame OOM guards.
+- **Packet Tunnel, Transparent Proxy & NetworkExtension Hardening (`Sources/AetherRoutePacketTunnel/*`, `Sources/AetherRouteTransparentProxy/*`, `Sources/AetherRouteKit/TransparentFlow/*`)**:
+  - Isolated poison packets and dropped IPv6 when disabled in the Packet Tunnel output ring buffer without livelock; tightened engine lifecycle gate and stop-during-rebuild cleanup so subsequent sessions never stall.
+  - Removed lock contention across `makeFlow` / `resetNetworkState` in `TransparentProxyProviderRuntime`, added idle UDP LRU eviction to prevent TCP flow starvation, enforced TCP half-close watchdogs and UDP idle timeouts, bounded concurrent TCP/UDP sessions to 4096 under a 512 MiB ceiling, and hardened self-identity / infrastructure exclusions and port-53 upstream policy.
+- **CoreKit, Subscription, Cloud Sync & App Lifecycle Audit (`Sources/AetherRouteKit/*`, `Sources/AetherRouteApp/*`)**:
+  - Hardened untrusted subscription provider fetches against loopback/private/link-local SSRF and malformed proxy payloads; preserved full subscriptions on `304` meta-flag negotiation refreshes; caught multiline flow-mapping and escaped keys in `ProfileImportValidator`; stripped dialer-proxy cycles in runtime YAML; improved `DomesticRoutingOptimizer` (IPv6 DNS / `#` node quoting, parenthesized rules, third-party literal stripping) and `BypassPolicy` domain/FakeIP/IPv4-only DNS handling.
+  - Hardened iCloud KVS sync (`ProfileCloudSyncManager`: encrypted rule providers, steady-state idempotency without spurious KVS rewrites, equal-timestamp URL ping-pong tie-breaking, merged-spec preservation); bounded IPC routing-resource chunked staging and route simulation recursion; added `SystemProxyConfigurator` partial-apply rollback and vanished-service skipping; enforced `allowControlActions` and duplicate parameter rejection in external control links; fixed `NetworkEngineReconnectCoordinator` immediate rerun after cancel and wake-backoff superseding.
+- **Distribution Service, Appcast & Release Pipeline Hardening (`Services/DistributionService/*`, `scripts/*`)**:
+  - Hardened Go distribution service/store concurrency & validation (`service_test.go`), Sparkle appcast CDATA escaping (`generate_sparkle_appcast.sh`, `test_sparkle_appcast_generator.sh`), and App Store / parallel acceptance policy checks (`test_app_store_project.py`, `test_parallel_acceptance_policy.py`).
+  - Fixed `scripts/test_remote_arm64.sh` remote source payload staging to include `Distribution/` (matching `test_distribution_web.sh` Homebrew cask checks) and added regression guard in `scripts/test_remote_arm64_guards.sh` (verified failing pre-fix and passing post-fix).
+
+### Changed
+
+- **Tests first (TDD) & Full Release Qualification (`3.0.3` / `2026111902`)**:
+  - **TDD & Regression Coverage**:
+    - Added comprehensive P0-P2 regression suites in `Tests/AetherRouteKitTests/CoreKitAuditP0P2FixesTests.swift` (`28` tests), `Tests/AetherRouteTransparentProxyTests/TransparentProxyConcurrencyAndBudgetFixesTests.swift` (`9` tests), `Tests/AetherRouteTests/MacFuncLifecycleAndV3FixTests.swift`, `scripts/test_sparkle_appcast_generator.sh`, and `scripts/test_remote_arm64_guards.sh` (verified `Distribution` guard failed pre-fix with `Remote controller payload is missing Distribution` and passed post-fix).
+  - **Fast Lane, Dual-Fingerprint Interop, Real-Site ECH & 43-Node Protocol Lab (`Core/Engine` `54d279c`)**:
+    - `./scripts/test_fast_lane.sh` passed all steps (`engine-unit`: `610 passed, 0 failed, 24 ignored`; `engine_capabilities.py`: `outbound=18 rules=37 networks=12 plugins=3`; `differential-e2e`: `10/10`).
+    - Default-fingerprint and Chrome-fingerprint 12-protocol interop both passed `11/11` suites (`68` case passes, `34` certificate rejections each; test binary SHA-256 `7a5dd255246a4ed32ca2c5638429733656e235d5f8812153202256b74c31b77e`); Chrome `real_site_tests` (`9` real sites + Cloudflare ECH) passed `2/2`; 43-node `protocol-lab` differential vs Mihomo on `vm:macos27` achieved `both_ok=42, both_fail=1` (`ours_missing=0, ours_fail=0, mihomo_fail=0`).
+  - **Parallel Release Acceptance (`vm:macos27`, `52m 44s`, Build `2026111902`)**:
+    - 6-dimension Tart VM matrix (`tun` & `transparent` × `rule`/`global`/`direct`): **160 PASS / 0 FAIL / 50 SKIP**, with `3/3` PASS across all 5 Transparent Proxy gates (UDP datagram, LAN bypass, raw traffic, 60-concurrency burst, SNI recovery).
+    - Remote ARM64 full source gate (`test_remote_arm64.sh` on `macos27`): **PASS** (`AetherRouteTests.xctest`: `724` XCTests + `144` Swift Testing across `22` suites; `AetherRouteTransparentProxySupportTests.xctest`: `114`; `AetherRouteFlowCoreBridgeTests.xctest`: `29`; `flow_engine_mibps=2967.359`, `packet_engine_mibps=2890.696`).
+    - UI Performance & Memory Budget Gate (`vm:macos27`, `300s showcase + 300s large`, `status=passed`):
+      - `showcase` (`420` switches): `p50=90.2 ms`, `p95=124.1 ms`, `max=198.2 ms` (budget `p95<=180 ms`, `max<=300 ms`); memory `median=79 MB`, `max=93 MB`, `growth=+2 MB` (budget `median<=90 MB`, `max<=110 MB`, `growth<=+8 MB`).
+      - `large` (`420` switches): `p50=91.0 ms`, `p95=121.8 ms`, `max=133.7 ms`; memory `median=72 MB`, `max=87 MB`, `growth=+2 MB`.
+    - Notarized `stable` candidate DMG runtime evidence (`vm:macos27`, candidate SHA-256 `f26900499a89cd407d26482b554f6adf791429dbdeafb82f1ee0e33e61b20d93`):
+      - **TUN**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `3.391308s` PASS; 6-step NIC switch recovery `0/0/2/2/1/1 s` (`<= 15s`) PASS.
+      - **Transparent Proxy**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `4.606271s` PASS; 6-step NIC switch recovery `1/1/0/0/2/0 s` (`<= 15s`) PASS.
+  - **Signed & Notarized Production Release**:
+    - `AetherRoute-3.0.3-build-2026111902-arm64.dmg` (`31,870,496` bytes, SHA-256 `5d36f1d37bdf92329149f2c2eb83e202e3b94c256b929ad385a3d0517ae19178`), Developer ID signed, Apple notarized & stapled.
+
 ## [3.0.2] - 2026-11-17
 
 ### Fixed

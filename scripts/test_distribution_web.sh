@@ -71,8 +71,22 @@ do
   }
 done
 
-rg -F 'AetherRoute 1.0.28' "$PUBLIC/index.html" >/dev/null
-rg -F '20ab5f308a66d3b8ed10792edc130a03c876f8257675572a23e317bfff72ce28' "$PUBLIC/index.html" >/dev/null
+xmllint --noout "$PUBLIC/appcast.xml"
+APPCAST_VERSION=$(sed -n 's|.*<sparkle:shortVersionString>\([^<]*\)</sparkle:shortVersionString>.*|\1|p' "$PUBLIC/appcast.xml" | head -n 1)
+APPCAST_BUILD=$(sed -n 's|.*<sparkle:version>\([^<]*\)</sparkle:version>.*|\1|p' "$PUBLIC/appcast.xml" | head -n 1)
+test -n "$APPCAST_VERSION" && test -n "$APPCAST_BUILD"
+
+rg -F "AetherRoute $APPCAST_VERSION" "$PUBLIC/index.html" >/dev/null
+rg -F "AetherRoute-$APPCAST_VERSION-build-$APPCAST_BUILD-arm64.dmg" "$PUBLIC/index.html" >/dev/null
+CASK_SHA256=$(sed -n 's|^[[:space:]]*sha256 "\([0-9a-f]\{64\}\)"|\1|p' "$ROOT/Distribution/Homebrew/aetherroute.rb" | head -n 1)
+test -n "$CASK_SHA256"
+rg -F "$CASK_SHA256" "$PUBLIC/index.html" >/dev/null
+rg -F "version \"$APPCAST_VERSION,$APPCAST_BUILD\"" "$ROOT/Distribution/Homebrew/aetherroute.rb" >/dev/null
+rg -F '"com.aetherroute.desktop.tunnel"' "$ROOT/Distribution/Homebrew/aetherroute.rb" >/dev/null
+if rg -F 'com.aetherroute.desktop.packet-tunnel' "$ROOT/Distribution/Homebrew/aetherroute.rb" >/dev/null; then
+  echo "Homebrew cask contains obsolete packet-tunnel bundle identifier" >&2
+  exit 1
+fi
 
 test "$(rg -c 'data-localized-image' "$PUBLIC/index.html")" -ge 1 || {
   echo "homepage must expose localized product screenshots" >&2
@@ -197,5 +211,7 @@ rg -F 'https://www.aethernative.com/releases/1.0.9/' "$PUBLIC/sitemap.xml" >/dev
 rg -F 'https://www.aethernative.com/releases/1.0.8/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://www.aethernative.com/releases/1.0.7/' "$PUBLIC/sitemap.xml" >/dev/null
 rg -F 'https://www.aethernative.com/releases/1.0.1/' "$PUBLIC/sitemap.xml" >/dev/null
+
+"$ROOT/scripts/test_sparkle_appcast_generator.sh"
 
 echo "Web distribution static and Cloudflare Pages guards passed"

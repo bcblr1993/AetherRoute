@@ -88,9 +88,12 @@ public struct DNSRuntimePolicy: Codable, Equatable, Sendable {
         for dns: DNSConfigurationSummary,
         profileAllowsIPv6: Bool
     ) -> Bool {
+        // An IPv4-only Packet Tunnel does not claim `::/0`; returning AAAA
+        // records from the tunnel resolver would leak or stall dual-stack clients.
+        guard profileAllowsIPv6 else { return false }
         switch ipv6 {
         case .inherit:
-            return profileAllowsIPv6 && (!dns.isEnabled || !dns.hasExplicitIPv6 || dns.allowsIPv6)
+            return !dns.isEnabled || !dns.hasExplicitIPv6 || dns.allowsIPv6
         case .disabled:
             return false
         case .enabled:
@@ -176,6 +179,35 @@ public struct DNSRuntimePolicyStore: Sendable {
             policies: policies,
             profileOrder: profileOrder
         )
+        try writePayload(payload, fileManager: fileManager)
+    }
+
+    public func remove(
+        forProfileYAML yaml: String,
+        fileManager: FileManager = .default
+    ) throws {
+        let digest = Self.profileDigest(yaml)
+        guard let existing = try? loadResilientPayloadForWrite(fileManager: fileManager),
+              existing.policies[digest] != nil else {
+            return
+        }
+        var policies = existing.policies
+        var profileOrder = existing.profileOrder
+        policies.removeValue(forKey: digest)
+        profileOrder.removeAll { $0 == digest }
+        try writePayload(
+            DNSRuntimePolicyPayload(
+                policies: policies,
+                profileOrder: profileOrder
+            ),
+            fileManager: fileManager
+        )
+    }
+
+    private func writePayload(
+        _ payload: DNSRuntimePolicyPayload,
+        fileManager: FileManager
+    ) throws {
         let data: Data
         do {
             let encoder = JSONEncoder()
