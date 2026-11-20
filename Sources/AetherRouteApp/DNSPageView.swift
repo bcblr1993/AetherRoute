@@ -10,8 +10,11 @@ struct DNSView: View {
     @State private var hostOverrideErrorMessage: String?
     @State private var lookupQuery = ""
     @State private var lookupReport: DNSLookupReport?
+    @State private var fakeIPReverseLookup: FakeIPReverseLookupState?
     @State private var isRunningLookup = false
     @State private var hasAttemptedLookup = false
+    @State private var isClearingDNSCache = false
+    @State private var dnsCacheClearStatus: String?
     @State private var diagnosticReport: NetworkDiagnosticReport?
     @State private var isRunningDiagnostics = false
 
@@ -37,6 +40,13 @@ struct DNSView: View {
                             systemResolverContent
                         }
                         dnsLookupSection(summary: summary)
+                        RecentDNSQueriesCard(
+                            viewModel: tunnel.dnsQueriesViewModel,
+                            onSelectDomain: { domain in
+                                lookupQuery = domain
+                                runDNSLookup(summary: summary)
+                            }
+                        )
                         RouteSimulatorSection()
                         networkDiagnosticSection(summary: summary)
                         customHostsSection
@@ -62,7 +72,10 @@ struct DNSView: View {
         }
         .accessibilityIdentifier("dns-page")
         // Read when the page appears; reading interfaces is cheap.
-        .task { tailscale = Self.reviewTailscale ?? TailscalePresence.current() }
+        .task {
+            tailscale = Self.reviewTailscale ?? TailscalePresence.current()
+            tunnel.syncRecentDNSQueriesFromTelemetry()
+        }
     }
 
     /// Screenshot review can show the note without Tailscale installed.
@@ -902,7 +915,10 @@ struct DNSView: View {
                             .foregroundStyle(AetherVisual.secondaryText)
                             .accessibilityHidden(true)
                         TextField(
-                            AppLocalization.string("Enter a domain to inspect Hosts, Fake-IP, and resolved addresses"),
+                            AppLocalization.inline(
+                                "Enter a domain or Fake-IP (198.18.x.x) to inspect DNS and reverse lookup",
+                                chinese: "输入域名或 Fake-IP（198.18.x.x）查询解析结果与反查映射"
+                            ),
                             text: $lookupQuery
                         )
                         .textFieldStyle(.plain)
@@ -913,6 +929,7 @@ struct DNSView: View {
                             Button {
                                 lookupQuery = ""
                                 lookupReport = nil
+                                fakeIPReverseLookup = nil
                                 hasAttemptedLookup = false
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
@@ -938,9 +955,35 @@ struct DNSView: View {
                     .controlSize(.large)
                     .disabled(lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLookup)
                     .accessibilityIdentifier("dns-lookup-button")
+
+                    Button {
+                        clearDNSCacheAction()
+                    } label: {
+                        AetherProgressButtonLabel(
+                            AppLocalization.inline("Clear DNS Cache", chinese: "清空 DNS 缓存"),
+                            isWorking: isClearingDNSCache
+                        )
+                    }
+                    .aetherButton(prominent: false)
+                    .controlSize(.large)
+                    .disabled(isClearingDNSCache)
+                    .accessibilityIdentifier("dns-clear-cache-button")
                 }
 
-                if let report = lookupReport {
+                if let status = dnsCacheClearStatus {
+                    Label(status, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(AetherReadableTint(color: .green))
+                        .transition(AetherVisual.insertion)
+                        .accessibilityIdentifier("dns-clear-cache-status")
+                }
+
+                if let reverseState = fakeIPReverseLookup {
+                    fakeIPReverseLookupResultView(reverseState, summary: summary)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("dns-fakeip-reverse-result")
+                        .transition(AetherVisual.insertion)
+                } else if let report = lookupReport {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         HStack(spacing: AetherVisual.s2) {
                             StatePill(
@@ -1025,7 +1068,10 @@ struct DNSView: View {
                     .transition(AetherVisual.insertion)
                 } else if hasAttemptedLookup && !isRunningLookup {
                     Label(
-                        AppLocalization.string("Enter a valid domain name (such as example.com) to inspect DNS resolution."),
+                        AppLocalization.inline(
+                            "Enter a valid domain name (such as example.com) or Fake-IP (198.18.x.x) to inspect DNS resolution.",
+                            chinese: "请输入有效域名（如 example.com）或 Fake-IP（198.18.x.x）以查询 DNS 解析。"
+                        ),
                         systemImage: "info.circle"
                     )
                     .font(.callout)
@@ -1052,6 +1098,123 @@ struct DNSView: View {
             .padding(AetherVisual.cardPadding)
             .aetherPanel()
             .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: lookupReport)
+            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: fakeIPReverseLookup)
+            .animation(AetherVisual.animation(AetherVisual.quickFade), value: dnsCacheClearStatus)
+        }
+    }
+
+    @ViewBuilder
+    private func fakeIPReverseLookupResultView(
+        _ state: FakeIPReverseLookupState,
+        summary: ProfileConfigurationSummary
+    ) -> some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            switch state {
+            case let .hit(match):
+                HStack(spacing: AetherVisual.s2) {
+                    StatePill(
+                        title: AppLocalization.inline("Fake-IP Reverse", chinese: "Fake-IP 反查"),
+                        color: .indigo,
+                        symbol: "arrow.triangle.2.circlepath"
+                    )
+                    Text(verbatim: match.fakeIP)
+                        .font(.callout.monospaced())
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .textSelection(.enabled)
+                    Image(systemName: "arrow.right")
+                        .font(.caption2)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityHidden(true)
+                    Text(verbatim: match.domain)
+                        .font(.callout.monospaced().weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                    Spacer(minLength: AetherVisual.s2)
+                    Button {
+                        lookupQuery = match.domain
+                        runDNSLookup(summary: summary)
+                    } label: {
+                        Text(AppLocalization.inline("Resolve Domain", chinese: "正向解析"))
+                    }
+                    .buttonStyle(.aetherPressable)
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, AetherVisual.s2)
+                    .padding(.vertical, AetherVisual.s1)
+                    .background(AetherVisual.neutralFill, in: Capsule())
+                }
+
+                HStack(spacing: AetherVisual.s2) {
+                    if let sourceApp = match.record.sourceApp, !sourceApp.isEmpty {
+                        Label(sourceApp, systemImage: "app.dashed")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(AetherVisual.secondaryText)
+                    }
+                    if let ruleSummary = match.record.matchedRuleSummary {
+                        Text(verbatim: ruleSummary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(AetherVisual.secondaryText)
+                    }
+                    if let target = match.record.matchedRouteTarget {
+                        Image(systemName: "arrow.right")
+                            .font(.caption2)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .accessibilityHidden(true)
+                        RuleTargetLabel(target: target)
+                    }
+                    Spacer(minLength: AetherVisual.s2)
+                    Text(verbatim: Self.dnsTimestampFormatter.string(from: match.timestamp))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+
+            case let .miss(fakeIP):
+                HStack(spacing: AetherVisual.s2) {
+                    StatePill(
+                        title: AppLocalization.inline("Fake-IP Pool", chinese: "Fake-IP 地址段"),
+                        color: .orange,
+                        symbol: "questionmark.circle"
+                    )
+                    Text(verbatim: fakeIP)
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                }
+                Text(
+                    AppLocalization.inline(
+                        "This address is in the Fake-IP pool (198.18.0.0/15), but no cached domain mapping was found yet. Run a domain lookup here or inspect active Fake-IP connections to populate the reverse lookup table.",
+                        chinese: "该地址属于 Fake-IP 地址池（198.18.0.0/15），但应用内反查缓存中暂无对应域名映射。在此执行域名解析或产生活跃 Fake-IP 连接后会自动记录映射。"
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(AetherVisual.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AetherVisual.cardFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+        }
+    }
+
+    private static let dnsTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    private func clearDNSCacheAction() {
+        guard !isClearingDNSCache else { return }
+        isClearingDNSCache = true
+        fakeIPReverseLookup = nil
+        Task {
+            let status = await tunnel.clearDNSCache()
+            dnsCacheClearStatus = status
+            isClearingDNSCache = false
         }
     }
 
@@ -1059,6 +1222,20 @@ struct DNSView: View {
         let query = lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         hasAttemptedLookup = true
+        dnsCacheClearStatus = nil
+
+        if let normalizedFakeIP = FakeIPAddressMatcher.normalizeFakeIP(query) {
+            lookupReport = nil
+            isRunningLookup = false
+            if let match = tunnel.reverseLookupFakeIP(normalizedFakeIP) {
+                fakeIPReverseLookup = .hit(match)
+            } else {
+                fakeIPReverseLookup = .miss(fakeIP: normalizedFakeIP)
+            }
+            return
+        }
+
+        fakeIPReverseLookup = nil
         guard let normalized = DNSLookupInspector.normalizeHost(query) else {
             lookupReport = nil
             return
@@ -1087,6 +1264,9 @@ struct DNSView: View {
                 )
             }.value
             lookupReport = report
+            if let report {
+                tunnel.recordDNSLookupReport(report)
+            }
             isRunningLookup = false
         }
     }
@@ -1772,6 +1952,229 @@ private struct RouteSimulatorSection: View {
             let result = await tunnel.traceRoute(request)
             traceResult = result
             isSimulating = false
+        }
+    }
+}
+
+private enum FakeIPReverseLookupState: Equatable {
+    case hit(FakeIPReverseLookupMatch)
+    case miss(fakeIP: String)
+}
+
+private struct RecentDNSQueriesCard: View {
+    private static let listMaxHeight: CGFloat = 260
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    @ObservedObject var viewModel: DNSRecentQueriesViewModel
+    let onSelectDomain: (String) -> Void
+    @State private var selectedFilter: DNSRecentQueryFilter = .all
+
+    private var filteredEntries: [DNSRecentQueryRecord] {
+        viewModel.store.entries(matching: selectedFilter)
+    }
+
+    var body: some View {
+        FeatureSection(title: AppLocalization.inline("Recent DNS Queries", chinese: "最近 DNS 查询")) {
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                HStack(spacing: AetherVisual.s2) {
+                    ForEach(DNSRecentQueryFilter.allCases, id: \.self) { filter in
+                        filterPill(for: filter)
+                    }
+                    Spacer(minLength: AetherVisual.s2)
+                    Text(verbatim: "\(viewModel.store.count) / \(DNSRecentQueryStore.maxEntries)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityIdentifier("dns-recent-queries-count")
+                }
+
+                if filteredEntries.isEmpty {
+                    HStack(spacing: AetherVisual.s2) {
+                        Image(systemName: "magnifyingglass.circle")
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .accessibilityHidden(true)
+                        Text(emptyMessage)
+                            .font(.callout)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(AetherVisual.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        AetherVisual.cardFill,
+                        in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                            .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+                    }
+                } else {
+                    ScrollView {
+                        // Plain VStack inside a bounded ScrollView so DNSView's plain VStack
+                        // never triggers AppKit LazyVStack layout invalidation loops.
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            ForEach(filteredEntries) { record in
+                                queryRow(record)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: Self.listMaxHeight)
+                    .accessibilityIdentifier("dns-recent-queries-list")
+                }
+            }
+            .padding(AetherVisual.cardPadding)
+            .aetherPanel()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("dns-recent-queries-card")
+    }
+
+    private func filterPill(for filter: DNSRecentQueryFilter) -> some View {
+        let isSelected = selectedFilter == filter
+        let count = viewModel.store.count(matching: filter)
+        return Button {
+            selectedFilter = filter
+        } label: {
+            HStack(spacing: AetherVisual.s1) {
+                Text(filterTitle(filter))
+                    .font(.caption.weight(isSelected ? .semibold : .medium))
+                Text(verbatim: "\(count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(AetherVisual.secondaryText))
+            }
+            .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+            .padding(.horizontal, AetherVisual.pillHorizontalPadding)
+            .padding(.vertical, AetherVisual.pillVerticalPadding)
+            .background(
+                isSelected ? AetherVisual.selectionFill : AetherVisual.neutralFill,
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.aetherPressable)
+        .accessibilityIdentifier("dns-recent-filter-\(filter.rawValue)")
+    }
+
+    private func queryRow(_ record: DNSRecentQueryRecord) -> some View {
+        HStack(spacing: AetherVisual.s2) {
+            Text(verbatim: Self.timestampFormatter.string(from: record.timestamp))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(AetherVisual.secondaryText)
+
+            Text(verbatim: record.queryType.rawValue)
+                .font(.caption2.monospaced().weight(.semibold))
+                .foregroundStyle(AetherVisual.secondaryText)
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(
+                    AetherVisual.neutralFill,
+                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                )
+
+            Button {
+                onSelectDomain(record.domain)
+            } label: {
+                Text(verbatim: record.domain)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .buttonStyle(.plain)
+
+            Image(systemName: "arrow.right")
+                .font(.caption2)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .accessibilityHidden(true)
+
+            Text(verbatim: record.resolvedValue.isEmpty ? "—" : record.resolvedValue)
+                .font(.caption.monospaced())
+                .foregroundStyle(kindTextStyle(record.kind))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .textSelection(.enabled)
+
+            Spacer(minLength: AetherVisual.s2)
+
+            if let sourceApp = record.sourceApp, !sourceApp.isEmpty {
+                Text(verbatim: sourceApp)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+
+            Text(verbatim: record.upstreamLabel)
+                .font(.caption2)
+                .foregroundStyle(kindTextStyle(record.kind))
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(
+                    AetherVisual.tintFill(kindColor(record.kind)),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                )
+
+            if let latencyMs = record.latencyMs {
+                Text(verbatim: "\(latencyMs) ms")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(AetherVisual.secondaryText)
+            }
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
+        .background(
+            AetherVisual.cardFill,
+            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
+                .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+        }
+    }
+
+    private var emptyMessage: String {
+        if viewModel.store.isEmpty {
+            return AppLocalization.inline(
+                "No recent DNS queries recorded yet. Resolve a domain above or open active connections to populate this bounded 64-entry log.",
+                chinese: "暂无最近 DNS 查询记录。在上方执行域名查询或产生活跃连接后，这里会自动记录最近 64 条查询。"
+            )
+        }
+        return AppLocalization.inline(
+            "No queries match the selected filter.",
+            chinese: "当前筛选条件下暂无匹配的 DNS 查询记录。"
+        )
+    }
+
+    private func filterTitle(_ filter: DNSRecentQueryFilter) -> String {
+        switch filter {
+        case .all:
+            AppLocalization.inline("All", chinese: "全部")
+        case .fakeIP:
+            AppLocalization.inline("Fake-IP", chinese: "Fake-IP")
+        case .direct:
+            AppLocalization.inline("Direct", chinese: "直连")
+        case .rejectedOrFailed:
+            AppLocalization.inline("Blocked", chinese: "拦截/失败")
+        }
+    }
+
+    private func kindColor(_ kind: DNSRecentQueryKind) -> Color {
+        switch kind {
+        case .fakeIP: .indigo
+        case .direct: .teal
+        case .rejected: .orange
+        case .failed: .red
+        }
+    }
+
+    private func kindTextStyle(_ kind: DNSRecentQueryKind) -> AnyShapeStyle {
+        switch kind {
+        case .fakeIP: AnyShapeStyle(AetherReadableTint(color: .indigo))
+        case .direct: AnyShapeStyle(AetherReadableTint(color: .teal))
+        case .rejected: AnyShapeStyle(AetherReadableTint(color: .orange))
+        case .failed: AnyShapeStyle(AetherReadableTint(color: .red))
         }
     }
 }
