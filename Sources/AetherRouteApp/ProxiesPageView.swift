@@ -22,6 +22,7 @@ struct ProxiesView: View {
     @State private var sort: ProxyNodeSort = .default
     @State private var searchText = ""
     @State private var hidesTimedOutNodes = false
+    @State private var filtersAIAvailableOnly = false
     @State private var pageWidth: CGFloat? = nil
     @State private var cachedSummary: ProfileConfigurationSummary? = nil
     @State private var cachedInventory: ProxyInventoryIndex = .empty
@@ -309,6 +310,7 @@ struct ProxiesView: View {
                 sort: $sort,
                 searchText: $searchText,
                 hidesTimedOutNodes: $hidesTimedOutNodes,
+                filtersAIAvailableOnly: $filtersAIAvailableOnly,
                 usesGridLayout: $usesGridLayout,
                 showsSubscriptionNotices: showsSubscriptionNotices
             )
@@ -664,6 +666,7 @@ private struct ActiveProxyGroupView: View {
     @Binding var sort: ProxyNodeSort
     @Binding var searchText: String
     @Binding var hidesTimedOutNodes: Bool
+    @Binding var filtersAIAvailableOnly: Bool
     @Binding var usesGridLayout: Bool
     var showsSubscriptionNotices = false
 
@@ -856,10 +859,55 @@ private struct ActiveProxyGroupView: View {
             .fixedSize()
             .accessibilityIdentifier("proxy-group-node-count")
             Spacer(minLength: AetherVisual.s2)
+            aiFilterPill
             sortMenu
             layoutToggle
             locateButton(selectedMember: selectedMember, scroller: scroller)
         }
+    }
+
+    private var aiFilterPill: some View {
+        let label = AppLocalization.inline("AI Available", chinese: "AI 可用")
+        return Button {
+            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                filtersAIAvailableOnly.toggle()
+            }
+        } label: {
+            HStack(spacing: AetherVisual.s1) {
+                Image(systemName: filtersAIAvailableOnly ? "sparkles" : "sparkle")
+                    .font(.caption.weight(.semibold))
+                Text(label)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(
+                filtersAIAvailableOnly
+                    ? AnyShapeStyle(AetherReadableTint(color: .green))
+                    : AnyShapeStyle(AetherVisual.secondaryText)
+            )
+            .padding(.horizontal, AetherVisual.s2)
+            .padding(.vertical, AetherVisual.s1)
+            .background(
+                filtersAIAvailableOnly ? AetherVisual.tintFill(.green) : AetherVisual.neutralFill,
+                in: Capsule()
+            )
+            .overlay {
+                if filtersAIAvailableOnly {
+                    Capsule()
+                        .strokeBorder(AetherVisual.tintBorder(.green), lineWidth: 0.5)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .help(
+            AppLocalization.inline(
+                "Show only nodes verified as AI-available by an egress check",
+                chinese: "仅显示已通过出口检测且支持 AI 服务的节点"
+            )
+        )
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(filtersAIAvailableOnly ? [.isSelected] : [])
+        .accessibilityIdentifier("proxy-filter-ai-available")
     }
 
     private var layoutToggle: some View {
@@ -1184,11 +1232,18 @@ private struct ActiveProxyGroupView: View {
             isTimedOut: { statusByMember[$0] == .timedOut },
             selectedMember: currentSelected
         )
+        let aiFiltered: [String]
+        if filtersAIAvailableOnly {
+            let aiNodes = tunnel.egressProbeStore.aiAvailableNodeNames
+            aiFiltered = ordered.filter { aiNodes.contains($0) }
+        } else {
+            aiFiltered = ordered
+        }
         let isBusy = tunnel.proxySelectionRequests.contains(group.name)
         let pending = isBusy ? pendingSelections[group.name] : nil
         let currentPreferred = preferredMember
         let currentBackup = backupMember
-        return ordered.map { member in
+        return aiFiltered.map { member in
             ProxyMemberTableItem(
                 member: member,
                 protocolName: typeByMember[member],
@@ -1531,6 +1586,7 @@ private struct ProxyNodeRow: View {
                 ProxyNodeBadge(badge: badge)
                     .transition(.opacity)
             }
+            ProxyNodeAIAvailabilityBadge(member: row.member, egressStore: tunnel.egressProbeStore)
         }
     }
 
@@ -1596,6 +1652,7 @@ private struct ProxyNodeRow: View {
                 ProxyNodeBadge(badge: badge)
                     .transition(.opacity)
             }
+            ProxyNodeAIAvailabilityBadge(member: row.member, egressStore: tunnel.egressProbeStore)
             Spacer(minLength: AetherVisual.s1)
             selectionAccessory
             if let protocolName = row.protocolName {
@@ -2082,6 +2139,44 @@ private struct ProxyLatencyPill: View {
 }
 
 /// "Preferred" or "Backup in use" beside a node's name in failover mode.
+/// Lightweight leaf observer so egress probe updates only redraw probed node badges.
+private struct ProxyNodeAIAvailabilityBadge: View {
+    let member: String
+    @ObservedObject var egressStore: EgressProbeStore
+
+    var body: some View {
+        if let report = egressStore.report(forNode: member) {
+            let isAvailable = report.isAIAvailable
+            let tint: Color = isAvailable ? .green : .orange
+            let label = isAvailable
+                ? AppLocalization.inline("AI", chinese: "AI 可用")
+                : AppLocalization.inline("AI Limited", chinese: "AI 受限")
+            let total = max(report.aiServices.count, EgressServiceKind.aiServices.count)
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AetherReadableTint(color: tint))
+                .padding(.horizontal, AetherVisual.s1)
+                .padding(.vertical, AetherVisual.sMicro)
+                .background(
+                    AetherVisual.tintFill(tint),
+                    in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                )
+                .fixedSize()
+                .help(
+                    String(
+                        format: AppLocalization.inline(
+                            "AI services available: %lld/%lld",
+                            chinese: "AI 服务可用：%lld/%lld"
+                        ),
+                        Int64(report.availableAICount),
+                        Int64(total)
+                    )
+                )
+                .accessibilityIdentifier("proxy-node-ai-badge-\(member)")
+        }
+    }
+}
+
 private struct ProxyNodeBadge: View {
     let badge: ProxyMemberTableItem.Badge
 

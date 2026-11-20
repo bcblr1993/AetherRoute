@@ -1028,6 +1028,8 @@ private struct OverviewView: View {
                 }
                 OverviewRowDivider()
                 OverviewRouteCheckRow()
+                OverviewRowDivider()
+                OverviewEgressRow()
             }
             .aetherPanel()
         }
@@ -1491,7 +1493,7 @@ struct ModeHint: View {
 
 /// One System Settings-style row: a colour tile, a title, then the value or
 /// control on the trailing edge.
-private struct OverviewRow<Trailing: View>: View {
+struct OverviewRow<Trailing: View>: View {
     let symbol: String
     let tint: Color
     let title: String
@@ -1655,7 +1657,7 @@ private struct OverviewAdaptiveRowLayout: Layout {
     }
 }
 
-private struct OverviewRowDivider: View {
+struct OverviewRowDivider: View {
     var body: some View {
         Divider()
             .padding(.leading, AetherVisual.rowDividerInset)
