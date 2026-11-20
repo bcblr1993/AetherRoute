@@ -6,6 +6,40 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-11-20
+
+### Added
+
+- **On-Demand Egress Profile & AI / Streaming Availability Probe (`Sources/AetherRouteKit/EgressAvailabilityProbe.swift`, `Sources/AetherRouteApp/TunnelManager+EgressProbe.swift`, `Sources/AetherRouteApp/OverviewEgressRow.swift`, `Sources/AetherRouteApp/ContentView.swift`, `Sources/AetherRouteApp/ProxiesPageView.swift`)**:
+  - Added a collapsible `OverviewEgressRow` inside `OverviewView.routeSection` (following `AetherVisual` tokens with zero shadows) that runs privacy-first, user-initiated probes with zero background reporting: displays egress IP (with one-click IP masking), country/city, ASN/ISP classification, purity/risk score, and concurrent availability checks for 4 AI services (`ChatGPT`, `Claude`, `Gemini`, `GitHub Copilot`) and 4 streaming services (`Netflix`, `Disney+`, `YouTube`, `TikTok`), plus an AI-restricted egress callout linking directly to Rules.
+  - Added an "AI Available" filter pill and lightweight leaf `ProxyNodeAIAvailabilityBadge` on `ProxiesPageView` backed by a bounded 64-entry per-node probe cache.
+- **Offline Scenario Rule Presets (`Sources/AetherRouteKit/ScenarioRulePreset.swift`, `Sources/AetherRouteKit/ProfileOverride.swift`, `Sources/AetherRouteKit/ProfileOverrideCompiler.swift`, `Sources/AetherRouteApp/TunnelManager+ScenarioPresets.swift`, `Sources/AetherRouteApp/ScenarioRulePresetsSection.swift`, `Sources/AetherRouteApp/RulesPageView.swift`)**:
+  - Added `ScenarioRulePresetsSection` directly above `ApplicationRulesSection` in `RulesView` (`.all` / `.appAndCustom`) with 4 built-in offline presets (`AI Developer Suite`, `Developer Accelerator`, `Ad & Tracker Blocking`, `Domestic & LAN Direct`), all verified against bundled `Config/RoutingResources/GeoSite.dat` with zero remote dependencies and defaulted to OFF.
+  - Compiled enabled presets via `ProfileOverrideCompiler` with deterministic rule ordering, deduplication, graceful fallback when a selected target group is absent, and live reload without mutating original imported subscriptions.
+- **DNS Fake-IP Reverse Lookup, Cache Flush & Bounded Recent DNS Queries (`Sources/AetherRouteKit/DNSRecentQueryStore.swift`, `Sources/AetherRouteApp/TunnelManager+DNSQueries.swift`, `Sources/AetherRouteApp/DNSPageView.swift`)**:
+  - Enhanced `DNSView.dnsLookupSection` to automatically detect `198.18.0.0/15` Fake-IP addresses for instant reverse domain lookup and added a one-click "Clear DNS Cache" action.
+  - Added `RecentDNSQueriesCard` directly below `dnsLookupSection` backed by a strictly bounded 64-entry ring buffer (`DNSRecentQueryStore`) with `All / Fake-IP / Direct / Blocked` filtering and zero memory bloat.
+
+### Changed
+
+- **Tests first (TDD) & Full Release Qualification (`3.1.0` / `2026112002`)**:
+  - **TDD Records**:
+    - `Tests/AetherRouteKitTests/EgressAvailabilityProbeTests.swift` (9 tests), `Tests/AetherRouteKitTests/ScenarioRulePresetTests.swift` (8 tests), and `Tests/AetherRouteKitTests/DNSRecentQueryAndFakeIPLookupTests.swift` (6 tests) were all written first and verified failing pre-implementation before passing with `0` failures under `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`.
+  - **Local Regression, Dual-Fingerprint Interop, Real-Site ECH & 43-Node Protocol Lab (`Core/Engine` `54d279c`)**:
+    - `./scripts/verify_ui_design_tokens.sh` (`0` violations), `./scripts/verify_localizations.sh` (`1528` direct literals / `1714` catalog keys), `./scripts/test_fast_lane.sh` (`14/14` steps in `76s`), `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and full `./scripts/test.sh` all passed with `0` failures (`AetherRouteTests.xctest`: `747` XCTests + `144` Swift Testing tests across `22` suites).
+    - Default-fingerprint and Chrome-fingerprint 12-protocol interop both passed `11/11` suites (`68` case passes, `34` certificate rejections each; test binary SHA-256 `7a5dd255246a4ed32ca2c5638429733656e235d5f8812153202256b74c31b77e`); Chrome `real_site_tests` (`9` real sites + Cloudflare ECH) passed `2/2`; 43-node `protocol-lab` differential vs Mihomo on `vm:macos27` achieved `both_ok=41, mihomo_fail=1, both_fail=1, ours_missing=0, ours_fail=0, mihomo_missing=0`.
+  - **Parallel Release Acceptance (`vm:macos27`, `51m 41s`, Build `2026112002`)**:
+    - 6-dimension Tart VM matrix (`tun` & `transparent` × `rule`/`global`/`direct`): **160 PASS / 0 FAIL / 50 SKIP**, with `3/3` PASS across all 5 Transparent Proxy gates (UDP datagram, LAN bypass, raw traffic, 60-concurrency burst, SNI recovery).
+    - Remote ARM64 full source gate (`test_remote_arm64.sh` on `macos27`): **PASS**.
+    - UI Performance & Memory Budget Gate (`vm:macos27`, `300s showcase + 300s large`, `status=passed`):
+      - `showcase` (`420` switches): `p50=95.6 ms`, `p95=172.3 ms`, `max=207.7 ms` (budget `p95<=180 ms`, `max<=300 ms`); memory `median=79 MB`, `max=93 MB`, `growth=+3 MB` (budget `median<=90 MB`, `max<=110 MB`, `growth<=+8 MB`).
+      - `large` (`420` switches): `p50=92.8 ms`, `p95=171.1 ms`, `max=201.1 ms`; memory `median=78 MB`, `max=90 MB`, `growth=+4 MB`.
+    - Notarized `stable` candidate DMG runtime evidence (`vm:macos27`, candidate SHA-256 `1ec9488f1dc828eeea992c5f9bc85a9f9e7342f5ee8b027907772b4269c200fd`):
+      - **TUN**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `2.838561s` PASS; 6-step NIC switch recovery `0/0/0/1/0/2 s` (`<= 15s`) PASS.
+      - **Transparent Proxy**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `3.267026s` PASS; 6-step NIC switch recovery `1/2/2/2/2/0 s` (`<= 15s`) PASS.
+  - **Signed & Notarized Production Release**:
+    - `AetherRoute-3.1.0-build-2026112002-arm64.dmg` (`32,299,820` bytes, SHA-256 `b1be9bcade0235c3d06960281fa5c2c6116e0792879af85b1ad693fd4864e320`), Developer ID signed, Apple notarized & stapled.
+
 ## [3.0.4] - 2026-11-19
 
 ### Added
