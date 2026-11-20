@@ -69,25 +69,38 @@ public enum ProfileOverrideCompiler {
         externalRuleProviders: [RuleProviderMetadata] = [],
         ruleProviderCacheDirectoryURL: URL? = nil,
         externalRules: [String] = [],
+        scenarioPresets: [ScenarioRulePresetState] = [],
         to yaml: String
     ) -> ProfileOverrideResult {
+        let mergedScenarioPresets = ScenarioRulePresetCompiler.mergeStates([
+            globalOverride?.scenarioPresets ?? [],
+            override?.scenarioPresets ?? [],
+            scenarioPresets,
+        ])
+        let compiledScenarioPresetRules = resolveScenarioPresetRules(
+            mergedScenarioPresets,
+            override: override,
+            globalOverride: globalOverride,
+            profileYAML: yaml
+        )
         let compiledExternalRules = resolveExternalRules(
+            scenarioPresetRules: compiledScenarioPresetRules,
             externalRuleProviders: externalRuleProviders,
             cacheDirectoryURL: ruleProviderCacheDirectoryURL,
             explicitExternalRules: externalRules,
             profileYAML: yaml
         )
 
-        if let globalOverride, !globalOverride.isEmpty {
+        if let globalOverride, globalOverride.hasStructuralOverrides {
             let filteredGlobal = filterGlobalOverride(globalOverride, shadowedBy: override)
-            if !filteredGlobal.isEmpty {
-                let hasPerProfile = override.map { !$0.isEmpty } ?? false
+            if filteredGlobal.hasStructuralOverrides {
+                let hasPerProfile = override?.hasStructuralOverrides ?? false
                 let globalResult = applySingle(
                     filteredGlobal,
                     externalRules: hasPerProfile ? [] : compiledExternalRules,
                     to: yaml
                 )
-                guard let override, !override.isEmpty else {
+                guard let override, override.hasStructuralOverrides else {
                     return globalResult
                 }
                 let profileResult = applySingle(
@@ -101,7 +114,42 @@ public enum ProfileOverrideCompiler {
         return applySingle(override, externalRules: compiledExternalRules, to: yaml)
     }
 
+    private static func resolveScenarioPresetRules(
+        _ states: [ScenarioRulePresetState],
+        override: ProfileOverride?,
+        globalOverride: ProfileOverride?,
+        profileYAML: String
+    ) -> [String] {
+        guard states.contains(where: \.isEnabled) else { return [] }
+        var availableGroups: [String] = []
+        var availableProxies: [String] = []
+        if profileYAML.first(where: { !$0.isWhitespace }) == "{" {
+            if let root = (try? JSONSerialization.jsonObject(with: Data(profileYAML.utf8))) as? [String: Any] {
+                availableGroups = (root["proxy-groups"] as? [[String: Any]] ?? [])
+                    .compactMap { $0["name"] as? String }
+                availableProxies = (root["proxies"] as? [[String: Any]] ?? [])
+                    .compactMap { $0["name"] as? String }
+            }
+        } else {
+            let document = YAMLDocument(profileYAML)
+            availableGroups = document.groups.map(\.name)
+            availableProxies = document.nodeNames
+        }
+        var seenGroups = Set(availableGroups)
+        for customGroup in (globalOverride?.groups ?? []) + (override?.groups ?? []) {
+            if seenGroups.insert(customGroup.name).inserted {
+                availableGroups.append(customGroup.name)
+            }
+        }
+        return ScenarioRulePresetCompiler.compileRules(
+            states: states,
+            availableGroups: availableGroups,
+            availableProxies: availableProxies
+        )
+    }
+
     private static func resolveExternalRules(
+        scenarioPresetRules: [String] = [],
         externalRuleProviders: [RuleProviderMetadata],
         cacheDirectoryURL: URL?,
         explicitExternalRules: [String],
@@ -137,7 +185,7 @@ public enum ProfileOverrideCompiler {
         }
         var merged: [String] = []
         var seen = Set<String>()
-        for raw in cachedProviderRules + explicitExternalRules {
+        for raw in scenarioPresetRules + cachedProviderRules + explicitExternalRules {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             let key = trimmed.filter { !$0.isWhitespace }.uppercased()
@@ -196,11 +244,11 @@ public enum ProfileOverrideCompiler {
             return applyToJSON(effectiveOverride, externalRules: externalRules, json: yaml)
         }
         let document = YAMLDocument(yaml)
-        if effectiveOverride.isEmpty && externalRules.isEmpty && document.nodeDialerProxies.isEmpty {
+        if !effectiveOverride.hasStructuralOverrides && externalRules.isEmpty && document.nodeDialerProxies.isEmpty {
             return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
         }
         guard document.isEditable else {
-            if effectiveOverride.isEmpty && externalRules.isEmpty {
+            if !effectiveOverride.hasStructuralOverrides && externalRules.isEmpty {
                 return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
             }
             return ProfileOverrideResult(
@@ -227,7 +275,7 @@ public enum ProfileOverrideCompiler {
             proxyItemIndent: document.proxyItemIndent
         )
         let newExternalRules = document.filterUnseenRules(externalRules)
-        if effectiveOverride.isEmpty && plan.strippedBaseDialerProxies.isEmpty && newExternalRules.isEmpty {
+        if !effectiveOverride.hasStructuralOverrides && plan.strippedBaseDialerProxies.isEmpty && newExternalRules.isEmpty {
             return ProfileOverrideResult(yaml: yaml, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
         }
         var diagnostics = plan.diagnostics
@@ -811,7 +859,7 @@ public enum ProfileOverrideCompiler {
             !existingRuleKeys.contains($0.filter { !$0.isWhitespace }.uppercased())
         }
 
-        if override.isEmpty && plan.strippedBaseDialerProxies.isEmpty && unseenExternalRules.isEmpty {
+        if !override.hasStructuralOverrides && plan.strippedBaseDialerProxies.isEmpty && unseenExternalRules.isEmpty {
             return ProfileOverrideResult(yaml: json, diagnostics: [], customGroupMembers: [:], hiddenNodes: [])
         }
 

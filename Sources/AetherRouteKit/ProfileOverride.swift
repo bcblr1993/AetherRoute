@@ -35,6 +35,9 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
     /// Local host overrides merged into the profile's `hosts` map without
     /// mutating the original subscription text.
     public var customHosts: [CustomHostMapping]
+    /// Scenario rule presets (v3.1) prepended to the profile's rules without
+    /// mutating the original subscription text.
+    public var scenarioPresets: [ScenarioRulePresetState]
 
     private enum CodingKeys: String, CodingKey {
         case formatVersion
@@ -42,19 +45,22 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
         case hiddenNodeKeywords
         case chainedProxies
         case customHosts
+        case scenarioPresets
     }
 
     public init(
         groups: [CustomProxyGroup] = [],
         hiddenNodeKeywords: [String] = [],
         chainedProxies: [ChainedProxyOverride] = [],
-        customHosts: [CustomHostMapping] = []
+        customHosts: [CustomHostMapping] = [],
+        scenarioPresets: [ScenarioRulePresetState] = []
     ) {
         formatVersion = Self.currentFormatVersion
         self.groups = groups
         self.hiddenNodeKeywords = hiddenNodeKeywords
         self.chainedProxies = chainedProxies
         self.customHosts = customHosts
+        self.scenarioPresets = scenarioPresets
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,6 +70,7 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
         hiddenNodeKeywords = try container.decode([String].self, forKey: .hiddenNodeKeywords)
         chainedProxies = try container.decodeIfPresent([ChainedProxyOverride].self, forKey: .chainedProxies) ?? []
         customHosts = try container.decodeIfPresent([CustomHostMapping].self, forKey: .customHosts) ?? []
+        scenarioPresets = try container.decodeIfPresent([ScenarioRulePresetState].self, forKey: .scenarioPresets) ?? []
     }
 
     public var isEmpty: Bool {
@@ -71,6 +78,14 @@ public struct ProfileOverride: Codable, Equatable, Sendable {
             && hiddenNodeKeywords.isEmpty
             && chainedProxies.isEmpty
             && customHosts.isEmpty
+            && scenarioPresets.isEmpty
+    }
+
+    public var hasStructuralOverrides: Bool {
+        !groups.isEmpty
+            || !hiddenNodeKeywords.isEmpty
+            || !chainedProxies.isEmpty
+            || !customHosts.isEmpty
     }
 
     /// Trims and bounds every field; throws on what cannot be fixed.

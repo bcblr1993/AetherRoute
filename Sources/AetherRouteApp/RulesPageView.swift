@@ -186,6 +186,9 @@ struct RulesView: View {
                             }
 
                             if selectedSection == .all || selectedSection == .appAndCustom {
+                                ScenarioRulePresetsSection()
+                                    .transition(.opacity)
+
                                 ApplicationRulesSection()
                                     .transition(.opacity)
 
