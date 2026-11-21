@@ -1465,9 +1465,15 @@ enum MacFuncLifecycleAndV3FixTests {
         let asnMMDB = Data(repeating: 0x45, count: 2_048)
             + Data([0xAB, 0xCD, 0xEF]) + Data("MaxMind.com".utf8)
             + Data(repeating: 0x22, count: 64)
+        let geoSiteDat = Data([
+            0x0A, 0x07, 0x0A, 0x05, 0x61, 0x70, 0x70, 0x6C, 0x65, // "apple"
+            0x0A, 0x04, 0x0A, 0x02, 0x63, 0x6E,                   // "cn"
+            0x0A, 0x09, 0x0A, 0x07, 0x70, 0x72, 0x69, 0x76, 0x61, 0x74, 0x65 // "private"
+        ])
         let store = RoutingResourceStore(applicationSupportDirectory: supportDir)
         _ = try store.installUserProvided(data: countryMMDB, kind: .countryMMDB)
         _ = try store.installUserProvided(data: asnMMDB, kind: .asnMMDB)
+        _ = try store.installUserProvided(data: geoSiteDat, kind: .geoSite)
 
         let suiteName = "com.aetherroute.macfunc.reloadstage.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

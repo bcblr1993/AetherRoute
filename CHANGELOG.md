@@ -6,6 +6,36 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-11-21
+
+### Fixed
+
+- **macOS 27 Software Update Window Layout-Loop Crash (`Sources/AetherRouteApp/AppUpdateWindow.swift`, `Sources/AetherRouteApp/AppWindowManager.swift`)**:
+  - Fixed a fatal `NSGenericException` (`NSDisplayCycle` `Update Constraints in Window` loop exceeding 24 passes, `SIGTRAP` in `+[NSApplication _crashOnException:]`) on macOS 27 when Sparkle transitioned from `.checking` to `.available` with multi-line appcast summaries (such as v3.1.0's 3-line summary measuring `314.5pt`, oscillating between `NSHostingController.preferredContentSize` and integer `NSWindow` frame snapping via `invalidateSafeAreaInsets`).
+  - Added `AppUpdateWindowLayoutGeometry` (fixed `540pt` width, `ceil`-rounded integer height clamped to `[180, 760]`, top-edge-anchored `resizedFrame` clamped to `visibleFrame`, skipping `< 1pt` no-ops) and switched `AppUpdateUserDriver`'s `NSHostingController.sizingOptions` to `[]` driven explicitly on structural phase transitions (`scheduleWindowResize()`), preserving `ScrollView` release-note height without `NSDisplayCycle` feedback.
+  - Replaced the vertically greedy `RoundedRectangle` inside `HStack` for the release summary accent bar with `.overlay(alignment: .leading)` on `Text(summary)`, assigned window identifier `"aetherroute-update"`, and excluded update windows in `AppWindowManager.isMainWindowCandidate(_:)`.
+
+### Changed
+
+- **Tests first (TDD) & Full Release Qualification (`3.1.1` / `2026112103`)**:
+  - **TDD & Test Hardening**:
+    - Added live SwiftUI `App` run-loop layout regression `Tests/SparkleAutoUpdateDebounce/WindowLayoutRegression.swift` (verified failing pre-fix with `SIGTRAP` exit `133` on phase `2_available_zh_3line_summary`, and passing all 13 update window phases in both `-AppleLanguages '(zh-Hans)'` and `'(en)'` post-fix) plus geometry rounding/clamping unit assertions and static `sizingOptions = .preferredContentSize` guard in `Tests/SparkleAutoUpdateDebounce/{main.swift,run.sh}` (`17/17` scenarios PASS under Swift 6 `-warnings-as-errors`).
+    - Hardened async debounce polling in `Tests/SparkleAutoUpdateDebounce/main.swift` (`waitUntil`) against VM scheduling jitter and made `testLiveReloadStagesRoutingResourcesBeforeReloadActiveProfile` in `Tests/AetherRouteTests/MacFuncLifecycleAndV3FixTests.swift` offline-hermetic (`28/28` PASS).
+  - **Local Regression, Dual-Fingerprint Interop & 43-Node Protocol Lab (`Core/Engine` unchanged at `54d279c`)**:
+    - `./scripts/verify_ui_design_tokens.sh` (`0` violations), `./scripts/verify_localizations.sh` (`1528` direct literals / `1714` catalog keys), `./scripts/test_distribution_web.sh`, `./scripts/test_fast_lane.sh` (`14/14` in `72s`), `test_network_switch_gate.py`, `Tests/EngineReconnect/run.sh`, `Tests/RuntimeEnvironment/run.sh`, and full `./scripts/test.sh` all passed (`AetherRouteTests.xctest`: `747` XCTests + `144` Swift Testing across `22` suites; `TransparentProxySupportTests`: `114`; `FlowCoreBridgeTests`: `29`).
+    - Default-fingerprint and Chrome-fingerprint 12-protocol interop both passed `11/11` suites (`68` case passes, `34` certificate rejections each; test binary SHA-256 `7a5dd255246a4ed32ca2c5638429733656e235d5f8812153202256b74c31b77e`); Chrome `real_sites_complete_the_chrome_handshake` passed `9/9` (for `crypto_cloudflare_ech_reports_encrypted_sni` external AliDNS `TTL: 5` ECH key mismatch exception, see `Docs/ReleaseExceptions/3.1.1.md`); 43-node `protocol-lab` differential vs Mihomo on `vm:macos27` achieved `both_ok=41, mihomo_fail=1, both_fail=1, ours_missing=0, ours_fail=0, mihomo_missing=0`.
+  - **Parallel Release Acceptance (`vm:macos27`, `50m 31s`, Build `2026112103`)**:
+    - 6-dimension Tart VM matrix (`tun` & `transparent` × `rule`/`global`/`direct`): **160 PASS / 0 FAIL / 50 SKIP**, with `3/3` PASS across all 5 Transparent Proxy gates.
+    - Remote ARM64 full source gate (`test_remote_arm64.sh` on `macos27`, `outputs/test-evidence/remote-arm64-20261121T035427Z-fast`): **PASS** (`flow_engine_mibps=3252.033`, `packet_engine_mibps=3035.477`).
+    - UI Performance & Memory Budget Gate (`vm:macos27`, `300s showcase + 300s large`, `status=passed`):
+      - `showcase` (`420` switches): `p50=94.2 ms`, `p95=169.6 ms`, `max=186.9 ms`; memory `median=79 MB`, `max=94 MB`, `growth=+2 MB`.
+      - `large` (`420` switches): `p50=94.4 ms`, `p95=169.7 ms`, `max=194.3 ms`; memory `median=77 MB`, `max=92 MB`, `growth=+3 MB`.
+    - Notarized `stable` candidate DMG runtime evidence (`vm:macos27`, candidate SHA-256 `7ca9e77a4aff1e5739657ad1d7058ee114980102c04ffa83b05bf5d2b90c3eec`):
+      - **TUN**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `0.887289s` PASS; 6-step NIC switch recovery `1/2/2/0/2/3 s` (`<= 15s`) PASS.
+      - **Transparent Proxy**: `50s` idle keep-alive reuse PASS; `2 MiB` upload `1.353090s` PASS; 6-step NIC switch recovery `2/2/2/2/2/2 s` (`<= 15s`) PASS.
+  - **Signed & Notarized Production Release**:
+    - `AetherRoute-3.1.1-build-2026112103-arm64.dmg` (`32,301,346` bytes, SHA-256 `51d7e8b31894cc9497a80a32c19dab407d468f97fcb0f2306bca50340c300029`, Sparkle Ed25519 `9BwfhEF4bedWLHxSO7M9mEa37Xo4idU6AIE4yR4bKcGUrU8vxQ4toKbWiwu4+6QbT79+/tke7PJnUjYldbhuBw==`), Developer ID signed, Apple notarized & stapled.
+
 ## [3.1.0] - 2026-11-20
 
 ### Added

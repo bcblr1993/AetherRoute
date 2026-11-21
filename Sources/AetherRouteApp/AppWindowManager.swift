@@ -34,7 +34,8 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
             return true
         }
         if identifier.localizedCaseInsensitiveContains("settings")
-            || identifier.localizedCaseInsensitiveContains("sparkle") {
+            || identifier.localizedCaseInsensitiveContains("sparkle")
+            || identifier.localizedCaseInsensitiveContains("update") {
             return false
         }
         let className = NSStringFromClass(type(of: window))

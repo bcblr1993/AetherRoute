@@ -1,8 +1,8 @@
 cask "aetherroute" do
   arch arm: "arm64"
 
-  version "3.0.4,2026111905"
-  sha256 "cba9dc5a4c92fbb25a9303a4f4b917335fc07fada228aedbd237d6022d06adda"
+  version "3.1.1,2026112103"
+  sha256 "51d7e8b31894cc9497a80a32c19dab407d468f97fcb0f2306bca50340c300029"
 
   url "https://github.com/bcblr1993/AetherRoute/releases/download/v#{version.csv.first}/AetherRoute-#{version.csv.first}-build-#{version.csv.second}-#{arch}.dmg"
   name "AetherRoute"

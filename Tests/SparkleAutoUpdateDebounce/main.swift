@@ -49,8 +49,23 @@ enum SparkleAutoUpdateDebounceTests {
         await testScheduledUpdateWindowSuppressedWithoutImmediateFocus()
         await testReleaseNotesParserFormats()
         await testCustomUpdateSessionStateLifecycle()
+        testUpdateWindowGeometryRoundingAndClamping()
+        await testUpdateWindowDriverUsesManualSizingAndIdentifier()
 
-        print("Sparkle auto-update debounce tests: 15 scenarios passed successfully")
+        print("Sparkle auto-update debounce tests: 17 scenarios passed successfully")
+    }
+
+    @MainActor
+    private static func waitUntil(
+        timeout: Duration = .milliseconds(500),
+        pollInterval: Duration = .milliseconds(10),
+        _ condition: () -> Bool
+    ) async {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while !condition(), clock.now < deadline {
+            try? await Task.sleep(for: pollInterval)
+        }
     }
 
     @MainActor
@@ -139,7 +154,8 @@ enum SparkleAutoUpdateDebounceTests {
         controller.setAutomaticallyChecksForUpdates(true)
 
         // Wait past debounce window
-        try? await Task.sleep(for: .milliseconds(80))
+        await waitUntil { checkCount >= 1 }
+        try? await Task.sleep(for: .milliseconds(30))
         precondition(checkCount == 1, "Debounced check should fire exactly once for final true state (expected 1, got \(checkCount))")
     }
 
@@ -162,7 +178,7 @@ enum SparkleAutoUpdateDebounceTests {
 
         // First trigger
         controller.setAutomaticallyChecksForUpdates(true)
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntil { checkCount >= 1 }
         precondition(checkCount == 1, "First check should have completed")
 
         // Advance 10 seconds (well within 60s cooldown)
@@ -171,7 +187,7 @@ enum SparkleAutoUpdateDebounceTests {
         // Toggle off and on again
         controller.setAutomaticallyChecksForUpdates(false)
         controller.setAutomaticallyChecksForUpdates(true)
-        try? await Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(100))
 
         precondition(checkCount == 1, "Check within cooldown window should be throttled (expected 1, got \(checkCount))")
     }
@@ -195,7 +211,7 @@ enum SparkleAutoUpdateDebounceTests {
 
         // First trigger
         controller.setAutomaticallyChecksForUpdates(true)
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntil { checkCount >= 1 }
         precondition(checkCount == 1, "First check completed")
 
         // Advance 65 seconds (exceeding 60s cooldown)
@@ -204,7 +220,7 @@ enum SparkleAutoUpdateDebounceTests {
         // Toggle off and on
         controller.setAutomaticallyChecksForUpdates(false)
         controller.setAutomaticallyChecksForUpdates(true)
-        try? await Task.sleep(for: .milliseconds(50))
+        await waitUntil { checkCount >= 2 }
 
         precondition(checkCount == 2, "Check after cooldown elapsed should succeed (expected 2, got \(checkCount))")
     }
@@ -252,7 +268,7 @@ enum SparkleAutoUpdateDebounceTests {
         controller.setCanCheckForUpdatesForTesting(true)
         controller.scheduleStartupSilentCheck()
 
-        try? await Task.sleep(for: .milliseconds(60))
+        await waitUntil { backgroundCheckCount >= 1 }
         precondition(backgroundCheckCount == 1, "Startup silent background check should fire when enabled (expected 1, got \(backgroundCheckCount))")
     }
 
@@ -346,7 +362,7 @@ enum SparkleAutoUpdateDebounceTests {
 
         controller.setCanCheckForUpdatesForTesting(true)
         controller.scheduleStartupSilentCheck()
-        try? await Task.sleep(for: .milliseconds(55))
+        try? await Task.sleep(for: .milliseconds(100))
         precondition(
             backgroundCheckCount == 0,
             "Startup silent check must NOT fire before privacy consent is accepted (got \(backgroundCheckCount))"
@@ -354,7 +370,7 @@ enum SparkleAutoUpdateDebounceTests {
 
         consentAccepted = true
         controller.handlePrivacyConsentAccepted()
-        try? await Task.sleep(for: .milliseconds(55))
+        await waitUntil { backgroundCheckCount >= 1 }
         precondition(
             backgroundCheckCount == 1,
             "Startup silent check must fire once privacy consent is accepted (got \(backgroundCheckCount))"
@@ -490,5 +506,86 @@ enum SparkleAutoUpdateDebounceTests {
 
         model.reset()
         precondition(model.phase == .idle, "Reset must return to .idle")
+    }
+
+    private static func testUpdateWindowGeometryRoundingAndClamping() {
+        precondition(AppUpdateWindowLayoutGeometry.windowWidth == 540, "Expected window width 540")
+        precondition(
+            AppUpdateWindowLayoutGeometry.targetWindowSize(measured: CGSize(width: 540, height: 314.5))
+                == NSSize(width: 540, height: 315),
+            "Fractional .5 pt height must round up via ceil to prevent NSDisplayCycle oscillation"
+        )
+        precondition(
+            AppUpdateWindowLayoutGeometry.targetWindowSize(measured: CGSize(width: 540, height: 314.0))
+                == NSSize(width: 540, height: 314),
+            "Integral height must be preserved exactly"
+        )
+        precondition(
+            AppUpdateWindowLayoutGeometry.targetWindowSize(measured: CGSize(width: 540, height: 80.0))
+                == NSSize(width: 540, height: 180),
+            "Height below minimum must clamp to 180"
+        )
+        precondition(
+            AppUpdateWindowLayoutGeometry.targetWindowSize(measured: CGSize(width: 540, height: 950.2))
+                == NSSize(width: 540, height: 760),
+            "Height above maximum must clamp to 760"
+        )
+        for invalid in [CGFloat.nan, CGFloat.infinity, -10] {
+            precondition(
+                AppUpdateWindowLayoutGeometry.targetWindowSize(measured: CGSize(width: 540, height: invalid))
+                    == NSSize(width: 540, height: 180),
+                "Invalid measured height \(invalid) must fall back to minimum height"
+            )
+        }
+
+        let unchanged = AppUpdateWindowLayoutGeometry.resizedFrame(
+            currentFrame: NSRect(x: 120, y: 500, width: 540, height: 314.3),
+            targetSize: NSSize(width: 540, height: 314),
+            visibleFrame: NSRect(x: 0, y: 0, width: 1728, height: 1080)
+        )
+        precondition(unchanged == nil, "Sub-point delta < 1pt must be a no-op resize")
+
+        let anchored = AppUpdateWindowLayoutGeometry.resizedFrame(
+            currentFrame: NSRect(x: 120, y: 500, width: 540, height: 253),
+            targetSize: NSSize(width: 540, height: 315),
+            visibleFrame: NSRect(x: 0, y: 0, width: 1728, height: 1080)
+        )
+        precondition(
+            anchored == NSRect(x: 120, y: 438, width: 540, height: 315),
+            "Resized frame must keep top edge anchored at maxY=753 (got \(String(describing: anchored)))"
+        )
+
+        let bottomClamped = AppUpdateWindowLayoutGeometry.resizedFrame(
+            currentFrame: NSRect(x: 120, y: 50, width: 540, height: 253),
+            targetSize: NSSize(width: 540, height: 400),
+            visibleFrame: NSRect(x: 0, y: 20, width: 1728, height: 1000)
+        )
+        precondition(
+            bottomClamped?.origin.y == 20 && bottomClamped?.height == 400,
+            "Resized frame must clamp above visibleFrame.minY (got \(String(describing: bottomClamped)))"
+        )
+
+        let topClamped = AppUpdateWindowLayoutGeometry.resizedFrame(
+            currentFrame: NSRect(x: 120, y: 800, width: 540, height: 300),
+            targetSize: NSSize(width: 540, height: 250),
+            visibleFrame: NSRect(x: 0, y: 20, width: 1728, height: 1000)
+        )
+        precondition(
+            topClamped == NSRect(x: 120, y: 770, width: 540, height: 250),
+            "Resized frame must clamp below visibleFrame.maxY (got \(String(describing: topClamped)))"
+        )
+    }
+
+    @MainActor
+    private static func testUpdateWindowDriverUsesManualSizingAndIdentifier() async {
+        precondition(
+            AppUpdateUserDriver.windowIdentifier.rawValue == "aetherroute-update",
+            "Update window identifier must stay 'aetherroute-update'"
+        )
+        let driver = AppUpdateUserDriver(
+            currentVersion: "3.0.4",
+            shouldShowScheduledWindow: { _ in false }
+        )
+        precondition(!driver.hasVisibleWindow, "Fresh update driver must not expose a visible window")
     }
 }

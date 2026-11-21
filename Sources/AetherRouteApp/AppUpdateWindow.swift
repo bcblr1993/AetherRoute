@@ -610,6 +610,54 @@ final class AppUpdateSessionModel: ObservableObject {
     }
 }
 
+// MARK: - Window Layout Geometry
+
+enum AppUpdateWindowLayoutGeometry {
+    static let windowWidth: CGFloat = 540
+    static let minWindowHeight: CGFloat = 180
+    static let maxWindowHeight: CGFloat = 760
+
+    static func targetWindowSize(measured: CGSize) -> NSSize {
+        let rawHeight = measured.height
+        let resolvedHeight: CGFloat
+        if rawHeight.isFinite && rawHeight > 0 {
+            resolvedHeight = min(maxWindowHeight, max(minWindowHeight, ceil(rawHeight)))
+        } else {
+            resolvedHeight = minWindowHeight
+        }
+        return NSSize(width: windowWidth, height: resolvedHeight)
+    }
+
+    static func resizedFrame(
+        currentFrame: NSRect,
+        targetSize: NSSize,
+        visibleFrame: NSRect?
+    ) -> NSRect? {
+        if abs(currentFrame.width - targetSize.width) < 1.0
+            && abs(currentFrame.height - targetSize.height) < 1.0 {
+            return nil
+        }
+
+        let topY = currentFrame.maxY
+        var next = NSRect(
+            x: currentFrame.origin.x,
+            y: topY - targetSize.height,
+            width: targetSize.width,
+            height: targetSize.height
+        )
+
+        if let visibleFrame {
+            if next.origin.y < visibleFrame.minY {
+                next.origin.y = visibleFrame.minY
+            }
+            if next.maxY > visibleFrame.maxY {
+                next.origin.y = visibleFrame.maxY - next.height
+            }
+        }
+        return next
+    }
+}
+
 // MARK: - SwiftUI Native Update View
 
 private struct AppUpdateWindowView: View {
@@ -626,7 +674,7 @@ private struct AppUpdateWindowView: View {
                 .padding(.horizontal, AetherVisual.s5)
                 .padding(.vertical, AetherVisual.s3)
         }
-        .frame(width: 540)
+        .frame(width: AppUpdateWindowLayoutGeometry.windowWidth)
         .background(windowBackground)
     }
 
@@ -777,22 +825,23 @@ private struct AppUpdateWindowView: View {
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 if let summary = info.releaseNotes.summary, !summary.isEmpty {
                     statusCard {
-                        HStack(alignment: .top, spacing: AetherVisual.sRow) {
-                            RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [AetherVisual.portalLight, Color.teal],
-                                        startPoint: .top,
-                                        endPoint: .bottom
+                        Text(summary)
+                            .font(.callout)
+                            .lineSpacing(AetherVisual.sMicro)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.leading, AetherVisual.sRow + AetherVisual.s1)
+                            .overlay(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [AetherVisual.portalLight, Color.teal],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
                                     )
-                                )
-                                .frame(width: 3)
-                            Text(summary)
-                                .font(.callout)
-                                .lineSpacing(AetherVisual.sMicro)
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                                    .frame(width: 3)
+                            }
                     }
                 }
 
@@ -1215,10 +1264,13 @@ private struct AppUpdateWindowView: View {
 
 @MainActor
 final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
+    static let windowIdentifier = NSUserInterfaceItemIdentifier("aetherroute-update")
+
     private let model: AppUpdateSessionModel
     private let shouldShowScheduledWindow: (Bool) -> Bool
     private var window: NSWindow?
     private var hostingController: NSHostingController<AppUpdateWindowView>?
+    private var pendingResizeScheduled = false
 
     var onSetAutomaticDownloads: ((Bool) -> Void)? {
         didSet {
@@ -1256,18 +1308,17 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    private func presentWindow() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
+    private func ensureWindowCreated() -> NSWindow {
         if let window {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
-            window.makeKeyAndOrderFront(nil)
-            return
+            return window
         }
 
         let host = NSHostingController(rootView: AppUpdateWindowView(model: model))
-        host.sizingOptions = .preferredContentSize
+        // Disable AppKit preferredContentSize constraint feedback: fractional SwiftUI
+        // heights (such as .5 pt on multi-line release summaries) oscillate against
+        // integer NSWindow frame snapping on macOS 27 and crash NSDisplayCycle.
+        // Unlike .intrinsicContentSize, explicit sizeThatFits also preserves ScrollView.
+        host.sizingOptions = []
         let panel = NSWindow(contentViewController: host)
         panel.styleMask = [.titled, .closable, .fullSizeContentView]
         panel.titlebarAppearsTransparent = true
@@ -1277,13 +1328,94 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.collectionBehavior.insert(.moveToActiveSpace)
+        panel.identifier = Self.windowIdentifier
         panel.delegate = self
-        panel.center()
-        panel.makeKeyAndOrderFront(nil)
 
         self.hostingController = host
         self.window = panel
+        applyWindowSize(recenter: true)
+        return panel
     }
+
+    private func presentWindow() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let isNew = (window == nil)
+        let panel = ensureWindowCreated()
+        if !isNew {
+            scheduleWindowResize()
+        }
+        if panel.isMiniaturized {
+            panel.deminiaturize(nil)
+        }
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func applyWindowSize(recenter: Bool) {
+        guard let panel = window, let host = hostingController else { return }
+        let measured = host.sizeThatFits(
+            in: CGSize(
+                width: AppUpdateWindowLayoutGeometry.windowWidth,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        )
+        let targetSize = AppUpdateWindowLayoutGeometry.targetWindowSize(measured: measured)
+        if recenter {
+            panel.setContentSize(targetSize)
+            panel.center()
+            return
+        }
+        let visibleFrame = (panel.screen ?? NSScreen.main)?.visibleFrame
+        if let nextFrame = AppUpdateWindowLayoutGeometry.resizedFrame(
+            currentFrame: panel.frame,
+            targetSize: targetSize,
+            visibleFrame: visibleFrame
+        ) {
+            panel.setFrame(nextFrame, display: true)
+        }
+    }
+
+    private func scheduleWindowResize() {
+        guard window != nil, !pendingResizeScheduled else { return }
+        pendingResizeScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pendingResizeScheduled = false
+                self.applyWindowSize(recenter: false)
+            }
+        }
+    }
+
+    #if DEBUG
+    var debugWindow: NSWindow? {
+        window
+    }
+
+    var debugHostingSizingOptions: NSHostingSizingOptions? {
+        hostingController?.sizingOptions
+    }
+
+    func debugPresentOffscreenForTesting() {
+        let isNew = (window == nil)
+        let panel = ensureWindowCreated()
+        panel.alphaValue = 0.01
+        panel.ignoresMouseEvents = true
+        if !isNew {
+            scheduleWindowResize()
+        }
+        panel.orderFrontRegardless()
+    }
+
+    func debugMutateSession(
+        resizeWindow: Bool = true,
+        _ mutate: (AppUpdateSessionModel) -> Void
+    ) {
+        mutate(model)
+        if resizeWindow {
+            scheduleWindowResize()
+        }
+    }
+    #endif
 
     private func closeWindow() {
         window?.orderOut(nil)
@@ -1341,6 +1473,7 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         if let html = String(data: downloadData.data, encoding: .utf8) {
             let parsed = AppUpdateReleaseNotesParser.parse(html: html)
             model.updateReleaseNotes(parsed)
+            scheduleWindowResize()
         }
     }
 

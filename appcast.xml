@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 3.1.0 (Build 2026112002)</title>
-            <pubDate>Fri, 20 Nov 2026 14:35:27 +0800</pubDate>
-            <sparkle:version>2026112002</sparkle:version>
-            <sparkle:shortVersionString>3.1.0</sparkle:shortVersionString>
+            <title>Version 3.1.1 (Build 2026112103)</title>
+            <pubDate>Sat, 21 Nov 2026 12:40:25 +0800</pubDate>
+            <sparkle:version>2026112103</sparkle:version>
+            <sparkle:shortVersionString>3.1.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.1.0/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.1.1/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,32 +120,37 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 3.1.0 更新要点</span>
-  <span class="release-badge">Build 2026112002 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.1.1 更新要点</span>
+  <span class="release-badge">Build 2026112103 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-blue">新特性 · New Features</span>
+  <span class="section-tag tag-fix">问题修复 · Bug Fixes</span>
   <ul>
-    <li><strong>出口画像与 AI / 流媒体可用性检测</strong>：概览页路由组新增可折叠出口画像行，按需探测落地 IP、归属地、ASN、纯净度及 ChatGPT / Claude / Gemini / Copilot / Netflix / Disney+ / YouTube / TikTok 可用性，零后台上报；节点页支持「仅 AI 可用」筛选与能力徽章。</li>
-    <li><strong>规则页场景化规则预设</strong>：应用与自定义分段新增 4 套本地零远程依赖预设（AI 开发者套件、开发者加速包、广告与遥测拦截、国内与局域网零绕路），默认关闭、一键开关并可自由指定出口策略组，不污染原订阅。</li>
-    <li><strong>DNS Fake-IP 反查与近期解析记录</strong>：DNS 查询原地支持 <code>198.18.0.0/15</code> Fake-IP 自动反查与一键清空 DNS 缓存，紧下方新增有界 64 条近期 DNS 解析记录卡。</li>
+    <li><strong>修复 macOS 27 更新弹窗闪退</strong>：将 <code>AppUpdateUserDriver</code> 的 <code>NSHostingController.sizingOptions</code> 从 <code>.preferredContentSize</code> 迁移为显式整数取整测量（<code>AppUpdateWindowLayoutGeometry</code>），根治多行更新摘要在 macOS 27 下触发 <code>NSDisplayCycle</code> 约束无限循环崩溃（<code>NSGenericException</code>）。</li>
+    <li><strong>摘要卡片与窗口隔离加固</strong>：将摘要左侧渐变装饰条改写为 <code>overlay</code> 避免贪婪高度测量，并为更新弹窗赋予独立标识符 <code>aetherroute-update</code>，防止被主窗口管理器误接管。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-green">质量与验证 · Quality &amp; Verification</span>
+  <span class="section-tag tag-feature">包含 3.1.0 特性 · Includes 3.1.0</span>
   <ul>
-    <li><strong>全维度隔离门禁通过</strong>：新增 23 项 TDD 单元测试（总计 747 XCTest + 144 Swift Testing 全绿），12 协议双指纹互通与 43 节点 Mihomo 对照、6 维 VM 矩阵、UI 内存预算及 6 项公证 DMG 运行时证据全部通过。</li>
+    <li><strong>完整集成 3.1.0 高频能力</strong>：涵盖概览页按需出口画像与 AI / 流媒体可用性检测、节点页「仅 AI 可用」筛选、规则页 4 套本地零依赖场景化规则预设，以及 DNS 页 Fake-IP 自动反查、一键清缓存与有界 64 条近期解析记录。</li>
+  </ul>
+</div>
+<div class="section">
+  <span class="section-tag tag-improve">质量与验证 · Quality &amp; Verification</span>
+  <ul>
+    <li><strong>全维度隔离门禁通过</strong>：新增 13 阶段真实运行循环双语布局回归与防抖时序加固（<code>17/17</code> + 13 阶段双语全绿），<code>747</code> XCTest + <code>144</code> Swift Testing、双指纹 12 协议互通、43 节点对照、6 维 VM 矩阵（<code>160 PASS</code>）、UI 内存预算（<code>median 77–79 MB</code>）与 6 项公证 DMG 运行时证据（<code>0–3s</code> 切网恢复）全部通过。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.1.0/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.1.1/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.1.0/AetherRoute-3.1.0-build-2026112002-arm64.dmg"
-                sparkle:edSignature="2PyHvf61aWG+2rxmvUbJO+YqaFPSHicUgMEnTUQnF/gS2LoF+PBql5KHO+veMUEsttYgnnTGBBxpNUZW8v1yCA=="
-                length="32299820"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.1.1/AetherRoute-3.1.1-build-2026112103-arm64.dmg"
+                sparkle:edSignature="9BwfhEF4bedWLHxSO7M9mEa37Xo4idU6AIE4yR4bKcGUrU8vxQ4toKbWiwu4+6QbT79+/tke7PJnUjYldbhuBw=="
+                length="32301346"
                 type="application/octet-stream" />
         </item>
     </channel>
