@@ -77,30 +77,6 @@ struct SubscriptionUpdateFailureRecord: Codable, Equatable, Sendable {
     let occurredAt: Date
 }
 
-func aetherBilingualText(en: String, zhHans: String) -> String {
-#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
-    if let reviewRaw = ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_LANGUAGE"],
-       let reviewPref = AppLanguagePreference(rawValue: reviewRaw) {
-        switch reviewPref {
-        case .simplifiedChinese: return zhHans
-        case .english: return en
-        case .system: break
-        }
-    }
-#endif
-    switch AppLanguagePreferenceStore().load() {
-    case .simplifiedChinese:
-        return zhHans
-    case .english:
-        return en
-    case .system:
-        let preferred = Bundle.main.preferredLocalizations.first
-            ?? Locale.preferredLanguages.first
-            ?? "en"
-        return preferred.lowercased().hasPrefix("zh") ? zhHans : en
-    }
-}
-
 struct ProfileCatalogProjection: Sendable {
     let catalog: ProfileCatalog
     let summary: ProfileConfigurationSummary?
@@ -2423,19 +2399,13 @@ final class TunnelManager: ObservableObject {
                 let tokenItems = queryItems.filter { $0.name.lowercased() == "token" }
                 if tokenItems.count > 1 {
                     pendingControlURLRequest = nil
-                    externalSubscriptionLinkError = AppLocalization.inline(
-                        "Invalid control URL token.",
-                        chinese: "URL Scheme 控制令牌无效。"
-                    )
+                    externalSubscriptionLinkError = AppLocalization.string("Invalid control URL token.")
                     return
                 }
                 if let providedToken = tokenItems.first?.value?.trimmingCharacters(in: .whitespacesAndNewlines) {
                     guard Self.constantTimeEquals(providedToken, controlURLSchemeToken) else {
                         pendingControlURLRequest = nil
-                        externalSubscriptionLinkError = AppLocalization.inline(
-                            "Invalid control URL token.",
-                            chinese: "URL Scheme 控制令牌无效。"
-                        )
+                        externalSubscriptionLinkError = AppLocalization.string("Invalid control URL token.")
                         return
                     }
                     pendingControlURLRequest = nil
@@ -2448,10 +2418,7 @@ final class TunnelManager: ObservableObject {
                 }
             }
         } catch ExternalSubscriptionLinkError.controlActionsDisabled {
-            externalSubscriptionLinkError = AppLocalization.inline(
-                "Control URL actions are disabled. Enable them in Settings > Automation.",
-                chinese: "URL Scheme 控制已关闭，请先在「设置 > 自动化」中开启。"
-            )
+            externalSubscriptionLinkError = AppLocalization.string("Control URL actions are disabled. Enable them in Settings > Automation.")
         } catch {
             handleExternalURL(url)
         }
@@ -2652,9 +2619,10 @@ final class TunnelManager: ObservableObject {
         if wasSystemProxyRequested {
             restoreSystemProxyIfNeeded()
         }
-        localProxySettingsMessage = AppLocalization.inline(
-            "Local proxy port \(port) is already in use or failed to bind (\(error.localizedDescription)). System Proxy has been rolled back.",
-            chinese: "本地代理端口 \(port) 已被占用或启动失败（\(error.localizedDescription)），已自动回滚系统代理。"
+        localProxySettingsMessage = AppLocalization.format(
+            "Local proxy port %@ is already in use or failed to bind (%@). System Proxy has been rolled back.",
+            String(port),
+            error.localizedDescription
         )
     }
 

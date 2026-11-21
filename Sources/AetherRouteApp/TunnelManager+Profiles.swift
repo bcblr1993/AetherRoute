@@ -1105,15 +1105,16 @@ extension TunnelManager {
         }
         if subscriptionIDs.count > 1 {
             if failedCount == 0 {
-                profileMessage = aetherBilingualText(
-                    en: "Updated \(succeededCount) subscriptions.",
-                    zhHans: "已更新 \(succeededCount) 个订阅。"
+                profileMessage = AppLocalization.format(
+                    "Updated %lld subscriptions.",
+                    Int64(succeededCount)
                 )
                 profileMessageIsError = false
             } else {
-                profileMessage = aetherBilingualText(
-                    en: "Updated \(succeededCount) subscriptions; \(failedCount) failed.",
-                    zhHans: "已更新 \(succeededCount) 个订阅，\(failedCount) 个失败。"
+                profileMessage = AppLocalization.format(
+                    "Updated %lld subscriptions; %lld failed.",
+                    Int64(succeededCount),
+                    Int64(failedCount)
                 )
                 profileMessageIsError = true
             }
@@ -1279,9 +1280,9 @@ extension TunnelManager {
                         report: report
                     )
                 } else {
-                    profileMessage = aetherBilingualText(
-                        en: "Updated subscription “\(profile.name)”.",
-                        zhHans: "已更新订阅「\(profile.name)」。"
+                    profileMessage = AppLocalization.format(
+                        "Updated subscription “%@”.",
+                        profile.name
                     )
                 }
             case .notModified:
@@ -1654,10 +1655,7 @@ extension TunnelManager {
             if state == .connected {
                 await reloadCustomRulesLive()
             }
-            profileMessage = AppLocalization.inline(
-                "Global override template saved.",
-                chinese: "已保存全局覆写模板。"
-            )
+            profileMessage = AppLocalization.string("Global override template saved.")
             profileMessageIsError = false
             return true
         } catch {
@@ -1683,10 +1681,7 @@ extension TunnelManager {
         var catalogUpdated = false
         do {
             if isUIReviewMode {
-                profileMessage = AppLocalization.inline(
-                    "Merged profile preview is unavailable in review mode.",
-                    chinese: "预览模式下不支持创建组合订阅。"
-                )
+                profileMessage = AppLocalization.string("Merged profile preview is unavailable in review mode.")
                 profileMessageIsError = true
                 return false
             } else {
@@ -1710,10 +1705,7 @@ extension TunnelManager {
                 try await reloadActiveProfileStagingResources(preparedReload, via: client)
                 await finalizeLiveProfileReload(client: client)
             }
-            profileMessage = AppLocalization.inline(
-                "Created and activated merged profile.",
-                chinese: "已创建并启用组合订阅。"
-            )
+            profileMessage = AppLocalization.string("Created and activated merged profile.")
             profileMessageIsError = false
             return true
         } catch {
@@ -1818,10 +1810,7 @@ extension TunnelManager {
                 try await reloadActiveProfileStagingResources(preparedReload, via: client)
                 await finalizeLiveProfileReload(client: client)
             }
-            profileMessage = AppLocalization.inline(
-                "Rebuilt merged profile from source subscriptions.",
-                chinese: "已根据源订阅重新合并节点。"
-            )
+            profileMessage = AppLocalization.string("Rebuilt merged profile from source subscriptions.")
             profileMessageIsError = false
             return true
         } catch {
@@ -1830,10 +1819,7 @@ extension TunnelManager {
                 _ = await waitForProviderToBecomeInactive()
                 await setEnabled(true)
                 if await waitForConnectionToSettle() {
-                    profileMessage = AppLocalization.inline(
-                        "Rebuilt merged profile from source subscriptions.",
-                        chinese: "已根据源订阅重新合并节点。"
-                    )
+                    profileMessage = AppLocalization.string("Rebuilt merged profile from source subscriptions.")
                     profileMessageIsError = false
                     return true
                 }
@@ -1883,10 +1869,7 @@ extension TunnelManager {
         if state == .connected, !isUIReviewMode {
             await reloadCustomRulesLive()
         }
-        profileMessage = AppLocalization.inline(
-            "External rule and proxy providers staged.",
-            chinese: "已刷新并暂存外部规则集与代理集合。"
-        )
+        profileMessage = AppLocalization.string("External rule and proxy providers staged.")
         profileMessageIsError = false
         return (stagedRules, stagedProxies)
     }

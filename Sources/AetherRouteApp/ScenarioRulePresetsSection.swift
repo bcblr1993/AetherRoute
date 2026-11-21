@@ -25,21 +25,19 @@ struct ScenarioRulePresetsSection: View {
 
     private var sectionNote: String {
         if enabledCount == 0 {
-            return AppLocalization.inline(
-                "Offline presets · 0 active",
-                chinese: "内置离线预设 · 已启用 0 项"
-            )
+            return AppLocalization.string("Offline presets · 0 active")
         }
-        return AppLocalization.inline(
-            "\(enabledCount) active · \(enabledRuleCount) rules",
-            chinese: "已启用 \(enabledCount) 项 · \(enabledRuleCount) 条规则"
+        return AppLocalization.format(
+            "%lld active · %@",
+            Int64(enabledCount),
+            AppLocalization.format("%lld rules", Int64(enabledRuleCount))
         )
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(
-                title: AppLocalization.inline("Scenario Rule Presets", chinese: "场景规则预设"),
+                title: AppLocalization.string("Scenario Rule Presets"),
                 note: sectionNote
             )
 
@@ -141,7 +139,7 @@ private struct ScenarioRulePresetRow: View {
             Spacer(minLength: AetherVisual.s2)
 
             Picker(
-                AppLocalization.inline("Target policy", chinese: "目标策略"),
+                AppLocalization.string("Target policy"),
                 selection: targetBinding
             ) {
                 Text(verbatim: primaryProxyLabel)
@@ -155,16 +153,16 @@ private struct ScenarioRulePresetRow: View {
                 }
                 if let missingName = missingCustomGroupName {
                     Divider()
-                    Text(verbatim: AppLocalization.inline(
-                        "\(missingName) (Fallback)",
-                        chinese: "\(missingName)（已回退）"
+                    Text(verbatim: AppLocalization.format(
+                        "%@ (Fallback)",
+                        missingName
                     ))
                     .tag(ScenarioRulePresetTarget.group(missingName))
                 }
                 Divider()
-                Text(verbatim: AppLocalization.inline("DIRECT", chinese: "直连 (DIRECT)"))
+                Text(verbatim: AppLocalization.string("DIRECT (Bypass)"))
                     .tag(ScenarioRulePresetTarget.direct)
-                Text(verbatim: AppLocalization.inline("REJECT", chinese: "拦截 (REJECT)"))
+                Text(verbatim: AppLocalization.string("REJECT (Block)"))
                     .tag(ScenarioRulePresetTarget.reject)
             }
             .labelsHidden()
@@ -207,55 +205,37 @@ private struct ScenarioRulePresetRow: View {
     private var title: String {
         switch definition.id {
         case .aiDeveloperSuite:
-            AppLocalization.inline("AI Developer Suite", chinese: "AI 开发者套件")
+            AppLocalization.string("AI Developer Suite")
         case .developerAccelerator:
-            AppLocalization.inline("Developer Accelerator", chinese: "开发者加速包")
+            AppLocalization.string("Developer Accelerator")
         case .adAndTrackerBlock:
-            AppLocalization.inline("Ad & Tracker Blocking", chinese: "广告与遥测拦截")
+            AppLocalization.string("Ad & Tracker Blocking")
         case .domesticAndLANBoost:
-            AppLocalization.inline("Domestic & LAN Direct", chinese: "国内与局域网零绕路")
+            AppLocalization.string("Domestic & LAN Direct")
         }
     }
 
     private var subtitle: String {
         switch definition.id {
         case .aiDeveloperSuite:
-            AppLocalization.inline(
-                "OpenAI, Anthropic, Gemini, Cursor, Perplexity & Claude",
-                chinese: "OpenAI、Anthropic、Gemini、Cursor、Perplexity 与 Claude"
-            )
+            AppLocalization.string("OpenAI, Anthropic, Gemini, Cursor, Perplexity & Claude")
         case .developerAccelerator:
-            AppLocalization.inline(
-                "GitHub, Docker, GHCR, npm, PyPI, crates.io & Homebrew",
-                chinese: "GitHub、Docker、GHCR、npm、PyPI、crates.io 与 Homebrew"
-            )
+            AppLocalization.string("GitHub, Docker, GHCR, npm, PyPI, crates.io & Homebrew")
         case .adAndTrackerBlock:
-            AppLocalization.inline(
-                "Ad networks, DoubleClick & telemetry domains",
-                chinese: "常见广告联盟、DoubleClick 与追踪遥测域名"
-            )
+            AppLocalization.string("Ad networks, DoubleClick & telemetry domains")
         case .domesticAndLANBoost:
-            AppLocalization.inline(
-                "China domains, private LAN CIDRs & CN GeoIP direct",
-                chinese: "国内域名、私有局域网与国内 GeoIP 直连不绕路"
-            )
+            AppLocalization.string("China domains, private LAN CIDRs & CN GeoIP direct")
         }
     }
 
     private var ruleCountCaption: String {
-        AppLocalization.inline(
-            "\(definition.templates.count) rules",
-            chinese: "\(definition.templates.count) 条"
-        )
+        AppLocalization.format("%lld rules", Int64(definition.templates.count))
     }
 
     private var primaryProxyLabel: String {
         if let primaryGroupName {
-            return AppLocalization.inline(
-                "Primary (\(primaryGroupName))",
-                chinese: "主代理（\(primaryGroupName)）"
-            )
+            return AppLocalization.format("Primary (%@)", primaryGroupName)
         }
-        return AppLocalization.inline("Primary Proxy", chinese: "主代理")
+        return AppLocalization.string("Primary Proxy")
     }
 }

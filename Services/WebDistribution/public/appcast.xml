@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 3.1.1 (Build 2026112103)</title>
-            <pubDate>Sat, 21 Nov 2026 12:40:25 +0800</pubDate>
-            <sparkle:version>2026112103</sparkle:version>
-            <sparkle:shortVersionString>3.1.1</sparkle:shortVersionString>
+            <title>Version 3.1.2 (Build 2026112104)</title>
+            <pubDate>Sat, 21 Nov 2026 22:32:51 +0800</pubDate>
+            <sparkle:version>2026112104</sparkle:version>
+            <sparkle:shortVersionString>3.1.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.1.1/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.1.2/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,37 +120,37 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 3.1.1 更新要点</span>
-  <span class="release-badge">Build 2026112103 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.1.2 更新要点</span>
+  <span class="release-badge">Build 2026112104 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">问题修复 · Bug Fixes</span>
+  <span class="section-tag tag-improve">体验打磨与性能 · UI &amp; Performance</span>
   <ul>
-    <li><strong>修复 macOS 27 更新弹窗闪退</strong>：将 <code>AppUpdateUserDriver</code> 的 <code>NSHostingController.sizingOptions</code> 从 <code>.preferredContentSize</code> 迁移为显式整数取整测量（<code>AppUpdateWindowLayoutGeometry</code>），根治多行更新摘要在 macOS 27 下触发 <code>NSDisplayCycle</code> 约束无限循环崩溃（<code>NSGenericException</code>）。</li>
-    <li><strong>摘要卡片与窗口隔离加固</strong>：将摘要左侧渐变装饰条改写为 <code>overlay</code> 避免贪婪高度测量，并为更新弹窗赋予独立标识符 <code>aetherroute-update</code>，防止被主窗口管理器误接管。</li>
+    <li><strong>规则与概览布局全面加固</strong>：修复 <code>RulesView</code> 窄宽工具栏挤压溢出与详情覆层遮挡问题；为规则路由测试提取独立子状态并延迟滚轴定位，修复 <code>OverviewEgressRow</code> 默认折叠按钮对比度、地区码对齐及异步竞态（切换节点即时清除旧节点出口报告）。</li>
+    <li><strong>高频列表与渲染路径加速</strong>：优化 <code>ManagedProfileRow</code>（轻量元数据缓存键与隔离悬停状态，长按订阅仅在存在到期时间时启用分钟计时器）与 <code>ConnectionsView</code> 暂停/近期关闭快照缓存；修复 <code>DNSView</code> 近期记录实时同步及 <code>ProxyGroupCard</code> 自适应布局。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-feature">包含 3.1.0 特性 · Includes 3.1.0</span>
+  <span class="section-tag tag-fix">问题修复 · 无障碍与本地化</span>
   <ul>
-    <li><strong>完整集成 3.1.0 高频能力</strong>：涵盖概览页按需出口画像与 AI / 流媒体可用性检测、节点页「仅 AI 可用」筛选、规则页 4 套本地零依赖场景化规则预设，以及 DNS 页 Fake-IP 自动反查、一键清缓存与有界 64 条近期解析记录。</li>
+    <li><strong>全套次级弹窗与无障碍规范</strong>：统一命令面板悬浮抗抖动、<code>CustomProxyGroupSheet</code> 与 <code>ChainedProxySheet</code> 自适应流程图、<code>ShareLinkImportSheet</code> / <code>MergeProfilesSheet</code> / <code>GlobalOverrideSheet</code> 变更放弃确认，以及全界面 <code>Reduce Motion</code> 实时暂停与字号对比度（含移除老旧内联翻译并扩充至 <code>1,944</code> 条多语言目录及单复数规范）。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">质量与验证 · Quality &amp; Verification</span>
+  <span class="section-tag tag-feature">全量验证 · Full Qualification</span>
   <ul>
-    <li><strong>全维度隔离门禁通过</strong>：新增 13 阶段真实运行循环双语布局回归与防抖时序加固（<code>17/17</code> + 13 阶段双语全绿），<code>747</code> XCTest + <code>144</code> Swift Testing、双指纹 12 协议互通、43 节点对照、6 维 VM 矩阵（<code>160 PASS</code>）、UI 内存预算（<code>median 77–79 MB</code>）与 6 项公证 DMG 运行时证据（<code>0–3s</code> 切网恢复）全部通过。</li>
+    <li><strong>零松弛全门禁通过</strong>：<code>test.sh</code>（<code>747</code> XCTest + <code>144</code> Swift Testing + <code>114</code> TransparentProxy + <code>29</code> FlowCoreBridge + <code>29/29</code> V3 fix）、双指纹 12 协议互通、Chrome 真实站点（含 ECH `2/2`）、43 节点对照、6 维 VM 矩阵（<code>160 PASS</code>）、UI 性能与内存（<code>median 78–80 MB</code>）与双模式物理运行时证据全部通过。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.1.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.1.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.1.1/AetherRoute-3.1.1-build-2026112103-arm64.dmg"
-                sparkle:edSignature="9BwfhEF4bedWLHxSO7M9mEa37Xo4idU6AIE4yR4bKcGUrU8vxQ4toKbWiwu4+6QbT79+/tke7PJnUjYldbhuBw=="
-                length="32301346"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.1.2/AetherRoute-3.1.2-build-2026112104-arm64.dmg"
+                sparkle:edSignature="7Xlu1BnddiKxQVikJe8dZxqpaKwWKl3midrKqTNpJyqFhCK3NpBAjKfVXzmpylKZ7uEIJh16afk5YXjbJGDrDw=="
+                length="32005288"
                 type="application/octet-stream" />
         </item>
     </channel>

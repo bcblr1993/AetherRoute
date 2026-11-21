@@ -42,11 +42,13 @@ struct DNSView: View {
                         dnsLookupSection(summary: summary)
                         RecentDNSQueriesCard(
                             viewModel: tunnel.dnsQueriesViewModel,
+                            telemetry: tunnel.telemetryViewModel,
                             onSelectDomain: { domain in
                                 lookupQuery = domain
                                 runDNSLookup(summary: summary)
                             }
                         )
+                        .environmentObject(tunnel)
                         RouteSimulatorSection()
                         networkDiagnosticSection(summary: summary)
                         customHostsSection
@@ -206,7 +208,11 @@ struct DNSView: View {
             .accessibilityIdentifier("dns-details-disclosure")
 
             if showsAdvancedDNS {
-                HStack(alignment: .top, spacing: AetherVisual.s5) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 260), spacing: AetherVisual.s4, alignment: .top)],
+                    alignment: .leading,
+                    spacing: AetherVisual.s4
+                ) {
                     upstreamPrivacyDetails(dns)
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     if showsFakeIP {
@@ -249,14 +255,14 @@ struct DNSView: View {
                     .font(.subheadline)
                     .foregroundStyle(.primary)
             } else {
-                HStack(spacing: AetherVisual.s2) {
+                AetherFlowLayout(spacing: AetherVisual.s2) {
                     ForEach(dns.upstreamTransports, id: \.self) { transport in
                         Label(
                             transportTitle(transport),
                             systemImage: transportSymbol(transport)
                         )
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(transportColor(transport))
+                        .foregroundStyle(AetherReadableTint(color: transportColor(transport)))
                         .padding(.horizontal, AetherVisual.pillHorizontalPadding)
                         .padding(.vertical, AetherVisual.pillVerticalPadding)
                         .background(
@@ -844,10 +850,10 @@ struct DNSView: View {
                             Button(role: .destructive) {
                                 removeCustomHost(id: mapping.id)
                             } label: {
-                                Image(systemName: "trash")
-                                    .foregroundStyle(AetherVisual.secondaryText)
+                                AetherRowIconLabel(symbol: "trash", tint: .red)
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.aetherPressable)
+                            .help(AppLocalization.string("Delete"))
                             .accessibilityLabel(AppLocalization.string("Delete"))
                         }
                         .frame(minHeight: AetherVisual.tableRowHeight)
@@ -907,7 +913,22 @@ struct DNSView: View {
     // MARK: - Interactive DNS Lookup
 
     private func dnsLookupSection(summary: ProfileConfigurationSummary) -> some View {
-        FeatureSection(title: AppLocalization.string("DNS lookup")) {
+        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+            AetherSectionHeader(title: AppLocalization.string("DNS lookup")) {
+                Button {
+                    clearDNSCacheAction()
+                } label: {
+                    AetherProgressButtonLabel(
+                        AppLocalization.string("Clear DNS Cache"),
+                        isWorking: isClearingDNSCache
+                    )
+                }
+                .aetherButton(prominent: false)
+                .controlSize(.small)
+                .disabled(isClearingDNSCache)
+                .accessibilityIdentifier("dns-clear-cache-button")
+            }
+
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 HStack(spacing: AetherVisual.s2) {
                     HStack(spacing: AetherVisual.s2) {
@@ -915,10 +936,7 @@ struct DNSView: View {
                             .foregroundStyle(AetherVisual.secondaryText)
                             .accessibilityHidden(true)
                         TextField(
-                            AppLocalization.inline(
-                                "Enter a domain or Fake-IP (198.18.x.x) to inspect DNS and reverse lookup",
-                                chinese: "输入域名或 Fake-IP（198.18.x.x）查询解析结果与反查映射"
-                            ),
+                            AppLocalization.string("Enter a domain or Fake-IP (198.18.x.x) to inspect DNS and reverse lookup"),
                             text: $lookupQuery
                         )
                         .textFieldStyle(.plain)
@@ -955,19 +973,6 @@ struct DNSView: View {
                     .controlSize(.large)
                     .disabled(lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLookup)
                     .accessibilityIdentifier("dns-lookup-button")
-
-                    Button {
-                        clearDNSCacheAction()
-                    } label: {
-                        AetherProgressButtonLabel(
-                            AppLocalization.inline("Clear DNS Cache", chinese: "清空 DNS 缓存"),
-                            isWorking: isClearingDNSCache
-                        )
-                    }
-                    .aetherButton(prominent: false)
-                    .controlSize(.large)
-                    .disabled(isClearingDNSCache)
-                    .accessibilityIdentifier("dns-clear-cache-button")
                 }
 
                 if let status = dnsCacheClearStatus {
@@ -1035,7 +1040,7 @@ struct DNSView: View {
                             .font(.callout)
                             .foregroundStyle(AetherVisual.secondaryText)
                         } else {
-                            HStack(spacing: AetherVisual.s2) {
+                            AetherFlowLayout(spacing: AetherVisual.s2) {
                                 ForEach(Array(report.resolvedAddresses.prefix(4)), id: \.self) { address in
                                     HStack(spacing: AetherVisual.s1) {
                                         Text(verbatim: address)
@@ -1068,10 +1073,7 @@ struct DNSView: View {
                     .transition(AetherVisual.insertion)
                 } else if hasAttemptedLookup && !isRunningLookup {
                     Label(
-                        AppLocalization.inline(
-                            "Enter a valid domain name (such as example.com) or Fake-IP (198.18.x.x) to inspect DNS resolution.",
-                            chinese: "请输入有效域名（如 example.com）或 Fake-IP（198.18.x.x）以查询 DNS 解析。"
-                        ),
+                        AppLocalization.string("Enter a valid domain name (such as example.com) or Fake-IP (198.18.x.x) to inspect DNS resolution."),
                         systemImage: "info.circle"
                     )
                     .font(.callout)
@@ -1113,7 +1115,7 @@ struct DNSView: View {
             case let .hit(match):
                 HStack(spacing: AetherVisual.s2) {
                     StatePill(
-                        title: AppLocalization.inline("Fake-IP Reverse", chinese: "Fake-IP 反查"),
+                        title: AppLocalization.string("Fake-IP Reverse"),
                         color: .indigo,
                         symbol: "arrow.triangle.2.circlepath"
                     )
@@ -1134,7 +1136,7 @@ struct DNSView: View {
                         lookupQuery = match.domain
                         runDNSLookup(summary: summary)
                     } label: {
-                        Text(AppLocalization.inline("Resolve Domain", chinese: "正向解析"))
+                        Text(AppLocalization.string("Resolve Domain"))
                     }
                     .buttonStyle(.aetherPressable)
                     .font(.caption.weight(.medium))
@@ -1170,7 +1172,7 @@ struct DNSView: View {
             case let .miss(fakeIP):
                 HStack(spacing: AetherVisual.s2) {
                     StatePill(
-                        title: AppLocalization.inline("Fake-IP Pool", chinese: "Fake-IP 地址段"),
+                        title: AppLocalization.string("Fake-IP Pool"),
                         color: .orange,
                         symbol: "questionmark.circle"
                     )
@@ -1179,10 +1181,7 @@ struct DNSView: View {
                         .textSelection(.enabled)
                 }
                 Text(
-                    AppLocalization.inline(
-                        "This address is in the Fake-IP pool (198.18.0.0/15), but no cached domain mapping was found yet. Run a domain lookup here or inspect active Fake-IP connections to populate the reverse lookup table.",
-                        chinese: "该地址属于 Fake-IP 地址池（198.18.0.0/15），但应用内反查缓存中暂无对应域名映射。在此执行域名解析或产生活跃 Fake-IP 连接后会自动记录映射。"
-                    )
+                    AppLocalization.string("This address is in the Fake-IP pool (198.18.0.0/15), but no cached domain mapping was found yet. Run a domain lookup here or inspect active Fake-IP connections to populate the reverse lookup table.")
                 )
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
@@ -1759,20 +1758,17 @@ private struct RouteSimulatorSection: View {
     @State private var traceResult: RouteTraceResult?
 
     var body: some View {
-        FeatureSection(title: AppLocalization.inline("Route & DNS Simulator", chinese: "路由与 DNS 仿真测试")) {
+        FeatureSection(title: AppLocalization.string("Route & DNS Simulator")) {
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 Text(
-                    AppLocalization.inline(
-                        "Test how AetherRoute evaluates a destination across rules, Fake-IP/DNS, and proxy groups. Uses the live engine when connected and falls back to static inspection when disconnected.",
-                        chinese: "测试指定目标的规则命中、DNS / Fake-IP 状态与策略组出站链路；已连接时直接查询运行中核心，未连接时使用静态规则解析。"
-                    )
+                    AppLocalization.string("Test how AetherRoute evaluates a destination across rules, Fake-IP/DNS, and proxy groups. Uses the live engine when connected and falls back to static inspection when disconnected.")
                 )
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
 
                 HStack(spacing: AetherVisual.s2) {
                     TextField(
-                        AppLocalization.inline("Domain or IP (e.g. api.openai.com)", chinese: "域名或 IP（如 api.openai.com）"),
+                        AppLocalization.string("Domain or IP (e.g. api.openai.com)"),
                         text: $hostInput
                     )
                     .textFieldStyle(.roundedBorder)
@@ -1781,7 +1777,7 @@ private struct RouteSimulatorSection: View {
                     .accessibilityIdentifier("route-sim-host-field")
 
                     TextField(
-                        AppLocalization.inline("Port", chinese: "端口"),
+                        AppLocalization.string("Port"),
                         text: $portInput
                     )
                     .textFieldStyle(.roundedBorder)
@@ -1796,16 +1792,20 @@ private struct RouteSimulatorSection: View {
                             .init(value: .tcp, title: "TCP"),
                             .init(value: .udp, title: "UDP"),
                         ],
-                        accessibilityLabel: AppLocalization.inline("Protocol", chinese: "协议"),
+                        accessibilityLabel: AppLocalization.string("Protocol"),
                         accessibilityIdentifier: "route-sim-network-picker",
-                        fillsWidth: true
+                        fillsWidth: false
                     )
-                    .frame(width: 112)
+                    .fixedSize()
                 }
 
-                HStack(spacing: AetherVisual.s2) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 200), spacing: AetherVisual.s2)],
+                    alignment: .leading,
+                    spacing: AetherVisual.s2
+                ) {
                     TextField(
-                        AppLocalization.inline("Optional IP override (for IP-ASN / IP-CIDR)", chinese: "可选目标 IP（用于测试 IP-ASN / IP-CIDR）"),
+                        AppLocalization.string("Optional IP override (for IP-ASN / IP-CIDR)"),
                         text: $ipInput
                     )
                     .textFieldStyle(.roundedBorder)
@@ -1814,19 +1814,22 @@ private struct RouteSimulatorSection: View {
                     .accessibilityIdentifier("route-sim-ip-field")
 
                     TextField(
-                        AppLocalization.inline("Optional process path (e.g. /usr/bin/curl)", chinese: "可选进程路径（如 /usr/bin/curl）"),
+                        AppLocalization.string("Optional process path (e.g. /usr/bin/curl)"),
                         text: $processPathInput
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.caption.monospaced())
                     .onSubmit(runSimulation)
                     .accessibilityIdentifier("route-sim-process-field")
+                }
 
+                HStack {
+                    Spacer(minLength: 0)
                     Button {
                         runSimulation()
                     } label: {
                         AetherProgressButtonLabel(
-                            AppLocalization.inline("Simulate", chinese: "开始测试"),
+                            AppLocalization.string("Simulate"),
                             isWorking: isSimulating
                         )
                     }
@@ -1840,8 +1843,8 @@ private struct RouteSimulatorSection: View {
                         HStack(spacing: AetherVisual.s2) {
                             Text(
                                 result.source == .liveProvider
-                                    ? AppLocalization.inline("Live Engine", chinese: "实时引擎")
-                                    : AppLocalization.inline("Static Fallback", chinese: "静态回退")
+                                    ? AppLocalization.string("Live Engine")
+                                    : AppLocalization.string("Static Fallback")
                             )
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(
@@ -1865,7 +1868,7 @@ private struct RouteSimulatorSection: View {
 
                         if !result.outboundChain.isEmpty {
                             HStack(spacing: AetherVisual.s1) {
-                                Text(AppLocalization.inline("Outbound:", chinese: "出站链路："))
+                                Text(AppLocalization.string("Outbound:"))
                                     .font(.caption)
                                     .foregroundStyle(AetherVisual.secondaryText)
                                 Text(verbatim: result.outboundChain.joined(separator: " → "))
@@ -1876,7 +1879,7 @@ private struct RouteSimulatorSection: View {
 
                         HStack(spacing: AetherVisual.s3) {
                             if let alias = result.resolvedHostAlias {
-                                Text(AppLocalization.inline("Hosts: \(alias)", chinese: "Hosts 映射：\(alias)"))
+                                Text(AppLocalization.format("Hosts: %@", alias))
                                     .font(.caption.monospaced())
                                     .foregroundStyle(AetherVisual.secondaryText)
                             }
@@ -1888,13 +1891,13 @@ private struct RouteSimulatorSection: View {
                             }
 
                             if result.isFakeIP {
-                                Text(AppLocalization.inline("Fake-IP", chinese: "Fake-IP"))
+                                Text(AppLocalization.string("Fake-IP"))
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(Color.accentColor)
                             }
 
                             if let ms = result.dnsLatencyMilliseconds {
-                                Text(AppLocalization.inline("DNS \(ms) ms", chinese: "DNS 耗时 \(ms) ms"))
+                                Text(AppLocalization.format("DNS %lld ms", Int64(ms)))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(AetherVisual.secondaryText)
                             }
@@ -1969,7 +1972,9 @@ private struct RecentDNSQueriesCard: View {
         return formatter
     }()
 
+    @EnvironmentObject private var tunnel: TunnelManager
     @ObservedObject var viewModel: DNSRecentQueriesViewModel
+    let telemetry: NetworkTelemetryViewModel
     let onSelectDomain: (String) -> Void
     @State private var selectedFilter: DNSRecentQueryFilter = .all
 
@@ -1978,13 +1983,14 @@ private struct RecentDNSQueriesCard: View {
     }
 
     var body: some View {
-        FeatureSection(title: AppLocalization.inline("Recent DNS Queries", chinese: "最近 DNS 查询")) {
+        FeatureSection(title: AppLocalization.string("Recent DNS Queries")) {
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                HStack(spacing: AetherVisual.s2) {
-                    ForEach(DNSRecentQueryFilter.allCases, id: \.self) { filter in
-                        filterPill(for: filter)
+                AetherWrapPairLayout {
+                    AetherFlowLayout(spacing: AetherVisual.s2) {
+                        ForEach(DNSRecentQueryFilter.allCases, id: \.self) { filter in
+                            filterPill(for: filter)
+                        }
                     }
-                    Spacer(minLength: AetherVisual.s2)
                     Text(verbatim: "\(viewModel.store.count) / \(DNSRecentQueryStore.maxEntries)")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(AetherVisual.secondaryText)
@@ -2025,11 +2031,15 @@ private struct RecentDNSQueriesCard: View {
                     .accessibilityIdentifier("dns-recent-queries-list")
                 }
             }
-            .padding(AetherVisual.cardPadding)
-            .aetherPanel()
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("dns-recent-queries-card")
+        .padding(AetherVisual.cardPadding)
+        .aetherPanel()
+    }
+    .backgroundTelemetryDemand(source: "dns-recent-queries")
+    .onReceive(telemetry.$snapshot) { _ in
+        tunnel.syncRecentDNSQueriesFromTelemetry()
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("dns-recent-queries-card")
     }
 
     private func filterPill(for filter: DNSRecentQueryFilter) -> some View {
@@ -2136,27 +2146,21 @@ private struct RecentDNSQueriesCard: View {
 
     private var emptyMessage: String {
         if viewModel.store.isEmpty {
-            return AppLocalization.inline(
-                "No recent DNS queries recorded yet. Resolve a domain above or open active connections to populate this bounded 64-entry log.",
-                chinese: "暂无最近 DNS 查询记录。在上方执行域名查询或产生活跃连接后，这里会自动记录最近 64 条查询。"
-            )
+            return AppLocalization.string("No recent DNS queries recorded yet. Resolve a domain above or open active connections to populate this bounded 64-entry log.")
         }
-        return AppLocalization.inline(
-            "No queries match the selected filter.",
-            chinese: "当前筛选条件下暂无匹配的 DNS 查询记录。"
-        )
+        return AppLocalization.string("No queries match the selected filter.")
     }
 
     private func filterTitle(_ filter: DNSRecentQueryFilter) -> String {
         switch filter {
         case .all:
-            AppLocalization.inline("All", chinese: "全部")
+            AppLocalization.string("All")
         case .fakeIP:
-            AppLocalization.inline("Fake-IP", chinese: "Fake-IP")
+            AppLocalization.string("Fake-IP")
         case .direct:
-            AppLocalization.inline("Direct", chinese: "直连")
+            AppLocalization.string("Direct")
         case .rejectedOrFailed:
-            AppLocalization.inline("Blocked", chinese: "拦截/失败")
+            AppLocalization.string("Blocked / Failed")
         }
     }
 

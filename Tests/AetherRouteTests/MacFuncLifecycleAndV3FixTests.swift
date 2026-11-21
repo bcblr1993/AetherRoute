@@ -356,6 +356,7 @@ enum MacFuncLifecycleAndV3FixTests {
             ("testTunnelManagerQuietnessSuppressesNoopObjectWillChangeBroadcasts", testTunnelManagerQuietnessSuppressesNoopObjectWillChangeBroadcasts),
             ("testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected", testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected),
             ("testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover", testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover),
+            ("testLatestEgressReportForCurrentNodeDoesNotLeakPreviousNodeReport", testLatestEgressReportForCurrentNodeDoesNotLeakPreviousNodeReport),
         ]
 
         var passed = 0
@@ -1715,6 +1716,46 @@ enum MacFuncLifecycleAndV3FixTests {
         try expect(
             ProfileSubscriptionClient.directBypassRequestTimeout <= 8,
             "Direct subscription probe timeout must be <= 8s for fast proxy failover, got \(ProfileSubscriptionClient.directBypassRequestTimeout)"
+        )
+    }
+
+    @MainActor
+    private static func testLatestEgressReportForCurrentNodeDoesNotLeakPreviousNodeReport() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "connected")
+        defer { cleanupDefaults(suiteName) }
+
+        await tunnel.setRoutingMode(.rule)
+        await tunnel.selectProxy(group: "Balanced", member: "Tokyo Direct")
+        try expect(
+            tunnel.currentEgressProbeNodeName == "Tokyo Direct",
+            "Expected initial currentEgressProbeNodeName == Tokyo Direct, got \(String(describing: tunnel.currentEgressProbeNodeName))"
+        )
+
+        let jpReport = EgressProbeReport(
+            nodeName: "Tokyo Direct",
+            checkedAt: Date(),
+            identity: EgressIdentity(
+                ip: "203.0.113.10",
+                countryCode: "JP",
+                countryName: "Japan",
+                city: "Tokyo",
+                asn: "AS2516",
+                organization: "KDDI",
+                ipType: .residential,
+                purity: EgressPurityAssessment(level: .clean, score: 95)
+            ),
+            services: []
+        )
+        tunnel.egressProbeStore.completeProbe(report: jpReport, nodeName: "Tokyo Direct")
+
+        await tunnel.selectProxy(group: "Balanced", member: "Singapore Edge")
+        try expect(
+            tunnel.currentEgressProbeNodeName == "Singapore Edge",
+            "Expected currentEgressProbeNodeName to resolve Singapore Edge, got \(String(describing: tunnel.currentEgressProbeNodeName))"
+        )
+        try expect(
+            tunnel.latestEgressReportForCurrentNode() == nil,
+            "Switching to an unprobed node Singapore Edge must NOT display previous node Tokyo Direct's egress report"
         )
     }
 }

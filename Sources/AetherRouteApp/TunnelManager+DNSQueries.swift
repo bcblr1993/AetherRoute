@@ -113,18 +113,12 @@ extension TunnelManager {
         let status: String
         if state == .connected && !isUIReviewMode {
             viewModel.clearAll(
-                statusMessage: AppLocalization.inline(
-                    "Cleared DNS query history and Fake-IP reverse cache; refreshed live session without reconnecting.",
-                    chinese: "已清空应用内 DNS 查询记录与 Fake-IP 反查缓存，并无感刷新当前会话。"
-                )
+                statusMessage: AppLocalization.string("Cleared DNS query history and Fake-IP reverse cache; refreshed live session without reconnecting.")
             )
             await refreshTelemetry()
             status = viewModel.lastCacheClearStatus ?? ""
         } else {
-            status = AppLocalization.inline(
-                "Cleared DNS query history and Fake-IP reverse cache.",
-                chinese: "已清空应用内 DNS 查询记录与 Fake-IP 反查缓存。"
-            )
+            status = AppLocalization.string("Cleared DNS query history and Fake-IP reverse cache.")
             viewModel.clearAll(statusMessage: status)
         }
 

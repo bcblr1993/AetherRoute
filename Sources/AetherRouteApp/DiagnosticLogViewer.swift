@@ -45,6 +45,7 @@ struct DiagnosticLogViewer: View {
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer()
                 Button(AppLocalization.string("Copy")) { copyVisible() }
+                    .aetherButton()
                     .disabled(filtered.isEmpty)
                     .accessibilityIdentifier("logs-copy")
                 Button(AppLocalization.string("Done")) { dismiss() }
@@ -52,6 +53,7 @@ struct DiagnosticLogViewer: View {
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("logs-done")
             }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame(minWidth: AetherVisual.splitSheetMinWidth)

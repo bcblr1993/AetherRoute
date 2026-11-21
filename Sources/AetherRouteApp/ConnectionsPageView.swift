@@ -16,6 +16,7 @@ struct ConnectionsView: View {
     @State private var showingDisconnectConfirmation = false
     @State private var searchText = ""
     @State private var pausedConnections: [ConnectionTelemetry]?
+    @State private var frozenCache = FrozenConnectionSnapshotCache()
     @State private var inspectedConnection: ConnectionTableItem?
     @State private var selectedConnectionID: ConnectionTableItem.ID?
     @State private var groupsByApp = false
@@ -397,12 +398,13 @@ struct ConnectionsView: View {
             .width(min: 72, ideal: 84, max: 120)
             .alignment(.numeric)
             TableColumn(AppLocalization.string("Outlet")) { row in
-                Text(row.outletSummary)
+                let summary = row.outletSummary
+                Text(summary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: AetherVisual.tableRowHeight)
-                    .help(row.outletSummary)
+                    .help(Text(verbatim: summary))
                     .contextMenu { appContextMenu(row.app) }
             }
             .width(min: 84, ideal: 120, max: 320)
@@ -524,9 +526,9 @@ struct ConnectionsView: View {
             Button {
                 closeGroupConnections(entry: entry, dimension: dimension)
             } label: {
-                Text(verbatim: aetherBilingualText(
-                    en: "Close connections (\(entry.connectionCount))",
-                    zhHans: "关闭该组连接（\(entry.connectionCount)）"
+                Text(AppLocalization.format(
+                    "Close connections (%lld)",
+                    Int64(entry.connectionCount)
                 ))
             }
         }
@@ -948,7 +950,11 @@ struct ConnectionsView: View {
         }
         let identified = usesLiveSnapshot
             ? telemetry.identifiedSnapshotConnections()
-            : ConnectionTableItem.identify(displayedConnections)
+            : frozenCache.identifiedItems(
+                for: displayedConnections,
+                isPaused: pausedConnections != nil,
+                showsRecentlyClosed: showsRecentlyClosed
+            )
         let filtered: [ConnectionTableItem]
         if !hasActiveFilter {
             filtered = identified
@@ -1040,7 +1046,7 @@ struct ConnectionsView: View {
         var localizedTitle: String {
             switch self {
             case .speed:
-                aetherBilingualText(en: "By live speed", zhHans: "按实时速率")
+                AppLocalization.string("By live speed")
             case .traffic: AppLocalization.string("By traffic")
             case .newest: AppLocalization.string("By newest")
             case .destination: AppLocalization.string("By destination")
@@ -1053,7 +1059,11 @@ struct ConnectionsView: View {
         let usesLiveSnapshot = pausedConnections == nil && !showsRecentlyClosed
         let tallied = usesLiveSnapshot
             ? telemetry.snapshotOutletCounts()
-            : ConnectionOutletClassifier.counts(for: displayedConnections)
+            : frozenCache.counts(
+                for: displayedConnections,
+                isPaused: pausedConnections != nil,
+                showsRecentlyClosed: showsRecentlyClosed
+            )
         let allCount = usesLiveSnapshot
             ? max(tallied.all, telemetry.snapshot.totalActiveConnections)
             : tallied.all
@@ -1223,10 +1233,7 @@ private struct SessionBar: View {
         let mode = tunnel.sessionRoutingMode ?? tunnel.routingMode
         switch mode {
         case .direct:
-            return aetherBilingualText(
-                en: "Direct outbound (no proxy)",
-                zhHans: "直连出站（不经代理）"
-            )
+            return AppLocalization.string("Direct outbound (no proxy)")
         case .global:
             let selected = tunnel.proxySelections["GLOBAL"]?.selectedMember
                 ?? tunnel.activeProfileSummary.flatMap {
@@ -2070,11 +2077,92 @@ private struct ConnectionRoutePipelineView: View {
                     .padding(.bottom, isLast ? .zero : AetherVisual.s3)
                     Spacer(minLength: 0)
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, AetherVisual.s1)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connection-route-pipeline")
+    }
+}
+
+@MainActor
+private final class FrozenConnectionSnapshotCache {
+    private struct FlowEdgeSignature: Equatable {
+        let transport: UInt8
+        let destination: String
+        let destinationPort: UInt16
+        let startedAtUnixMilliseconds: UInt64
+        let downloadTotal: UInt64
+        let uploadTotal: UInt64
+
+        init(_ connection: ConnectionTelemetry) {
+            self.transport = connection.transport.rawValue
+            self.destination = connection.destination
+            self.destinationPort = connection.destinationPort
+            self.startedAtUnixMilliseconds = connection.startedAtUnixMilliseconds
+            self.downloadTotal = connection.downloadTotal
+            self.uploadTotal = connection.uploadTotal
+        }
+    }
+
+    private struct Key: Equatable {
+        let isPaused: Bool
+        let showsRecentlyClosed: Bool
+        let count: Int
+        let first: FlowEdgeSignature?
+        let middle: FlowEdgeSignature?
+        let last: FlowEdgeSignature?
+    }
+
+    private var key: Key?
+    private var identified: [ConnectionTableItem] = []
+    private var outletCounts = ConnectionOutletClassifier.Counts(all: 0, proxied: 0, direct: 0, rejected: 0)
+
+    private func makeKey(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) -> Key {
+        let middleIndex = connections.isEmpty ? nil : connections.count / 2
+        return Key(
+            isPaused: isPaused,
+            showsRecentlyClosed: showsRecentlyClosed,
+            count: connections.count,
+            first: connections.first.map(FlowEdgeSignature.init),
+            middle: middleIndex.map { FlowEdgeSignature(connections[$0]) },
+            last: connections.last.map(FlowEdgeSignature.init)
+        )
+    }
+
+    private func refreshIfNeeded(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) {
+        let nextKey = makeKey(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
+        guard key != nextKey else { return }
+        key = nextKey
+        identified = ConnectionTableItem.identify(connections)
+        outletCounts = ConnectionOutletClassifier.counts(for: connections)
+    }
+
+    func identifiedItems(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) -> [ConnectionTableItem] {
+        refreshIfNeeded(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
+        return identified
+    }
+
+    func counts(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) -> ConnectionOutletClassifier.Counts {
+        refreshIfNeeded(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
+        return outletCounts
     }
 }
 

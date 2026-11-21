@@ -29,7 +29,7 @@ private struct OverviewEgressRowContent: View {
             OverviewRow(
                 symbol: "network.badge.shield.half.filled",
                 tint: .teal,
-                title: AppLocalization.inline("Egress & AI availability", chinese: "出口与 AI 可用性")
+                title: AppLocalization.string("Egress & AI availability")
             ) {
                 trailingContent
             }
@@ -49,7 +49,7 @@ private struct OverviewEgressRowContent: View {
     @ViewBuilder
     private var trailingContent: some View {
         if !tunnel.isConnected {
-            Text(AppLocalization.inline("Available once connected", chinese: "连接后可检测"))
+            Text(AppLocalization.string("Available once connected"))
                 .font(.subheadline)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityIdentifier("overview-egress-disconnected")
@@ -57,7 +57,7 @@ private struct OverviewEgressRowContent: View {
             HStack(spacing: AetherVisual.s2) {
                 ProgressView()
                     .controlSize(.small)
-                Text(AppLocalization.inline("Checking…", chinese: "正在检测…"))
+                Text(AppLocalization.string("Checking…"))
                     .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
             }
@@ -71,19 +71,28 @@ private struct OverviewEgressRowContent: View {
                 } label: {
                     HStack(spacing: AetherVisual.s2) {
                         summaryPill(for: report)
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(AetherVisual.tertiaryText)
+                        AetherDisclosureChevron(isExpanded: isExpanded)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.aetherPressable)
+                .accessibilityLabel(AppLocalization.string("Egress & AI availability"))
+                .accessibilityValue(
+                    isExpanded
+                        ? AppLocalization.string("Expanded")
+                        : AppLocalization.string("Collapsed")
+                )
+                .accessibilityHint(
+                    isExpanded
+                        ? AppLocalization.string("Hide details")
+                        : AppLocalization.string("Show details")
+                )
                 .accessibilityIdentifier("overview-egress-expand-toggle")
 
                 Button {
                     runCheck()
                 } label: {
-                    Text(AppLocalization.inline("Recheck", chinese: "重新检测"))
+                    Text(AppLocalization.string("Recheck"))
                 }
                 .aetherButton()
                 .controlSize(.small)
@@ -91,13 +100,13 @@ private struct OverviewEgressRowContent: View {
             }
         } else {
             HStack(spacing: AetherVisual.s3) {
-                Text(AppLocalization.inline("On-demand check", chinese: "按需检测"))
+                Text(AppLocalization.string("On-demand check"))
                     .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
                 Button {
                     runCheck()
                 } label: {
-                    Text(AppLocalization.inline("Check", chinese: "检测"))
+                    Text(AppLocalization.string("Check"))
                 }
                 .aetherButton()
                 .controlSize(.small)
@@ -115,14 +124,15 @@ private struct OverviewEgressRowContent: View {
 
     private func summaryPill(for report: EgressProbeReport) -> some View {
         HStack(spacing: AetherVisual.s2) {
-            if let identity = report.identity {
-                let regionLabel = [identity.flag, identity.countryCode ?? identity.countryName]
-                    .compactMap { $0 }
-                    .joined(separator: " ")
-                Text(verbatim: regionLabel)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+            if let identity = report.identity,
+               let regionText = identity.countryCode ?? identity.countryName {
+                AetherRegionCode(name: regionText, reservesSlot: false)
+                if identity.countryCode == nil {
+                    Text(verbatim: regionText)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
             }
             let aiCount = report.availableAICount
             let aiTotal = max(report.aiServices.count, EgressServiceKind.aiServices.count)
@@ -142,21 +152,25 @@ private struct OverviewEgressRowContent: View {
 
     private func expandedDrawer(for report: EgressProbeReport) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            // 3 inset identity cards: IP (with Hide/Show), ASN/Type, Purity
-            HStack(alignment: .top, spacing: AetherVisual.s2) {
+            // Adaptive inset identity cards: IP (with Hide/Show), ASN/Type, Purity
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 155), spacing: AetherVisual.s2)],
+                alignment: .leading,
+                spacing: AetherVisual.s2
+            ) {
                 ipInsetCard(identity: report.identity)
                 asnInsetCard(identity: report.identity)
                 purityInsetCard(identity: report.identity)
             }
 
-            // 2 compact 4-column grids: AI & Streaming
+            // Adaptive compact grids: AI & Streaming
             serviceGridSection(
-                title: AppLocalization.inline("AI Services", chinese: "AI 服务"),
+                title: AppLocalization.string("AI Services"),
                 results: report.aiServices
             )
 
             serviceGridSection(
-                title: AppLocalization.inline("Streaming", chinese: "流媒体"),
+                title: AppLocalization.string("Streaming"),
                 results: report.streamingServices
             )
 
@@ -170,10 +184,7 @@ private struct OverviewEgressRowContent: View {
                     .foregroundStyle(AetherVisual.tertiaryText)
                     .accessibilityHidden(true)
                 Text(
-                    AppLocalization.inline(
-                        "Runs only when you tap Check. Never probed in the background.",
-                        chinese: "仅在手动点击检测时发起请求，绝不后台静默探测。"
-                    )
+                    AppLocalization.string("Runs only when you tap Check. Never probed in the background.")
                 )
                 .font(.caption)
                 .foregroundStyle(AetherVisual.tertiaryText)
@@ -194,7 +205,7 @@ private struct OverviewEgressRowContent: View {
     private func ipInsetCard(identity: EgressIdentity?) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             HStack(spacing: AetherVisual.s1) {
-                Text(AppLocalization.inline("Egress IP", chinese: "出口 IP"))
+                Text(AppLocalization.string("Egress IP"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer(minLength: AetherVisual.s1)
@@ -202,20 +213,18 @@ private struct OverviewEgressRowContent: View {
                     Button {
                         revealsFullIP.toggle()
                     } label: {
-                        Image(systemName: revealsFullIP ? "eye.slash" : "eye")
-                            .font(.caption)
-                            .foregroundStyle(AetherVisual.secondaryText)
+                        AetherRowIconLabel(symbol: revealsFullIP ? "eye.slash" : "eye")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.aetherPressable)
                     .help(
                         revealsFullIP
-                            ? AppLocalization.inline("Hide full IP", chinese: "隐藏完整 IP")
-                            : AppLocalization.inline("Show full IP", chinese: "显示完整 IP")
+                            ? AppLocalization.string("Hide full IP")
+                            : AppLocalization.string("Show full IP")
                     )
                     .accessibilityLabel(
                         revealsFullIP
-                            ? AppLocalization.inline("Hide full IP", chinese: "隐藏完整 IP")
-                            : AppLocalization.inline("Show full IP", chinese: "显示完整 IP")
+                            ? AppLocalization.string("Hide full IP")
+                            : AppLocalization.string("Show full IP")
                     )
                     .accessibilityIdentifier("overview-egress-ip-visibility")
                 }
@@ -231,12 +240,12 @@ private struct OverviewEgressRowContent: View {
 
             let locationText: String = {
                 guard let identity else {
-                    return AppLocalization.inline("Unavailable", chinese: "未获取")
+                    return AppLocalization.string("Not fetched")
                 }
                 let place = [identity.countryName ?? identity.countryCode, identity.city]
                     .compactMap { $0 }
                     .joined(separator: " · ")
-                return place.isEmpty ? identity.flag : "\(identity.flag) \(place)"
+                return place.isEmpty ? (identity.countryCode ?? AppLocalization.string("Not fetched")) : place
             }()
             Text(verbatim: locationText)
                 .font(.caption)
@@ -259,7 +268,7 @@ private struct OverviewEgressRowContent: View {
     private func asnInsetCard(identity: EgressIdentity?) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s1) {
             HStack(spacing: AetherVisual.s1) {
-                Text(AppLocalization.inline("ASN & Type", chinese: "ASN 与类型"))
+                Text(AppLocalization.string("ASN & Type"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer(minLength: AetherVisual.s1)
@@ -274,7 +283,7 @@ private struct OverviewEgressRowContent: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            Text(verbatim: identity?.organization ?? AppLocalization.inline("Unknown network", chinese: "未知运营商"))
+            Text(verbatim: identity?.organization ?? AppLocalization.string("Unknown network"))
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .lineLimit(1)
@@ -297,7 +306,7 @@ private struct OverviewEgressRowContent: View {
         let tint = purityTint(purity?.level)
         return VStack(alignment: .leading, spacing: AetherVisual.s1) {
             HStack(spacing: AetherVisual.s1) {
-                Text(AppLocalization.inline("IP Purity", chinese: "IP 纯净度"))
+                Text(AppLocalization.string("IP Purity"))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer(minLength: AetherVisual.s1)
@@ -342,10 +351,7 @@ private struct OverviewEgressRowContent: View {
         title: String,
         results: [EgressServiceProbeResult]
     ) -> some View {
-        let columns = Array(
-            repeating: GridItem(.flexible(), spacing: AetherVisual.s2),
-            count: 4
-        )
+        let columns = [GridItem(.adaptive(minimum: 118), spacing: AetherVisual.s2)]
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(title)
                 .font(.caption.weight(.semibold))
@@ -389,6 +395,8 @@ private struct OverviewEgressRowContent: View {
             RoundedRectangle(cornerRadius: AetherVisual.insetRadius, style: .continuous)
                 .strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
         }
+        .help(Text(verbatim: "\(item.service.displayName) · \(serviceSubtitle(for: item))"))
+        .accessibilityElement(children: .combine)
     }
 
     private func aiRestrictedCallout(identity: EgressIdentity?) -> some View {
@@ -399,10 +407,7 @@ private struct OverviewEgressRowContent: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                 Text(
-                    AppLocalization.inline(
-                        "AI services appear restricted on this exit",
-                        chinese: "当前出口对 AI 服务受限"
-                    )
+                    AppLocalization.string("AI services appear restricted on this exit")
                 )
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
@@ -418,21 +423,14 @@ private struct OverviewEgressRowContent: View {
                     object: AppSection.rules.rawValue
                 )
             } label: {
-                Text(AppLocalization.inline("AI Routing Rules", chinese: "配置 AI 分流规则"))
+                Text(AppLocalization.string("AI Routing Rules"))
             }
             .aetherButton()
             .controlSize(.small)
             .accessibilityIdentifier("overview-egress-open-rules")
         }
         .padding(AetherVisual.s3)
-        .background(
-            AetherVisual.tintWash(.orange),
-            in: RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: AetherVisual.cardRadius, style: .continuous)
-                .strokeBorder(AetherVisual.tintBorder(.orange), lineWidth: 0.5)
-        }
+        .aetherCallout(tint: .orange)
         .accessibilityIdentifier("overview-egress-ai-restricted-callout")
     }
 
@@ -444,10 +442,10 @@ private struct OverviewEgressRowContent: View {
         case .unknown: .secondary
         }
         let label: String = switch ipType {
-        case .residential: AppLocalization.inline("Residential", chinese: "住宅")
-        case .isp: AppLocalization.inline("ISP", chinese: "宽带")
-        case .datacenter: AppLocalization.inline("Datacenter", chinese: "机房")
-        case .unknown: AppLocalization.inline("Unknown", chinese: "未知")
+        case .residential: AppLocalization.string("Residential")
+        case .isp: AppLocalization.string("ISP")
+        case .datacenter: AppLocalization.string("Datacenter")
+        case .unknown: AppLocalization.string("Unknown")
         }
         return Text(label)
             .font(.caption2.weight(.semibold))
@@ -471,22 +469,22 @@ private struct OverviewEgressRowContent: View {
 
     private func purityLevelLabel(_ level: EgressPurityLevel) -> String {
         switch level {
-        case .clean: return AppLocalization.inline("Clean", chinese: "纯净")
-        case .moderate: return AppLocalization.inline("Moderate", chinese: "一般")
-        case .elevated: return AppLocalization.inline("Elevated", chinese: "风险偏高")
+        case .clean: return AppLocalization.string("Clean")
+        case .moderate: return AppLocalization.string("Moderate")
+        case .elevated: return AppLocalization.string("Elevated")
         }
     }
 
     private func puritySummary(for level: EgressPurityLevel?) -> String {
         switch level {
         case .clean:
-            return AppLocalization.inline("Low captcha & block risk", chinese: "低验证码与风控风险")
+            return AppLocalization.string("Low captcha & block risk")
         case .moderate:
-            return AppLocalization.inline("Shared cloud / datacenter IP", chinese: "共享机房 IP，偶发验证")
+            return AppLocalization.string("Shared cloud / datacenter IP")
         case .elevated:
-            return AppLocalization.inline("High block or challenge risk", chinese: "风控较高，建议切换节点")
+            return AppLocalization.string("High block or challenge risk")
         case nil:
-            return AppLocalization.inline("Not assessed", chinese: "暂无评估")
+            return AppLocalization.string("Not assessed")
         }
     }
 
@@ -514,38 +512,38 @@ private struct OverviewEgressRowContent: View {
             if let ms = item.latencyMilliseconds {
                 return "\(ms) ms"
             }
-            return AppLocalization.inline("Available", chinese: "可用")
+            return AppLocalization.string("Available")
         case .limited(let detail):
             if let detail {
                 return localizedDetail(detail)
             }
-            return AppLocalization.inline("Limited", chinese: "受限")
+            return AppLocalization.string("Limited")
         case .unavailable(let detail):
             if let detail {
                 return localizedDetail(detail)
             }
-            return AppLocalization.inline("Unavailable", chinese: "不可用")
+            return AppLocalization.string("Unavailable")
         case .unknown:
-            return AppLocalization.inline("Unknown", chinese: "未知")
+            return AppLocalization.string("Unknown")
         }
     }
 
     private func localizedDetail(_ detail: String) -> String {
         switch detail {
         case "Full":
-            return AppLocalization.inline("Full", chinese: "全解锁")
+            return AppLocalization.string("Full")
         case "Originals only":
-            return AppLocalization.inline("Originals only", chinese: "仅自制剧")
+            return AppLocalization.string("Originals only")
         case "No Premium":
-            return AppLocalization.inline("No Premium", chinese: "无会员区")
+            return AppLocalization.string("No Premium")
         case "Region blocked":
-            return AppLocalization.inline("Region blocked", chinese: "地区不支持")
+            return AppLocalization.string("Region blocked")
         case "Blocked":
-            return AppLocalization.inline("Blocked", chinese: "已拦截")
+            return AppLocalization.string("Blocked")
         case "Challenge":
-            return AppLocalization.inline("Challenge", chinese: "需验证")
+            return AppLocalization.string("Challenge")
         case "Rate limited":
-            return AppLocalization.inline("Rate limited", chinese: "频率受限")
+            return AppLocalization.string("Rate limited")
         default:
             return detail
         }
@@ -554,16 +552,10 @@ private struct OverviewEgressRowContent: View {
     private func aiRestrictedDetail(identity: EgressIdentity?) -> String {
         if let code = identity?.countryCode, EgressProbeReport.aiRestrictedCountryCodes.contains(code) {
             return String(
-                format: AppLocalization.inline(
-                    "Exit region (%@) is commonly restricted by AI providers. Route AI traffic to a US/JP/SG node in Rules.",
-                    chinese: "当前出口地区（%@）通常受 AI 服务商限制，建议在规则页将 AI 流量分流至美/日/新节点。"
-                ),
+                format: AppLocalization.string("Exit region (%@) is commonly restricted by AI providers. Route AI traffic to a US/JP/SG node in Rules."),
                 code
             )
         }
-        return AppLocalization.inline(
-            "Multiple AI services are unreachable from this exit. Consider routing AI domains to another node in Rules.",
-            chinese: "当前出口有多项 AI 服务不可用，建议在规则页为 AI 域名配置专用分流节点。"
-        )
+        return AppLocalization.string("Multiple AI services are unreachable from this exit. Consider routing AI domains to another node in Rules.")
     }
 }

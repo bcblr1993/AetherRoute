@@ -263,8 +263,8 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
             let isFakeIP = Self.isFakeIPAddress(addr.sin_addr.s_addr)
             let status: DiagnosticStageStatus = (isFakeIP || !ipString.isEmpty) ? .passed : .warning
             let detail = isFakeIP
-                ? "\(ipString) · Fake-IP (\(String(format: "%.1f ms", latencyMs)))"
-                : "\(ipString) · Direct (\(String(format: "%.1f ms", latencyMs)))"
+                ? AppLocalization.format("%@ · Fake-IP (%.1f ms)", ipString, latencyMs)
+                : AppLocalization.format("%@ · Direct (%.1f ms)", ipString, latencyMs)
 
             return DNSDiagnosticResult(
                 domain: domain,
@@ -290,7 +290,7 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
                 httpCode: nil,
                 latencyMs: 0,
                 status: .failed,
-                detail: "Invalid URL"
+                detail: AppLocalization.string("Invalid URL")
             )
         }
 
@@ -340,7 +340,7 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
                 tlsMs: nil,
                 totalMs: 0,
                 status: .failed,
-                detail: "Invalid URL"
+                detail: AppLocalization.string("Invalid URL")
             )
         }
 
@@ -380,11 +380,11 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
                 ? (isDegraded ? .warning : .passed)
                 : .failed
 
-            var detailParts: [String] = ["HTTP \(statusCode)"]
+            var detailParts: [String] = [AppLocalization.format("HTTP %lld", Int64(statusCode))]
             if let tls = tlsMs {
-                detailParts.append("TLS \(String(format: "%.0f ms", tls))")
+                detailParts.append(AppLocalization.format("TLS %.0f ms", tls))
             }
-            detailParts.append("Total \(String(format: "%.0f ms", totalMs))")
+            detailParts.append(AppLocalization.format("Total %.0f ms", totalMs))
 
             return ProxyDiagnosticResult(
                 targetURL: targetURL,
@@ -945,7 +945,8 @@ struct SupportDiagnosticsView: View {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, AetherVisual.sMicro)

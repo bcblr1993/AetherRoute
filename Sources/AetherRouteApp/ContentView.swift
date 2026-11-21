@@ -192,10 +192,7 @@ struct ContentView: View {
             selectSection(section)
         }
         .alert(
-            AppLocalization.inline(
-                "Confirm External URL Command",
-                chinese: "确认外部 URL 控制操作"
-            ),
+            AppLocalization.string("Confirm External URL Command"),
             isPresented: Binding(
                 get: { tunnel.pendingControlURLRequest != nil },
                 set: { presented in
@@ -206,7 +203,7 @@ struct ContentView: View {
             ),
             presenting: tunnel.pendingControlURLRequest
         ) { _ in
-            Button(AppLocalization.inline("Allow", chinese: "允许")) {
+            Button(AppLocalization.string("Allow")) {
                 tunnel.confirmPendingControlURLAction()
             }
             Button(AppLocalization.string("Cancel"), role: .cancel) {
@@ -214,9 +211,9 @@ struct ContentView: View {
             }
         } message: { pending in
             Text(
-                AppLocalization.inline(
-                    "An external link (\(pending.url.host ?? "aetherroute")) requested changing your connection state without an automation token. Allow this action?",
-                    chinese: "外部链接（\(pending.url.host ?? "aetherroute")）未携带自动化令牌，正在请求变更您的连接或配置状态，是否允许执行？"
+                AppLocalization.format(
+                    "An external link (%@) requested changing your connection state without an automation token. Allow this action?",
+                    pending.url.host ?? "aetherroute"
                 )
             )
         }
@@ -239,6 +236,7 @@ struct ContentView: View {
         }
         .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: isCommandPalettePresented)
         .onReceive(NotificationCenter.default.publisher(for: .aetherRouteToggleCommandPalette)) { _ in
+            guard tunnel.hasAcceptedPrivacyDisclosure else { return }
             isCommandPalettePresented.toggle()
         }
         .sheet(
@@ -1012,13 +1010,10 @@ private struct OverviewView: View {
                                 isEngineSetupPresented = true
                             } label: {
                                 Text(
-                                    AppLocalization.inline(
-                                        "Open Network Setup…",
-                                        chinese: "打开网络引导…"
-                                    )
+                                    AppLocalization.string("Open Network Setup…")
                                 )
                             }
-                            .buttonStyle(.aetherGlassCapsule)
+                            .aetherButton()
                             .controlSize(.small)
                             .accessibilityIdentifier("overview-engine-message-open-setup")
                         }
@@ -1060,10 +1055,7 @@ private struct ActiveOutlet: Equatable {
             : tunnel.routingMode
         switch mode {
         case .direct:
-            let directTitle = aetherBilingualText(
-                en: "Direct outbound (no proxy)",
-                zhHans: "直连出站（不经代理）"
-            )
+            let directTitle = AppLocalization.string("Direct outbound (no proxy)")
             groupName = "DIRECT"
             node = directTitle
             resolvedNode = directTitle
@@ -1245,7 +1237,7 @@ private struct ConnectionHero: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-hero")
         .animation(
-            effectiveReduceMotion ? nil : .smooth(duration: 0.34),
+            effectiveReduceMotion ? nil : AetherVisual.panelSpring,
             value: tunnel.state
         )
     }
@@ -1886,10 +1878,7 @@ private struct OverviewExitRow: View {
             .accessibilityHint(
                 drawerGroup == nil
                     ? AppLocalization.string("Opens Proxies to change the node")
-                    : AppLocalization.inline(
-                        "Expands node list to switch the exit node",
-                        chinese: "展开节点列表直接切换出口节点"
-                    )
+                    : AppLocalization.string("Expands node list to switch the exit node")
             )
             .accessibilityIdentifier("overview-active-outlet")
 
@@ -1946,10 +1935,7 @@ private struct OverviewExitRow: View {
                         .foregroundStyle(AetherVisual.secondaryText)
                         .accessibilityHidden(true)
                     Text(
-                        AppLocalization.inline(
-                            "Direct mode routes all traffic without a proxy. Selected node takes effect in Rule or Global mode.",
-                            chinese: "当前为直连模式，流量不经代理；所选节点将在规则或全局模式下生效。"
-                        )
+                        AppLocalization.string("Direct mode routes all traffic without a proxy. Selected node takes effect in Rule or Global mode.")
                     )
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
@@ -1960,13 +1946,10 @@ private struct OverviewExitRow: View {
                         Task { await tunnel.setRoutingMode(.rule) }
                     } label: {
                         Text(
-                            AppLocalization.inline(
-                                "Switch to Rule Mode",
-                                chinese: "切换为规则模式"
-                            )
+                            AppLocalization.string("Switch to Rule Mode")
                         )
                     }
-                    .buttonStyle(.aetherGlassCapsule)
+                    .aetherButton()
                     .controlSize(.small)
                     .accessibilityIdentifier("overview-outlet-switch-to-rule")
                 }
@@ -2005,14 +1988,14 @@ private struct OverviewExitRow: View {
                         )
                     } label: {
                         HStack(spacing: AetherVisual.sMicro) {
-                            Text(AppLocalization.inline("Open Proxies", chinese: "打开代理页"))
+                            Text(AppLocalization.string("Open Proxies"))
                             Image(systemName: "arrow.up.right")
                                 .font(.caption2.weight(.semibold))
                                 .accessibilityHidden(true)
                         }
                         .lineLimit(1)
                     }
-                    .buttonStyle(.aetherGlassCapsule)
+                    .aetherButton()
                     .controlSize(.small)
                     .accessibilityIdentifier("overview-outlet-open-proxies")
                 }
@@ -2020,10 +2003,7 @@ private struct OverviewExitRow: View {
 
             if showsFastestNote {
                 Text(
-                    AppLocalization.inline(
-                        "Auto-fastest active · click any node to switch to manual",
-                        chinese: "当前自动选最快 · 点击任意节点自动切回手动"
-                    )
+                    AppLocalization.string("Auto-fastest active · click any node to switch to manual")
                 )
                 .font(.caption2)
                 .foregroundStyle(AetherVisual.secondaryText)
@@ -2273,7 +2253,7 @@ private struct OverviewExitRow: View {
                     isWorking: isTestingGroup
                 )
             }
-            .buttonStyle(.aetherGlassCapsule)
+            .aetherButton()
             .controlSize(.small)
             .disabled(isTestingGroup)
             .accessibilityIdentifier("overview-outlet-latency")
@@ -2370,7 +2350,7 @@ private struct OverviewModeRows: View {
             usesShortTitles: true
         )
         .fixedSize()
-        .frame(minWidth: 200, alignment: .trailing)
+        .frame(minWidth: 240, alignment: .trailing)
     }
 #endif
 }
@@ -2681,6 +2661,8 @@ private struct LiveTelemetryMetricValue: View {
             Text(parts.number)
                 .font(.largeTitle.weight(.semibold))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .foregroundStyle(isConnected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(AetherVisual.secondaryText))
                 .aetherLiveValue()
             if let unit = parts.unit {
@@ -2921,29 +2903,55 @@ private struct TrafficCard: View {
                 // sample and must not observe TunnelManager itself.
                 TrafficStatisticsButton()
             }
-            HStack(alignment: .bottom, spacing: usesStackedLayout ? AetherVisual.s4 : AetherVisual.s6) {
-                LiveTelemetryMetric(
-                    label: AppLocalization.string("Download"),
-                    dot: .cyan,
-                    metric: .download,
-                    isConnected: isConnected,
-                    telemetry: telemetry
-                )
-                LiveTelemetryMetric(
-                    label: AppLocalization.string("Upload"),
-                    dot: .purple,
-                    metric: .upload,
-                    isConnected: isConnected,
-                    telemetry: telemetry
-                )
-                LiveTelemetryMetric(
-                    label: AppLocalization.string("Active connections"),
-                    dot: nil,
-                    metric: .connections,
-                    isConnected: isConnected,
-                    telemetry: telemetry
-                )
-                Spacer(minLength: 0)
+            if usesStackedLayout {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    LiveTelemetryMetric(
+                        label: AppLocalization.string("Download"),
+                        dot: .cyan,
+                        metric: .download,
+                        isConnected: isConnected,
+                        telemetry: telemetry
+                    )
+                    LiveTelemetryMetric(
+                        label: AppLocalization.string("Upload"),
+                        dot: .purple,
+                        metric: .upload,
+                        isConnected: isConnected,
+                        telemetry: telemetry
+                    )
+                    LiveTelemetryMetric(
+                        label: AppLocalization.string("Active connections"),
+                        dot: nil,
+                        metric: .connections,
+                        isConnected: isConnected,
+                        telemetry: telemetry
+                    )
+                }
+            } else {
+                HStack(alignment: .bottom, spacing: AetherVisual.s6) {
+                    LiveTelemetryMetric(
+                        label: AppLocalization.string("Download"),
+                        dot: .cyan,
+                        metric: .download,
+                        isConnected: isConnected,
+                        telemetry: telemetry
+                    )
+                    LiveTelemetryMetric(
+                        label: AppLocalization.string("Upload"),
+                        dot: .purple,
+                        metric: .upload,
+                        isConnected: isConnected,
+                        telemetry: telemetry
+                    )
+                    LiveTelemetryMetric(
+                        label: AppLocalization.string("Active connections"),
+                        dot: nil,
+                        metric: .connections,
+                        isConnected: isConnected,
+                        telemetry: telemetry
+                    )
+                    Spacer(minLength: 0)
+                }
             }
             if isConnected {
                 LiveTrafficHistoryGraph(model: telemetry, isRealtime: isRealtime, isBackground: isBackground)
@@ -3046,6 +3054,7 @@ private struct LiveTrafficHistoryGraphFrozen: View {
 }
 
 private struct LiveTrafficHistoryGraphActive: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var model: NetworkTelemetryViewModel
     let isRealtime: Bool
     let isBackground: Bool
@@ -3078,7 +3087,7 @@ private struct LiveTrafficHistoryGraphActive: View {
             TimelineView(
                 .animation(
                     minimumInterval: Self.frameInterval,
-                    paused: !isRealtime || !model.history.hasActiveTraffic
+                    paused: reduceMotion || !isRealtime || !model.history.hasActiveTraffic
                 )
             ) { context in
                 let now = windowEnd(at: context.date, lastSample: lastSample)

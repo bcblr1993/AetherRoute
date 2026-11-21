@@ -25,6 +25,10 @@ enum AppLocalization {
         }
     }
 
+    static var currentLocale: Locale {
+        lock.withLock { cachedLocale }
+    }
+
     static func string(_ value: String.LocalizationValue) -> String {
         let (locale, bundle) = lock.withLock {
             (cachedLocale, localizationBundle)

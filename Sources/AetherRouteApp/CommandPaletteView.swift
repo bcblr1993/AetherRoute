@@ -42,128 +42,54 @@ struct CommandPaletteItem: Identifiable {
 struct CommandPaletteView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let navigate: (AppSection) -> Void
     let dismiss: () -> Void
 
     @State private var query = ""
     @State private var selection = 0
+    @State private var lastKeyboardNavigationAt = Date.distantPast
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         let results = filteredItems
-        VStack(spacing: 0) {
-            HStack(spacing: AetherVisual.s3) {
-                Image(systemName: "magnifyingglass")
-                    .font(.title3)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .accessibilityHidden(true)
-                TextField(AppLocalization.string("Search actions, pages and nodes"), text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.title3)
-                    .focused($isSearchFocused)
-                    .onSubmit { run(results) }
-                    .accessibilityIdentifier("command-palette-field")
-            }
-            .padding(AetherVisual.s4)
-
-            Divider()
-
-            if results.isEmpty {
-                Text(AppLocalization.string("No matching commands"))
-                    .font(.callout)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .padding(AetherVisual.s6)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                            ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
-                                if index == 0 || results[index - 1].kind != item.kind {
-                                    sectionTitle(item.kind)
-                                        .padding(.top, sectionGap(before: index))
-                                }
-                                CommandPaletteRow(item: item, isSelected: index == selection)
-                                    .id(item.id)
-                                    .onTapGesture {
-                                        selection = index
-                                        run(results)
-                                    }
-                                    .onHover { if $0 { selection = index } }
-                            }
-                        }
-                        .padding(AetherVisual.s2)
-                    }
-                    .frame(maxHeight: 360)
-                    .onChange(of: selection) { _, newValue in
-                        guard results.indices.contains(newValue) else { return }
-                        withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
-                            proxy.scrollTo(results[newValue].id)
-                        }
-                    }
-                }
-            }
-
-            Divider()
-
-            HStack(spacing: AetherVisual.s4) {
-                shortcutHint("↑↓", AppLocalization.string("Select"))
-                shortcutHint("↩", AppLocalization.string("Run"))
-                shortcutHint("esc", AppLocalization.string("Close"))
-                Spacer()
-            }
-            .font(.caption)
-            .foregroundStyle(AetherVisual.secondaryText)
-            .padding(.horizontal, AetherVisual.s4)
-            .padding(.vertical, AetherVisual.s2)
+        CommandPaletteContentView(
+            results: results,
+            query: $query,
+            selection: $selection,
+            lastKeyboardNavigationAt: $lastKeyboardNavigationAt,
+            isSearchFocused: $isSearchFocused,
+            reduceTransparency: reduceTransparency,
+            runSelected: { run(results) },
+            runItem: { index in
+                selection = index
+                run(results)
+            },
+            dismiss: dismiss
+        )
+        .onAppear {
+            isSearchFocused = true
+            clampAndSkipDisabledSelection(in: results)
         }
-        .frame(width: 560)
-        // A floating panel over the page, so it keeps Liquid Glass; page
-        // content uses the plain card surface (`aetherPanel`).
-        .aetherGlass(in: RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous))
-        .onAppear { isSearchFocused = true }
-        .onChange(of: query) { _, _ in selection = 0 }
-        .onKeyPress(.downArrow) {
-            selection = min(selection + 1, max(results.count - 1, 0))
-            return .handled
+        .onChange(of: query) { _, _ in
+            selection = firstEnabledIndex(in: filteredItems)
         }
-        .onKeyPress(.upArrow) {
-            selection = max(selection - 1, 0)
-            return .handled
+        .onChange(of: results.count) { _, _ in
+            clampAndSkipDisabledSelection(in: results)
         }
-        .onKeyPress(.escape) {
-            dismiss()
-            return .handled
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("command-palette")
     }
 
-    private func sectionTitle(_ kind: CommandPaletteItem.Kind) -> some View {
-        let title: String = switch kind {
-        case .action: AppLocalization.string("Actions")
-        case .node: AppLocalization.string("Nodes")
-        case .page: AppLocalization.string("Pages")
+    private func firstEnabledIndex(in results: [CommandPaletteItem]) -> Int {
+        results.firstIndex(where: \.isEnabled) ?? 0
+    }
+
+    private func clampAndSkipDisabledSelection(in results: [CommandPaletteItem]) {
+        guard !results.isEmpty else {
+            selection = 0
+            return
         }
-        return Text(title)
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(AetherVisual.secondaryText)
-        .padding(.horizontal, AetherVisual.s2)
-        .padding(.vertical, AetherVisual.s1)
-    }
-
-    /// No gap above the first section; one step between later sections.
-    private func sectionGap(before index: Int) -> CGFloat {
-        index == 0 ? .zero : AetherVisual.s2
-    }
-
-    private func shortcutHint(_ key: String, _ title: String) -> some View {
-        HStack(spacing: AetherVisual.s1) {
-            Text(verbatim: key)
-                .font(.caption.monospaced())
-                .padding(.horizontal, AetherVisual.s1)
-                .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
-            Text(title)
+        if !results.indices.contains(selection) || !results[selection].isEnabled {
+            selection = firstEnabledIndex(in: results)
         }
     }
 
@@ -342,5 +268,165 @@ private struct CommandPaletteRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : [.isButton])
+    }
+}
+
+private struct CommandPaletteContentView: View {
+    let results: [CommandPaletteItem]
+    @Binding var query: String
+    @Binding var selection: Int
+    @Binding var lastKeyboardNavigationAt: Date
+    var isSearchFocused: FocusState<Bool>.Binding
+    let reduceTransparency: Bool
+    let runSelected: () -> Void
+    let runItem: (Int) -> Void
+    let dismiss: () -> Void
+
+    private static let hoverSuppressionWindow: TimeInterval = 0.15
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
+        VStack(spacing: 0) {
+            HStack(spacing: AetherVisual.s3) {
+                Image(systemName: "magnifyingglass")
+                    .font(.title3)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .accessibilityHidden(true)
+                TextField(AppLocalization.string("Search actions, pages and nodes"), text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                    .focused(isSearchFocused)
+                    .onSubmit(runSelected)
+                    .accessibilityIdentifier("command-palette-field")
+            }
+            .padding(AetherVisual.s4)
+
+            Divider()
+
+            if results.isEmpty {
+                Text(AppLocalization.string("No matching commands"))
+                    .font(.callout)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .padding(AetherVisual.s6)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                            ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
+                                if index == 0 || results[index - 1].kind != item.kind {
+                                    sectionTitle(item.kind)
+                                        .padding(.top, sectionGap(before: index))
+                                }
+                                Button {
+                                    runItem(index)
+                                } label: {
+                                    CommandPaletteRow(item: item, isSelected: index == selection)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!item.isEnabled)
+                                .id(item.id)
+                                .onHover { hovering in
+                                    guard hovering,
+                                          item.isEnabled,
+                                          Date().timeIntervalSince(lastKeyboardNavigationAt) > Self.hoverSuppressionWindow
+                                    else {
+                                        return
+                                    }
+                                    selection = index
+                                }
+                            }
+                        }
+                        .padding(AetherVisual.s2)
+                    }
+                    .frame(maxHeight: 320)
+                    .onChange(of: selection) { _, newValue in
+                        guard results.indices.contains(newValue) else { return }
+                        withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                            proxy.scrollTo(results[newValue].id)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: AetherVisual.s4) {
+                shortcutHint("↑↓", AppLocalization.string("Select"))
+                shortcutHint("↩", AppLocalization.string("Run"))
+                shortcutHint("esc", AppLocalization.string("Close"))
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(AetherVisual.secondaryText)
+            .padding(.horizontal, AetherVisual.s4)
+            .padding(.vertical, AetherVisual.s2)
+        }
+        .frame(maxWidth: 560)
+        .background {
+            if reduceTransparency {
+                shape.fill(Color(nsColor: .windowBackgroundColor))
+            } else {
+                Color.clear
+                    .aetherGlass(in: shape)
+            }
+        }
+        .overlay {
+            shape.strokeBorder(AetherVisual.panelStroke, lineWidth: 1)
+        }
+        .onKeyPress(.downArrow) {
+            moveSelection(step: 1)
+            return .handled
+        }
+        .onKeyPress(.upArrow) {
+            moveSelection(step: -1)
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            dismiss()
+            return .handled
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("command-palette")
+    }
+
+    private func moveSelection(step: Int) {
+        guard !results.isEmpty else { return }
+        lastKeyboardNavigationAt = Date()
+        var candidate = selection + step
+        while results.indices.contains(candidate) {
+            if results[candidate].isEnabled {
+                selection = candidate
+                return
+            }
+            candidate += step
+        }
+    }
+
+    private func sectionTitle(_ kind: CommandPaletteItem.Kind) -> some View {
+        let title: String = switch kind {
+        case .action: AppLocalization.string("Actions")
+        case .node: AppLocalization.string("Nodes")
+        case .page: AppLocalization.string("Pages")
+        }
+        return Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(AetherVisual.secondaryText)
+            .padding(.horizontal, AetherVisual.s2)
+            .padding(.vertical, AetherVisual.s1)
+    }
+
+    private func sectionGap(before index: Int) -> CGFloat {
+        index == 0 ? .zero : AetherVisual.s2
+    }
+
+    private func shortcutHint(_ key: String, _ title: String) -> some View {
+        HStack(spacing: AetherVisual.s1) {
+            Text(verbatim: key)
+                .font(.caption.monospaced())
+                .padding(.horizontal, AetherVisual.s1)
+                .background(AetherVisual.neutralFill, in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius))
+            Text(title)
+        }
     }
 }

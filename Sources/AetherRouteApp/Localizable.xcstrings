@@ -31,6 +31,23 @@
         }
       }
     },
+    "%@ (Fallback)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ (Fallback)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@（已回退）"
+          }
+        }
+      }
+    },
     "%@ (not in this profile)": {
       "extractionState": "manual",
       "localizations": {
@@ -184,12 +201,63 @@
         }
       }
     },
+    "%@ · Direct (%.1f ms)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Direct (%.1f ms)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 直连（%.1f ms）"
+          }
+        }
+      }
+    },
+    "%@ · Fake-IP (%.1f ms)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Fake-IP (%.1f ms)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Fake-IP（%.1f ms）"
+          }
+        }
+      }
+    },
     "%@ · Manual": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ · 手动"
+          }
+        }
+      }
+    },
+    "%lld active · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld active · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已启用 %lld 项 · %@"
           }
         }
       }
@@ -617,6 +685,23 @@
         }
       }
     },
+    "100 ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100 ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100 毫秒"
+          }
+        }
+      }
+    },
     "12 hours": {
       "localizations": {
         "en": {
@@ -633,12 +718,80 @@
         }
       }
     },
+    "120s": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "120s"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "120 秒"
+          }
+        }
+      }
+    },
+    "150 ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "150 ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "150 毫秒"
+          }
+        }
+      }
+    },
+    "1800s": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1800s"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1800 秒"
+          }
+        }
+      }
+    },
     "2. Scroll to the bottom and tap Configure Proxy › Manual.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "2. 滑动到最底部，点击【配置代理】并选择【手动】。"
+          }
+        }
+      }
+    },
+    "20 ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "20 ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "20 毫秒"
           }
         }
       }
@@ -690,6 +843,40 @@
         }
       }
     },
+    "300s": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "300s"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "300 秒"
+          }
+        }
+      }
+    },
+    "50 ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "50 ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "50 毫秒"
+          }
+        }
+      }
+    },
     "6 hours": {
       "localizations": {
         "en": {
@@ -702,6 +889,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "6 小时"
+          }
+        }
+      }
+    },
+    "600s": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "600s"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "600 秒"
           }
         }
       }
@@ -729,6 +933,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "72 小时"
+          }
+        }
+      }
+    },
+    ": ": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ": "
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "："
           }
         }
       }
@@ -876,6 +1097,176 @@
         }
       }
     },
+    "AI": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 可用"
+          }
+        }
+      }
+    },
+    "AI Available": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 可用"
+          }
+        }
+      }
+    },
+    "AI Developer Suite": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Developer Suite"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 开发者套件"
+          }
+        }
+      }
+    },
+    "AI Limited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Limited"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 受限"
+          }
+        }
+      }
+    },
+    "AI Routing Rules": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Routing Rules"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置 AI 分流规则"
+          }
+        }
+      }
+    },
+    "AI Services": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Services"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务"
+          }
+        }
+      }
+    },
+    "AI services appear restricted on this exit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI services appear restricted on this exit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前出口对 AI 服务受限"
+          }
+        }
+      }
+    },
+    "AI services available: %lld/%lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI services available: %lld/%lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务可用：%lld/%lld"
+          }
+        }
+      }
+    },
+    "ASN & Type": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASN & Type"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASN 与类型"
+          }
+        }
+      }
+    },
+    "ASN rule syntax verified; evaluated at runtime against ASN.mmdb.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASN rule syntax verified; evaluated at runtime against ASN.mmdb."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ASN 规则语法校验通过；运行时将基于 ASN.mmdb 自动匹配。"
+          }
+        }
+      }
+    },
     "About": {
       "localizations": {
         "zh-Hans": {
@@ -1010,6 +1401,23 @@
         }
       }
     },
+    "Active (127.0.0.1:%@ / :%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active (127.0.0.1:%@ / :%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已生效（127.0.0.1:%@ / :%@）"
+          }
+        }
+      }
+    },
     "Active connections": {
       "localizations": {
         "zh-Hans": {
@@ -1030,12 +1438,63 @@
         }
       }
     },
+    "Ad & Tracker Blocking": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ad & Tracker Blocking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "广告与遥测拦截"
+          }
+        }
+      }
+    },
+    "Ad networks, DoubleClick & telemetry domains": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ad networks, DoubleClick & telemetry domains"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常见广告联盟、DoubleClick 与追踪遥测域名"
+          }
+        }
+      }
+    },
     "Add": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "添加"
+          }
+        }
+      }
+    },
+    "Add %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 %@"
           }
         }
       }
@@ -1784,6 +2243,23 @@
         }
       }
     },
+    "Allow control URL scheme (aetherroute://)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow control URL scheme (aetherroute://)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许通过 URL Scheme 控制（aetherroute://）"
+          }
+        }
+      }
+    },
     "Allow the configurations": {
       "extractionState": "manual",
       "localizations": {
@@ -1896,6 +2372,23 @@
         }
       }
     },
+    "An external link (%@) requested changing your connection state without an automation token. Allow this action?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An external link (%@) requested changing your connection state without an automation token. Allow this action?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外部链接（%@）未携带自动化令牌，正在请求变更您的连接或配置状态，是否允许执行？"
+          }
+        }
+      }
+    },
     "Android & other devices": {
       "localizations": {
         "zh-Hans": {
@@ -1992,6 +2485,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "应用 %@"
+          }
+        }
+      }
+    },
+    "App & Custom": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App & Custom"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用与自定义"
           }
         }
       }
@@ -2126,6 +2636,23 @@
         }
       }
     },
+    "Applied automatically before per-profile overrides across all profiles.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applied automatically before per-profile overrides across all profiles."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对所有配置生效，在单配置覆写之前应用（单配置同名项优先）。"
+          }
+        }
+      }
+    },
     "Applies at once, also to the running network extension.": {
       "extractionState": "manual",
       "localizations": {
@@ -2133,6 +2660,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "立即生效，正在运行的网络扩展也会同步使用新级别。"
+          }
+        }
+      }
+    },
+    "Apply": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
           }
         }
       }
@@ -2213,6 +2757,23 @@
         }
       }
     },
+    "Auto Latency (url-test)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto Latency (url-test)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动测速 (url-test)"
+          }
+        }
+      }
+    },
     "Auto Update": {
       "localizations": {
         "zh-Hans": {
@@ -2229,6 +2790,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动优选最低延迟"
+          }
+        }
+      }
+    },
+    "Auto-fastest active · click any node to switch to manual": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-fastest active · click any node to switch to manual"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前自动选最快 · 点击任意节点自动切回手动"
           }
         }
       }
@@ -2350,6 +2928,23 @@
         }
       }
     },
+    "Available": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可用"
+          }
+        }
+      }
+    },
     "Available after this Mac restarts.": {
       "extractionState": "manual",
       "localizations": {
@@ -2367,6 +2962,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "连接后可检查"
+          }
+        }
+      }
+    },
+    "Avg RTT": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avg RTT"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "平均延迟"
           }
         }
       }
@@ -2398,6 +3010,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "备用中"
+          }
+        }
+      }
+    },
+    "Balance strategy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Balance strategy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "均衡策略"
           }
         }
       }
@@ -2438,6 +3067,57 @@
         }
       }
     },
+    "Block QUIC (UDP 443)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Block QUIC (UDP 443)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "屏蔽 QUIC (UDP 443)"
+          }
+        }
+      }
+    },
+    "Blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拦截"
+          }
+        }
+      }
+    },
+    "Blocked / Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked / Failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拦截/失败"
+          }
+        }
+      }
+    },
     "Bootstrap": {
       "localizations": {
         "zh-Hans": {
@@ -2474,6 +3154,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "构建号"
+          }
+        }
+      }
+    },
+    "Build %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "构建 %@"
           }
         }
       }
@@ -2670,6 +3367,23 @@
         }
       }
     },
+    "CLI Processes & Binaries": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI Processes & Binaries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令行进程与可执行文件"
+          }
+        }
+      }
+    },
     "CPU": {
       "localizations": {
         "zh-Hans": {
@@ -2788,6 +3502,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "链式代理…"
+          }
+        }
+      }
+    },
+    "Challenge": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Challenge"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需验证"
           }
         }
       }
@@ -3013,6 +3744,23 @@
         }
       }
     },
+    "China domains, private LAN CIDRs & CN GeoIP direct": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "China domains, private LAN CIDRs & CN GeoIP direct"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "国内域名、私有局域网与国内 GeoIP 直连不绕路"
+          }
+        }
+      }
+    },
     "Choose Allow when macOS asks to add the AetherRoute configuration.": {
       "extractionState": "manual",
       "localizations": {
@@ -3020,6 +3768,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "macOS 询问是否添加 AetherRoute 配置时，请选择“允许”。"
+          }
+        }
+      }
+    },
+    "Choose Binary Executable…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Binary Executable…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择可执行文件…"
           }
         }
       }
@@ -3212,6 +3977,23 @@
         }
       }
     },
+    "Clean": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clean"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "纯净"
+          }
+        }
+      }
+    },
     "Clear": {
       "extractionState": "manual",
       "localizations": {
@@ -3219,6 +4001,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除"
+          }
+        }
+      }
+    },
+    "Clear DNS Cache": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear DNS Cache"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清空 DNS 缓存"
           }
         }
       }
@@ -3251,6 +4050,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "清除命令已复制。"
+          }
+        }
+      }
+    },
+    "Cleared DNS query history and Fake-IP reverse cache.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleared DNS query history and Fake-IP reverse cache."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清空应用内 DNS 查询记录与 Fake-IP 反查缓存。"
+          }
+        }
+      }
+    },
+    "Cleared DNS query history and Fake-IP reverse cache; refreshed live session without reconnecting.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cleared DNS query history and Fake-IP reverse cache; refreshed live session without reconnecting."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清空应用内 DNS 查询记录与 Fake-IP 反查缓存，并无感刷新当前会话。"
           }
         }
       }
@@ -3415,6 +4248,40 @@
         }
       }
     },
+    "Collapse Egress & AI availability": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse Egress & AI availability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起出口与 AI 可用性详情"
+          }
+        }
+      }
+    },
+    "Collapse Route Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collapse Route Details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起路径详情"
+          }
+        }
+      }
+    },
     "Collapsed": {
       "localizations": {
         "zh-Hans": {
@@ -3432,6 +4299,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在收集流量数据…"
+          }
+        }
+      }
+    },
+    "Combine nodes from multiple profiles to build cross-subscription chains and unified routing.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Combine nodes from multiple profiles to build cross-subscription chains and unified routing."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将多个订阅的节点合并为统一配置，可跨订阅配置链式代理与自动策略组。"
           }
         }
       }
@@ -3467,12 +4351,63 @@
         }
       }
     },
+    "Configure": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配置"
+          }
+        }
+      }
+    },
     "Configured": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "已配置"
+          }
+        }
+      }
+    },
+    "Configures macOS HTTP, HTTPS, and SOCKS5 System Proxy (127.0.0.1) across active network services and restores prior settings automatically on disconnect or quit. Works standalone or alongside TUN / Transparent Proxy.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configures macOS HTTP, HTTPS, and SOCKS5 System Proxy (127.0.0.1) across active network services and restores prior settings automatically on disconnect or quit. Works standalone or alongside TUN / Transparent Proxy."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动将活跃网卡的 macOS HTTP/HTTPS/SOCKS5 系统代理指向 127.0.0.1，并在断开连接或退出应用时自动恢复原有设置；支持独立本地代理模式或与 TUN / 透明代理配合使用。"
+          }
+        }
+      }
+    },
+    "Confirm External URL Command": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm External URL Command"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认外部 URL 控制操作"
           }
         }
       }
@@ -3771,6 +4706,23 @@
         }
       }
     },
+    "Consistent Hashing": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consistent Hashing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一致性哈希 (consistent-hashing)"
+          }
+        }
+      }
+    },
     "Continue": {
       "extractionState": "manual",
       "localizations": {
@@ -3805,6 +4757,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "后台继续下载"
+          }
+        }
+      }
+    },
+    "Control URL actions are disabled. Enable them in Settings > Automation.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Control URL actions are disabled. Enable them in Settings > Automation."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL Scheme 控制已关闭，请先在「设置 > 自动化」中开启。"
           }
         }
       }
@@ -3953,6 +4922,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "复制终端代理清除命令"
+          }
+        }
+      }
+    },
+    "Copy Token": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Token"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制令牌"
           }
         }
       }
@@ -4124,6 +5110,23 @@
         }
       }
     },
+    "Create Merged Profile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create Merged Profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建组合订阅"
+          }
+        }
+      }
+    },
     "Create Profile": {
       "localizations": {
         "zh-Hans": {
@@ -4150,6 +5153,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "创建 AetherRoute 原生配置，无需依赖其他客户端的配置格式。"
+          }
+        }
+      }
+    },
+    "Created and activated merged profile.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Created and activated merged profile."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已创建并启用组合订阅。"
           }
         }
       }
@@ -4192,6 +5212,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前"
+          }
+        }
+      }
+    },
+    "Current connection kept. Allow %@ extension in System Settings before switching.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current connection kept. Allow %@ extension in System Settings before switching."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保持当前连接。请先在系统设置中允许 %@ 系统扩展后再切换。"
+          }
+        }
+      }
+    },
+    "Current connection kept. Install and allow %@ extension in Network Setup before switching.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current connection kept. Install and allow %@ extension in Network Setup before switching."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保持当前连接。请先在网络引导中安装并授权 %@ 系统扩展后再切换。"
+          }
+        }
+      }
+    },
+    "Current connection kept. Restart your Mac to finish %@ extension update before switching.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current connection kept. Restart your Mac to finish %@ extension update before switching."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保持当前连接。请先重启 Mac 以完成 %@ 扩展更新后再切换。"
           }
         }
       }
@@ -4362,6 +5433,23 @@
         }
       }
     },
+    "Customize HTTPS mirror URLs for Country.mmdb, GeoSite.dat, and ASN.mmdb": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Customize HTTPS mirror URLs for Country.mmdb, GeoSite.dat, and ASN.mmdb"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自定义 Country.mmdb、GeoSite.dat 与 ASN.mmdb 的 HTTPS 镜像地址"
+          }
+        }
+      }
+    },
     "Customized": {
       "localizations": {
         "zh-Hans": {
@@ -4372,12 +5460,46 @@
         }
       }
     },
+    "DIRECT (Bypass)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DIRECT (Bypass)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直连 (DIRECT)"
+          }
+        }
+      }
+    },
     "DNS": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "DNS"
+          }
+        }
+      }
+    },
+    "DNS %lld ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS %lld ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DNS 耗时 %lld ms"
           }
         }
       }
@@ -4540,6 +5662,40 @@
         }
       }
     },
+    "Database Mirrors & ASN.mmdb": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Database Mirrors & ASN.mmdb"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由数据库与 ASN.mmdb 镜像源"
+          }
+        }
+      }
+    },
+    "Datacenter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datacenter"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "机房"
+          }
+        }
+      }
+    },
     "Deactivate This Mac": {
       "localizations": {
         "zh-Hans": {
@@ -4557,6 +5713,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "解密失败：请确认这台 Mac 登录了同一 Apple ID 并开启了 iCloud 钥匙串。"
+          }
+        }
+      }
+    },
+    "Deduplicate identical server & port": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deduplicate identical server & port"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按服务器与端口去重"
           }
         }
       }
@@ -4658,6 +5831,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看详情"
+          }
+        }
+      }
+    },
+    "Developer Accelerator": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Developer Accelerator"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开发者加速包"
           }
         }
       }
@@ -4862,6 +6052,23 @@
         }
       }
     },
+    "Direct mode routes all traffic without a proxy. Selected node takes effect in Rule or Global mode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct mode routes all traffic without a proxy. Selected node takes effect in Rule or Global mode."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前为直连模式，流量不经代理；所选节点将在规则或全局模式下生效。"
+          }
+        }
+      }
+    },
     "Direct outbound (no proxy)": {
       "extractionState": "manual",
       "localizations": {
@@ -5062,12 +6269,63 @@
         }
       }
     },
+    "Domain (e.g. nas.local)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domain (e.g. nas.local)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "域名 (如 nas.local)"
+          }
+        }
+      }
+    },
     "Domain (e.g. nas.local, *.dev.internal)": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "域名（例如 nas.local、*.dev.internal）"
+          }
+        }
+      }
+    },
+    "Domain or IP (e.g. api.openai.com)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domain or IP (e.g. api.openai.com)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "域名或 IP（如 api.openai.com）"
+          }
+        }
+      }
+    },
+    "Domestic & LAN Direct": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Domestic & LAN Direct"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "国内与局域网零绕路"
           }
         }
       }
@@ -5447,12 +6705,63 @@
         }
       }
     },
+    "Egress & AI availability": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Egress & AI availability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口与 AI 可用性"
+          }
+        }
+      }
+    },
+    "Egress IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Egress IP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出口 IP"
+          }
+        }
+      }
+    },
     "Elapsed": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "延迟"
+          }
+        }
+      }
+    },
+    "Elevated": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elevated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "风险偏高"
           }
         }
       }
@@ -5646,6 +6955,40 @@
         }
       }
     },
+    "Engine: TUN": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Engine: TUN"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换引擎：TUN"
+          }
+        }
+      }
+    },
+    "Engine: Transparent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Engine: Transparent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换引擎：透明代理"
+          }
+        }
+      }
+    },
     "Engines": {
       "localizations": {
         "zh-Hans": {
@@ -5662,6 +7005,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "增强模式"
+          }
+        }
+      }
+    },
+    "Enter a domain or Fake-IP (198.18.x.x) to inspect DNS and reverse lookup": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a domain or Fake-IP (198.18.x.x) to inspect DNS and reverse lookup"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入域名或 Fake-IP（198.18.x.x）查询解析结果与反查映射"
           }
         }
       }
@@ -5724,6 +7084,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "请输入有效的 HTTPS 订阅地址，地址中不能包含内嵌凭据或片段。"
+          }
+        }
+      }
+    },
+    "Enter a valid domain name (such as example.com) or Fake-IP (198.18.x.x) to inspect DNS resolution.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a valid domain name (such as example.com) or Fake-IP (198.18.x.x) to inspect DNS resolution."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入有效域名（如 example.com）或 Fake-IP（198.18.x.x）以查询 DNS 解析。"
           }
         }
       }
@@ -5906,12 +7283,80 @@
         }
       }
     },
+    "Exit region (%@) is commonly restricted by AI providers. Route AI traffic to a US/JP/SG node in Rules.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exit region (%@) is commonly restricted by AI providers. Route AI traffic to a US/JP/SG node in Rules."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前出口地区（%@）通常受 AI 服务商限制，建议在规则页将 AI 流量分流至美/日/新节点。"
+          }
+        }
+      }
+    },
+    "Expand Egress & AI availability": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand Egress & AI availability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开出口与 AI 可用性详情"
+          }
+        }
+      }
+    },
+    "Expand Route Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expand Route Details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开路径详情"
+          }
+        }
+      }
+    },
     "Expanded": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "已展开"
+          }
+        }
+      }
+    },
+    "Expands node list to switch the exit node": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expands node list to switch the exit node"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开节点列表直接切换出口节点"
           }
         }
       }
@@ -5987,12 +7432,46 @@
         }
       }
     },
+    "External Providers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External Providers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "外部规则与代理集合"
+          }
+        }
+      }
+    },
     "External node": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "外部落地节点"
+          }
+        }
+      }
+    },
+    "External rule and proxy providers staged.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "External rule and proxy providers staged."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已刷新并暂存外部规则集与代理集合。"
           }
         }
       }
@@ -6040,6 +7519,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fake-IP"
+          }
+        }
+      }
+    },
+    "Fake-IP Pool": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fake-IP Pool"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fake-IP 地址段"
+          }
+        }
+      }
+    },
+    "Fake-IP Reverse": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fake-IP Reverse"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fake-IP 反查"
           }
         }
       }
@@ -6131,6 +7644,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "按去向筛选"
+          }
+        }
+      }
+    },
+    "Filter process name or path…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter process name or path…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索进程名或可执行路径…"
           }
         }
       }
@@ -6392,6 +7922,23 @@
         }
       }
     },
+    "Full": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全解锁"
+          }
+        }
+      }
+    },
     "Full Release Notes": {
       "localizations": {
         "en": {
@@ -6480,12 +8027,97 @@
         }
       }
     },
+    "GitHub, Docker, GHCR, npm, PyPI, crates.io & Homebrew": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub, Docker, GHCR, npm, PyPI, crates.io & Homebrew"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub、Docker、GHCR、npm、PyPI、crates.io 与 Homebrew"
+          }
+        }
+      }
+    },
     "Global": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "全局"
+          }
+        }
+      }
+    },
+    "Global Custom Groups": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global Custom Groups"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局自定义策略组"
+          }
+        }
+      }
+    },
+    "Global Custom Hosts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global Custom Hosts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局自定义 Hosts"
+          }
+        }
+      }
+    },
+    "Global Override Template": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global Override Template"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局覆写模板"
+          }
+        }
+      }
+    },
+    "Global Override…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global Override…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局覆写模板…"
           }
         }
       }
@@ -6506,6 +8138,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "全局模式下不按规则匹配，所有流量都走代理。"
+          }
+        }
+      }
+    },
+    "Global override template saved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Global override template saved."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存全局覆写模板。"
           }
         }
       }
@@ -6605,6 +8254,40 @@
         }
       }
     },
+    "Group name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分组名称"
+          }
+        }
+      }
+    },
+    "Group type": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Group type"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分组类型"
+          }
+        }
+      }
+    },
     "Groups": {
       "localizations": {
         "zh-Hans": {
@@ -6655,6 +8338,23 @@
         }
       }
     },
+    "HTTP %lld": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP %lld"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP %lld"
+          }
+        }
+      }
+    },
     "HTTP CONNECT uses TCP. Enable TLS above for HTTPS CONNECT.": {
       "localizations": {
         "zh-Hans": {
@@ -6697,6 +8397,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "HTTPS 地址"
+          }
+        }
+      }
+    },
+    "HTTPS database URL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS database URL"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTPS 数据库下载地址"
           }
         }
       }
@@ -6798,6 +8515,57 @@
         }
       }
     },
+    "Hidden Node Keywords (comma-separated)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hidden Node Keywords (comma-separated)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全局隐藏节点关键词（逗号分隔）"
+          }
+        }
+      }
+    },
+    "Hide": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起"
+          }
+        }
+      }
+    },
+    "Hide Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起详情"
+          }
+        }
+      }
+    },
     "Hide Dock icon": {
       "localizations": {
         "zh-Hans": {
@@ -6814,6 +8582,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "隐藏节点…"
+          }
+        }
+      }
+    },
+    "Hide details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起详情"
+          }
+        }
+      }
+    },
+    "Hide full IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide full IP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏完整 IP"
           }
         }
       }
@@ -6835,6 +8637,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "隐藏超时节点"
+          }
+        }
+      }
+    },
+    "High block or challenge risk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High block or challenge risk"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "风控较高，建议切换节点"
           }
         }
       }
@@ -6926,6 +8745,23 @@
         }
       }
     },
+    "Hosts: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hosts: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hosts 映射：%@"
+          }
+        }
+      }
+    },
     "Hosts: %@ -> %@": {
       "localizations": {
         "en": {
@@ -6983,6 +8819,40 @@
         }
       }
     },
+    "IP Purity": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP Purity"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP 纯净度"
+          }
+        }
+      }
+    },
+    "IP address": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP address"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "IP 地址"
+          }
+        }
+      }
+    },
     "IP-CIDR": {
       "localizations": {
         "en": {
@@ -7015,6 +8885,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "IPv6 响应"
+          }
+        }
+      }
+    },
+    "ISP": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ISP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "宽带"
           }
         }
       }
@@ -7421,6 +9308,23 @@
         }
       }
     },
+    "Include keywords": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Include keywords"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配关键词"
+          }
+        }
+      }
+    },
     "Included": {
       "localizations": {
         "zh-Hans": {
@@ -7583,6 +9487,40 @@
         }
       }
     },
+    "Invalid URL": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid URL"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无效的 URL"
+          }
+        }
+      }
+    },
+    "Invalid control URL token.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid control URL token."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL Scheme 控制令牌无效。"
+          }
+        }
+      }
+    },
     "Invalid simulated destination address.": {
       "localizations": {
         "zh-Hans": {
@@ -7599,6 +9537,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "无效 · 连接前需要替换"
+          }
+        }
+      }
+    },
+    "Jitter": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jitter"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "抖动"
+          }
+        }
+      }
+    },
+    "Jitter: ±%lld ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jitter: ±%lld ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "抖动: ±%lld ms"
           }
         }
       }
@@ -7699,6 +9671,23 @@
         }
       }
     },
+    "LAN shared proxy will start automatically when connected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LAN shared proxy will start automatically when connected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局域网共享代理将在连接成功后自动开启。"
+          }
+        }
+      }
+    },
     "Landing source": {
       "localizations": {
         "zh-Hans": {
@@ -7795,6 +9784,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "延迟"
+          }
+        }
+      }
+    },
+    "Latency history, jitter & packet loss": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latency history, jitter & packet loss"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "延迟趋势、抖动与丢包率"
           }
         }
       }
@@ -8024,6 +10030,23 @@
         }
       }
     },
+    "Limited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limited"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受限"
+          }
+        }
+      }
+    },
     "Links are parsed on this Mac; AetherRoute does not contact any of the servers until you connect.": {
       "extractionState": "manual",
       "localizations": {
@@ -8078,6 +10101,23 @@
         }
       }
     },
+    "Live Engine": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Engine"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时引擎"
+          }
+        }
+      }
+    },
     "Live connection telemetry and route decision path.": {
       "extractionState": "manual",
       "localizations": {
@@ -8116,6 +10156,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "实时流量"
+          }
+        }
+      }
+    },
+    "Load Balance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load Balance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "负载均衡 (load-balance)"
           }
         }
       }
@@ -8217,6 +10274,23 @@
         }
       }
     },
+    "Local proxy port %@ is already in use or failed to bind (%@). System Proxy has been rolled back.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local proxy port %@ is already in use or failed to bind (%@). System Proxy has been rolled back."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地代理端口 %@ 已被占用或启动失败（%@），已自动回滚系统代理。"
+          }
+        }
+      }
+    },
     "Locate": {
       "localizations": {
         "zh-Hans": {
@@ -8303,6 +10377,40 @@
         }
       }
     },
+    "Loss: %lld%%": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loss: %lld%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢包率: %lld%%"
+          }
+        }
+      }
+    },
+    "Low captcha & block risk": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Low captcha & block risk"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "低验证码与风控风险"
+          }
+        }
+      }
+    },
     "Magic Wand": {
       "localizations": {
         "zh-Hans": {
@@ -8345,6 +10453,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "手动"
+          }
+        }
+      }
+    },
+    "Manual Select": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual Select"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动选择"
           }
         }
       }
@@ -8416,6 +10541,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "匹配内容"
+          }
+        }
+      }
+    },
+    "Match by": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Match by"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匹配方式"
           }
         }
       }
@@ -8521,6 +10663,40 @@
         }
       }
     },
+    "Merge Profiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge Profiles"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建组合订阅"
+          }
+        }
+      }
+    },
+    "Merge Profiles…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merge Profiles…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "组合订阅…"
+          }
+        }
+      }
+    },
     "Merged and synced both ways with iCloud (%lld profiles).": {
       "extractionState": "manual",
       "localizations": {
@@ -8528,6 +10704,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已与 iCloud 合并并双向同步（%lld 个配置）。"
+          }
+        }
+      }
+    },
+    "Merged profile preview is unavailable in review mode.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Merged profile preview is unavailable in review mode."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预览模式下不支持创建组合订阅。"
           }
         }
       }
@@ -8545,6 +10738,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "混合代理（HTTP 与 SOCKS5）"
+          }
+        }
+      }
+    },
+    "Moderate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moderate"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一般"
           }
         }
       }
@@ -8648,6 +10858,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "多协议支持"
+          }
+        }
+      }
+    },
+    "Multiple AI services are unreachable from this exit. Consider routing AI domains to another node in Rules.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Multiple AI services are unreachable from this exit. Consider routing AI domains to another node in Rules."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前出口有多项 AI 服务不可用，建议在规则页为 AI 域名配置专用分流节点。"
           }
         }
       }
@@ -9041,6 +11268,23 @@
         }
       }
     },
+    "No Premium": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Premium"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无会员区"
+          }
+        }
+      }
+    },
     "No Profiles Added": {
       "localizations": {
         "zh-Hans": {
@@ -9244,6 +11488,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未能匹配模拟目标，请检查规则配置。"
+          }
+        }
+      }
+    },
+    "No matching CLI processes found.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No matching CLI processes found."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到匹配的命令行进程。"
           }
         }
       }
@@ -9484,6 +11745,40 @@
         }
       }
     },
+    "No queries match the selected filter.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No queries match the selected filter."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前筛选条件下暂无匹配的 DNS 查询记录。"
+          }
+        }
+      }
+    },
+    "No recent DNS queries recorded yet. Resolve a domain above or open active connections to populate this bounded 64-entry log.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No recent DNS queries recorded yet. Resolve a domain above or open active connections to populate this bounded 64-entry log."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无最近 DNS 查询记录。在上方执行域名查询或产生活跃连接后，这里会自动记录最近 64 条查询。"
+          }
+        }
+      }
+    },
     "No recently closed connections": {
       "extractionState": "manual",
       "localizations": {
@@ -9531,6 +11826,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有匹配的规则。换个筛选条件，或清空搜索。"
+          }
+        }
+      }
+    },
+    "No staged providers yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No staged providers yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未暂存外部集合"
           }
         }
       }
@@ -9759,6 +12071,23 @@
         }
       }
     },
+    "Not assessed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not assessed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无评估"
+          }
+        }
+      }
+    },
     "Not checked yet": {
       "localizations": {
         "zh-Hans": {
@@ -9775,6 +12104,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未连接"
+          }
+        }
+      }
+    },
+    "Not fetched": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not fetched"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未获取"
           }
         }
       }
@@ -10086,6 +12432,23 @@
         }
       }
     },
+    "Offline presets · 0 active": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline presets · 0 active"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "内置离线预设 · 已启用 0 项"
+          }
+        }
+      }
+    },
     "On": {
       "localizations": {
         "zh-Hans": {
@@ -10108,6 +12471,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "本机处理"
+          }
+        }
+      }
+    },
+    "On-demand check": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-demand check"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按需检测"
           }
         }
       }
@@ -10288,6 +12668,40 @@
         }
       }
     },
+    "Open Network Setup…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Network Setup…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开网络引导…"
+          }
+        }
+      }
+    },
+    "Open Proxies": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Proxies"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开代理页"
+          }
+        }
+      }
+    },
     "Open System Settings": {
       "localizations": {
         "zh-Hans": {
@@ -10340,6 +12754,23 @@
         }
       }
     },
+    "OpenAI, Anthropic, Gemini, Cursor, Perplexity & Claude": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI, Anthropic, Gemini, Cursor, Perplexity & Claude"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenAI、Anthropic、Gemini、Cursor、Perplexity 与 Claude"
+          }
+        }
+      }
+    },
     "OpenSSH private key loaded": {
       "localizations": {
         "zh-Hans": {
@@ -10366,6 +12797,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "选项 %@ 暂不支持"
+          }
+        }
+      }
+    },
+    "Optional HTTPS .sha256sum URL (defaults to <URL>.sha256sum)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional HTTPS .sha256sum URL (defaults to <URL>.sha256sum)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选 HTTPS .sha256sum 校验地址（默认追加 .sha256sum）"
+          }
+        }
+      }
+    },
+    "Optional IP override (for IP-ASN / IP-CIDR)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional IP override (for IP-ASN / IP-CIDR)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选目标 IP（用于测试 IP-ASN / IP-CIDR）"
+          }
+        }
+      }
+    },
+    "Optional process path (e.g. /usr/bin/curl)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional process path (e.g. /usr/bin/curl)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选进程路径（如 /usr/bin/curl）"
           }
         }
       }
@@ -10408,6 +12890,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "原创设计与原生 macOS 开发"
+          }
+        }
+      }
+    },
+    "Originals only": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originals only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅自制剧"
           }
         }
       }
@@ -10491,6 +12990,23 @@
         }
       }
     },
+    "Outbound:": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outbound:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出站链路："
+          }
+        }
+      }
+    },
     "Outlet": {
       "localizations": {
         "zh-Hans": {
@@ -10567,6 +13083,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已复制 PAC 脚本。"
+          }
+        }
+      }
+    },
+    "Packet Loss": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packet Loss"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "丢包率"
           }
         }
       }
@@ -10828,6 +13361,23 @@
         }
       }
     },
+    "Pick Running CLI Process…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick Running CLI Process…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择正在运行的命令行进程…"
+          }
+        }
+      }
+    },
     "Pick at most %lld nodes.": {
       "localizations": {
         "zh-Hans": {
@@ -10988,6 +13538,23 @@
         }
       }
     },
+    "Prefix node names with source profile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prefix node names with source profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "节点名称前添加来源前缀"
+          }
+        }
+      }
+    },
     "Preparing": {
       "localizations": {
         "zh-Hans": {
@@ -11122,6 +13689,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "主要解析"
+          }
+        }
+      }
+    },
+    "Primary (%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primary (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主代理（%@）"
+          }
+        }
+      }
+    },
+    "Primary Proxy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primary Proxy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主代理"
           }
         }
       }
@@ -11286,6 +13887,23 @@
         }
       }
     },
+    "Probe interval": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probe interval"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "探测间隔"
+          }
+        }
+      }
+    },
     "Probing domestic high-speed connectivity endpoint...": {
       "localizations": {
         "en": {
@@ -11298,6 +13916,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在探测国内连接检测端点…"
+          }
+        }
+      }
+    },
+    "Process rules match the originating local binary or process name at connection time.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Process rules match the originating local binary or process name at connection time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进程规则会在发起连接时按本地进程名或可执行文件路径实时匹配。"
           }
         }
       }
@@ -11504,6 +14139,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "配置已自动切换，无需手动断开。"
+          }
+        }
+      }
+    },
+    "Profile: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换配置：%@"
           }
         }
       }
@@ -11807,6 +14459,23 @@
         }
       }
     },
+    "Proxy provider · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proxy provider · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理集合 · %@"
+          }
+        }
+      }
+    },
     "Proxy rules: %lld": {
       "localizations": {
         "zh-Hans": {
@@ -11882,6 +14551,23 @@
         }
       }
     },
+    "QUIC Blocked (UDP 443)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QUIC Blocked (UDP 443)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已屏蔽 QUIC (UDP 443)"
+          }
+        }
+      }
+    },
     "Quick rule actions": {
       "localizations": {
         "en": {
@@ -11938,12 +14624,46 @@
         }
       }
     },
+    "REJECT (Block)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "REJECT (Block)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拦截 (REJECT)"
+          }
+        }
+      }
+    },
     "Rabbit": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "兔子"
+          }
+        }
+      }
+    },
+    "Rate limited": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rate limited"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "频率受限"
           }
         }
       }
@@ -12015,6 +14735,23 @@
         }
       }
     },
+    "Ready (applies automatically when active)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready (applies automatically when active)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已就绪（连接或独立模式启用时自动接管）"
+          }
+        }
+      }
+    },
     "Real-time inspection of tunnel adapter, Fake-IP DNS, and outbound TLS path.": {
       "localizations": {
         "en": {
@@ -12031,6 +14768,57 @@
         }
       }
     },
+    "Rebuild Merged Profile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rebuild Merged Profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新合并源订阅"
+          }
+        }
+      }
+    },
+    "Rebuilt merged profile from source subscriptions.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rebuilt merged profile from source subscriptions."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已根据源订阅重新合并节点。"
+          }
+        }
+      }
+    },
+    "Recent DNS Queries": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent DNS Queries"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近 DNS 查询"
+          }
+        }
+      }
+    },
     "Recently closed": {
       "extractionState": "manual",
       "localizations": {
@@ -12038,6 +14826,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "最近关闭"
+          }
+        }
+      }
+    },
+    "Recheck": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recheck"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新检测"
           }
         }
       }
@@ -12074,6 +14879,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "重新连接"
+          }
+        }
+      }
+    },
+    "Reconnect TUN so its loopback listener starts on the configured ports.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect TUN so its loopback listener starts on the configured ports."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先断开并重连 TUN，以启用本地回环代理端口。"
           }
         }
       }
@@ -12189,9 +15011,21 @@
     "Referenced by %lld rules": {
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Referenced by %lld rules"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Referenced by %lld rule"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Referenced by %lld rules"
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
@@ -12223,6 +15057,23 @@
         }
       }
     },
+    "Refresh Providers": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh Providers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新外部集合"
+          }
+        }
+      }
+    },
     "Refresh: every 10 seconds": {
       "extractionState": "manual",
       "localizations": {
@@ -12241,6 +15092,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "刷新间隔：3 秒"
+          }
+        }
+      }
+    },
+    "Regenerate Token": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regenerate Token"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置令牌"
+          }
+        }
+      }
+    },
+    "Regex syntax verified; evaluated against each requested hostname at connection time.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regex syntax verified; evaluated against each requested hostname at connection time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正则表达式语法校验通过；连接时将按请求域名实时匹配。"
+          }
+        }
+      }
+    },
+    "Region blocked": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Region blocked"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地区不支持"
           }
         }
       }
@@ -12350,6 +15252,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "稍后提醒"
+          }
+        }
+      }
+    },
+    "Remote rule-providers (.yaml, .txt, .mrs) and proxy-providers will be staged locally for TUN and Transparent Proxy.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote rule-providers (.yaml, .txt, .mrs) and proxy-providers will be staged locally for TUN and Transparent Proxy."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程 rule-providers（含 .mrs 二进制规则集）和 proxy-providers 会暂存到本地并同步供 TUN 与透明代理使用。"
           }
         }
       }
@@ -12505,6 +15424,74 @@
         }
       }
     },
+    "Reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认"
+          }
+        }
+      }
+    },
+    "Reset %@ to the maintained default URL.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset %@ to the maintained default URL."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将 %@ 恢复为默认镜像地址。"
+          }
+        }
+      }
+    },
+    "Reset defaults": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset defaults"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认"
+          }
+        }
+      }
+    },
+    "Residential": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Residential"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "住宅"
+          }
+        }
+      }
+    },
     "Resolution behavior": {
       "localizations": {
         "zh-Hans": {
@@ -12553,6 +15540,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "解析"
+          }
+        }
+      }
+    },
+    "Resolve Domain": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resolve Domain"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正向解析"
           }
         }
       }
@@ -12793,6 +15797,23 @@
         }
       }
     },
+    "Round Robin": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Round Robin"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轮询 (round-robin)"
+          }
+        }
+      }
+    },
     "Route": {
       "extractionState": "manual",
       "localizations": {
@@ -12800,6 +15821,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "路由"
+          }
+        }
+      }
+    },
+    "Route & DNS Simulator": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route & DNS Simulator"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由与 DNS 仿真测试"
+          }
+        }
+      }
+    },
+    "Route Tester": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route Tester"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路由测试"
           }
         }
       }
@@ -13222,6 +16277,23 @@
         }
       }
     },
+    "Rule provider · %@ · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule provider · %@ · %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则集合 · %@ · %@"
+          }
+        }
+      }
+    },
     "Rule providers": {
       "localizations": {
         "zh-Hans": {
@@ -13238,6 +16310,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "规则资源"
+          }
+        }
+      }
+    },
+    "Rule sections": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rule sections"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规则分组"
           }
         }
       }
@@ -13346,6 +16435,23 @@
         }
       }
     },
+    "Running CLI Processes": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running CLI Processes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行的命令行进程"
+          }
+        }
+      }
+    },
     "Running diagnostics…": {
       "extractionState": "manual",
       "localizations": {
@@ -13359,6 +16465,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在诊断…"
+          }
+        }
+      }
+    },
+    "Runs a standalone local HTTP & SOCKS5 proxy on 127.0.0.1 even outside TUN mode. Optionally enable System Proxy above to route macOS apps automatically.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs a standalone local HTTP & SOCKS5 proxy on 127.0.0.1 even outside TUN mode. Optionally enable System Proxy above to route macOS apps automatically."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即使在透明代理或未连接状态下，也可在 127.0.0.1 运行独立本地 HTTP / SOCKS5 代理；勾选上方「设为 macOS 系统代理」可自动接管系统流量。"
+          }
+        }
+      }
+    },
+    "Runs only when you tap Check. Never probed in the background.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs only when you tap Check. Never probed in the background."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在手动点击检测时发起请求，绝不后台静默探测。"
           }
         }
       }
@@ -13473,12 +16613,46 @@
         }
       }
     },
+    "Samples": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Samples"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "采样"
+          }
+        }
+      }
+    },
     "Save": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "保存"
+          }
+        }
+      }
+    },
+    "Save & Download": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save & Download"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存并更新"
           }
         }
       }
@@ -13530,6 +16704,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "扫描屏幕"
+          }
+        }
+      }
+    },
+    "Scenario Rule Presets": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scenario Rule Presets"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "场景规则预设"
           }
         }
       }
@@ -13696,6 +16887,23 @@
         }
       }
     },
+    "Select a running command-line process to create a process routing rule.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select a running command-line process to create a process routing rule."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择正在运行的命令行进程以快速添加进程分流规则。"
+          }
+        }
+      }
+    },
     "Select the icon to display in the macOS menu bar. Outline indicates disconnected, and solid fill indicates connected.": {
       "localizations": {
         "zh-Hans": {
@@ -13839,6 +17047,23 @@
         }
       }
     },
+    "Set as macOS System Proxy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set as macOS System Proxy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为 macOS 系统代理"
+          }
+        }
+      }
+    },
     "Set rule…": {
       "localizations": {
         "en": {
@@ -13892,6 +17117,23 @@
         }
       }
     },
+    "Shared cloud / datacenter IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared cloud / datacenter IP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "共享机房 IP，偶发验证"
+          }
+        }
+      }
+    },
     "Shell environment copied.": {
       "localizations": {
         "zh-Hans": {
@@ -13934,6 +17176,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "AetherRoute 运行时全局快捷键即可生效，无需辅助功能权限。通知完全可选，且不会包含配置名称、地址或流量详情。"
+          }
+        }
+      }
+    },
+    "Show Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show Details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开详情"
           }
         }
       }
@@ -13998,6 +17257,23 @@
         }
       }
     },
+    "Show details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "展开详情"
+          }
+        }
+      }
+    },
     "Show each connection": {
       "localizations": {
         "zh-Hans": {
@@ -14015,6 +17291,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "仅显示前 %lld 条规则"
+          }
+        }
+      }
+    },
+    "Show full IP": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show full IP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示完整 IP"
           }
         }
       }
@@ -14045,6 +17338,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "只看 %@"
+          }
+        }
+      }
+    },
+    "Show only nodes verified as AI-available by an egress check": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show only nodes verified as AI-available by an egress check"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅显示已通过出口检测且支持 AI 服务的节点"
           }
         }
       }
@@ -14199,6 +17509,23 @@
         }
       }
     },
+    "Simulate": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Simulate"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始测试"
+          }
+        }
+      }
+    },
     "Simulated match: %@ -> %@": {
       "localizations": {
         "zh-Hans": {
@@ -14248,6 +17575,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已跳过"
+          }
+        }
+      }
+    },
+    "Smart": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Smart"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能选路 (smart)"
           }
         }
       }
@@ -14356,6 +17700,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "来源"
+          }
+        }
+      }
+    },
+    "Source Profiles": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Source Profiles"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择源配置（至少 2 个）"
           }
         }
       }
@@ -14523,6 +17884,23 @@
         }
       }
     },
+    "Static Fallback": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Static Fallback"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静态回退"
+          }
+        }
+      }
+    },
     "Statistics": {
       "extractionState": "manual",
       "localizations": {
@@ -14604,6 +17982,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "第 2 步 · 配置落地节点（出口）"
+          }
+        }
+      }
+    },
+    "Sticky Session": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sticky Session"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话粘滞 (sticky-session)"
           }
         }
       }
@@ -14730,6 +18125,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "自动测速"
+          }
+        }
+      }
+    },
+    "Streaming": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "流媒体"
           }
         }
       }
@@ -15115,6 +18527,23 @@
         }
       }
     },
+    "Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=... (append ?token=<secret> for silent script execution; links without a token require confirmation).": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=... (append ?token=<secret> for silent script execution; links without a token require confirmation)."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "支持命令：aetherroute://connect、disconnect、toggle、set-mode?mode=rule|global|direct|tun|transparent、switch-profile?name=...（脚本静默调用请附带 ?token=<密钥>，未携带令牌的外部链接将弹窗确认）。"
+          }
+        }
+      }
+    },
     "Supported formats": {
       "localizations": {
         "zh-Hans": {
@@ -15162,6 +18591,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开网络扩展开关"
+          }
+        }
+      }
+    },
+    "Switch profile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换配置"
+          }
+        }
+      }
+    },
+    "Switch to Rule Mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to Rule Mode"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "切换为规则模式"
           }
         }
       }
@@ -15306,12 +18769,63 @@
         }
       }
     },
+    "System Proxy will activate automatically when connected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System Proxy will activate automatically when connected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统代理将在连接成功后自动接管。"
+          }
+        }
+      }
+    },
     "System background downloads": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "系统后台下载"
+          }
+        }
+      }
+    },
+    "System proxy bypass domains": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System proxy bypass domains"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统代理绕过域名 / 网段"
+          }
+        }
+      }
+    },
+    "System proxy status": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System proxy status"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统代理状态"
           }
         }
       }
@@ -15326,12 +18840,46 @@
         }
       }
     },
+    "TCP or UDP": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TCP or UDP"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TCP 或 UDP"
+          }
+        }
+      }
+    },
     "TCP reachability only; not verified through the node": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "仅 TCP 可达性；未经该节点协议验证"
+          }
+        }
+      }
+    },
+    "TLS %.0f ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TLS %.0f ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TLS %.0f ms"
           }
         }
       }
@@ -15503,6 +19051,23 @@
         }
       }
     },
+    "Target policy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target policy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标策略"
+          }
+        }
+      }
+    },
     "Temporary routing rule files could not be cleaned up. Check available disk space and try again.": {
       "extractionState": "manual",
       "localizations": {
@@ -15583,6 +19148,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部测速"
+          }
+        }
+      }
+    },
+    "Test how AetherRoute evaluates a destination across rules, Fake-IP/DNS, and proxy groups. Uses the live engine when connected and falls back to static inspection when disconnected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test how AetherRoute evaluates a destination across rules, Fake-IP/DNS, and proxy groups. Uses the live engine when connected and falls back to static inspection when disconnected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试指定目标的规则命中、DNS / Fake-IP 状态与策略组出站链路；已连接时直接查询运行中核心，未连接时使用静态规则解析。"
           }
         }
       }
@@ -17030,6 +20612,23 @@
         }
       }
     },
+    "This address is in the Fake-IP pool (198.18.0.0/15), but no cached domain mapping was found yet. Run a domain lookup here or inspect active Fake-IP connections to populate the reverse lookup table.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This address is in the Fake-IP pool (198.18.0.0/15), but no cached domain mapping was found yet. Run a domain lookup here or inspect active Fake-IP connections to populate the reverse lookup table."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该地址属于 Fake-IP 地址池（198.18.0.0/15），但应用内反查缓存中暂无对应域名映射。在此执行域名解析或产生活跃 Fake-IP 连接后会自动记录映射。"
+          }
+        }
+      }
+    },
     "This app cannot be used in a rule.": {
       "localizations": {
         "zh-Hans": {
@@ -17235,6 +20834,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "今天"
+          }
+        }
+      }
+    },
+    "Tolerance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tolerance"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "容差阈值"
+          }
+        }
+      }
+    },
+    "Total %.0f ms": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total %.0f ms"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总耗时 %.0f ms"
           }
         }
       }
@@ -17513,6 +21146,23 @@
         }
       }
     },
+    "Transport/composite rule syntax verified; evaluated by the core router on live connections.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transport/composite rule syntax verified; evaluated by the core router on live connections."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "传输层/组合规则语法校验通过；将在实际连接时由核心路由器实时评估。"
+          }
+        }
+      }
+    },
     "Triangle": {
       "localizations": {
         "zh-Hans": {
@@ -17639,6 +21289,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "乌龟"
+          }
+        }
+      }
+    },
+    "Type": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Type"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
           }
         }
       }
@@ -17785,6 +21452,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未知应用"
+          }
+        }
+      }
+    },
+    "Unknown network": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown network"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知运营商"
           }
         }
       }
@@ -18024,6 +21708,23 @@
         }
       }
     },
+    "Updated %@ from the configured mirror.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %@ from the configured mirror."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已从自定义镜像成功更新并校验 %@。"
+          }
+        }
+      }
+    },
     "Updated %lld rule providers": {
       "localizations": {
         "en": {
@@ -18058,6 +21759,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已更新 %lld 个订阅，%lld 个更新失败。"
+          }
+        }
+      }
+    },
+    "Updated subscription “%@”.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated subscription “%@”."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已更新订阅「%@」。"
           }
         }
       }
@@ -18430,6 +22148,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示"
+          }
+        }
+      }
+    },
+    "View Details": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Details"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看详情"
           }
         }
       }
@@ -18948,6 +22683,57 @@
         }
       }
     },
+    "e.g. ((NETWORK,UDP),(DST-PORT,443))": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. ((NETWORK,UDP),(DST-PORT,443))"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 ((NETWORK,UDP),(DST-PORT,443))"
+          }
+        }
+      }
+    },
+    "e.g. *.dev.local or api-?.example.com": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. *.dev.local or api-?.example.com"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 *.dev.local 或 api-?.example.com"
+          }
+        }
+      }
+    },
+    "e.g. /usr/bin/curl": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. /usr/bin/curl"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 /usr/bin/curl"
+          }
+        }
+      }
+    },
     "e.g. 100.64.0.0/10 or 192.168.1.0/24": {
       "extractionState": "manual",
       "localizations": {
@@ -18955,6 +22741,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "例如 100.64.0.0/10 或 192.168.1.0/24"
+          }
+        }
+      }
+    },
+    "e.g. 13335 or AS15169": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. 13335 or AS15169"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 13335 或 AS15169"
           }
         }
       }
@@ -18990,6 +22793,23 @@
         }
       }
     },
+    "e.g. Combined Airports": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. Combined Airports"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：多机场组合"
+          }
+        }
+      }
+    },
     "e.g. DOMAIN-SUFFIX,example.com,DIRECT or IP-CIDR,100.64.0.0/10,DIRECT,no-resolve": {
       "localizations": {
         "zh-Hans": {
@@ -19006,6 +22826,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "例如: 私有网段直连"
+          }
+        }
+      }
+    },
+    "e.g. Expired, Traffic, Reset": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. Expired, Traffic, Reset"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如：过期, 剩余流量, 官网"
           }
         }
       }
@@ -19046,6 +22883,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "例如: Tailscale 内网节点 / 本地私有服务"
+          }
+        }
+      }
+    },
+    "e.g. ^api-\\d{1,3}\\.example\\.com$": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. ^api-\\d{1,3}\\.example\\.com$"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 ^api-\\d{1,3}\\.example\\.com$"
+          }
+        }
+      }
+    },
+    "e.g. curl, ssh or node": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "e.g. curl, ssh or node"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例如 curl、ssh 或 node"
           }
         }
       }
@@ -19217,6 +23088,40 @@
         }
       }
     },
+    "localhost, 127.0.0.1, *.local": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "localhost, 127.0.0.1, *.local"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "localhost, 127.0.0.1, *.local"
+          }
+        }
+      }
+    },
+    "macOS System Proxy is pointing to 127.0.0.1:%@ / :%@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "macOS System Proxy is pointing to 127.0.0.1:%@ / :%@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已接管 macOS 系统代理（127.0.0.1:%@ / :%@）。"
+          }
+        }
+      }
+    },
     "macOS asks whether AetherRoute may add proxy and VPN configurations. Choose Allow for each.": {
       "extractionState": "manual",
       "localizations": {
@@ -19307,6 +23212,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "经由 %@"
+          }
+        }
+      }
+    },
+    "· Build %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Build %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· 构建 %@"
           }
         }
       }

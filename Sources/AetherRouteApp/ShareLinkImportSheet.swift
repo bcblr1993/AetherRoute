@@ -86,6 +86,7 @@ struct ShareLinkImportSheet: View {
     @State private var isImagePickerPresented = false
     @State private var qrMessage: String?
     @State private var isScanningScreen = false
+    @State private var requestsCancel = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
@@ -118,7 +119,7 @@ struct ShareLinkImportSheet: View {
                 .accessibilityLabel(AppLocalization.string("Node links"))
                 .accessibilityIdentifier("share-link-text")
 
-            HStack(spacing: AetherVisual.s2) {
+            AetherFlowLayout(spacing: AetherVisual.s2) {
                 Button(AppLocalization.string("Paste"), systemImage: "doc.on.clipboard") {
                     pasteFromClipboard()
                 }
@@ -142,12 +143,13 @@ struct ShareLinkImportSheet: View {
                 .disabled(isScanningScreen)
                 .help(AppLocalization.string("Reads a QR code shown in another app's window, such as a browser or chat."))
                 .accessibilityIdentifier("share-link-scan-screen")
-                Spacer(minLength: AetherVisual.s2)
-                if let qrMessage {
-                    Text(qrMessage)
-                        .font(.caption)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                }
+            }
+
+            if let qrMessage {
+                Text(qrMessage)
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Text(AppLocalization.string("Links are parsed on this Mac; AetherRoute does not contact any of the servers until you connect."))
@@ -155,11 +157,16 @@ struct ShareLinkImportSheet: View {
                 .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if tunnel.profileMessageIsError, let message = tunnel.profileMessage {
+                AetherInlineMessage(text: message)
+            }
+
             HStack {
                 // Cancel and the primary action share the trailing edge, as in
                 // every macOS sheet.
                 Spacer()
-                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
+                    .aetherButton()
                     .keyboardShortcut(.cancelAction)
                     .disabled(isImporting)
                     .accessibilityIdentifier("share-link-cancel")
@@ -181,13 +188,16 @@ struct ShareLinkImportSheet: View {
                 .disabled(isImporting || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("share-link-import")
             }
-
-            if tunnel.profileMessageIsError, let message = tunnel.profileMessage {
-                AetherInlineMessage(text: message)
-            }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
+        .interactiveDismissDisabled(isImporting)
+        .modifier(DiscardChangesModifier(
+            isDirty: !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            isSaving: isImporting,
+            requested: $requestsCancel
+        ))
         .fileImporter(
             isPresented: $isImagePickerPresented,
             allowedContentTypes: [.image],

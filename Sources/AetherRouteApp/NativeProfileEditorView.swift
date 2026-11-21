@@ -105,21 +105,22 @@ struct NativeProfileEditorSheet: View {
 
                     Spacer(minLength: AetherVisual.s3)
 
-                    Button(AppLocalization.string("Edit"), systemImage: "pencil") {
+                    Button {
                         nodeToEdit = node
+                    } label: {
+                        AetherRowIconLabel(symbol: "pencil", tint: .secondary)
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .help(AppLocalization.string("Edit Node"))
                     .accessibilityLabel(AppLocalization.string("Edit Node"))
 
-                    Button(AppLocalization.string("Remove"), systemImage: "trash", role: .destructive) {
+                    Button(role: .destructive) {
                         removedNode = (index, nodes[index])
                         nodes.remove(at: index)
+                    } label: {
+                        AetherRowIconLabel(symbol: "trash", tint: .red)
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                     .disabled(nodes.count == 1)
                     .help(AppLocalization.string("A native profile must keep at least one node."))
                     .accessibilityLabel(AppLocalization.string("Remove Node"))
@@ -156,6 +157,7 @@ struct NativeProfileEditorSheet: View {
                     nodes.insert(removedNode.node, at: min(removedNode.index, nodes.count))
                     self.removedNode = nil
                 }
+                .aetherButton()
             }
             if let message = tunnel.profileMessage, tunnel.profileMessageIsError {
                 AetherInlineMessage(text: message)
@@ -165,6 +167,7 @@ struct NativeProfileEditorSheet: View {
                 // every macOS sheet.
                 Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
+                    .aetherButton()
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Button {
@@ -194,7 +197,7 @@ struct NativeProfileEditorSheet: View {
                 .accessibilityIdentifier("save-native-profile")
             }
         }
-        .padding(AetherVisual.s5)
+        .padding(AetherVisual.dialogPadding)
     }
 
     private var validationMessage: String? {

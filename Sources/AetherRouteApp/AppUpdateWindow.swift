@@ -662,6 +662,7 @@ enum AppUpdateWindowLayoutGeometry {
 
 private struct AppUpdateWindowView: View {
     @ObservedObject var model: AppUpdateSessionModel
+    var locale: Locale = AppLocalization.currentLocale
 
     var body: some View {
         VStack(spacing: 0) {
@@ -669,13 +670,16 @@ private struct AppUpdateWindowView: View {
             bodySection
                 .padding(.horizontal, AetherVisual.s5)
                 .padding(.bottom, AetherVisual.s4)
-            Divider()
-            footerBar
-                .padding(.horizontal, AetherVisual.s5)
-                .padding(.vertical, AetherVisual.s3)
+            if showsFooterBar {
+                Divider()
+                footerBar
+                    .padding(.horizontal, AetherVisual.s5)
+                    .padding(.vertical, AetherVisual.s3)
+            }
         }
         .frame(width: AppUpdateWindowLayoutGeometry.windowWidth)
         .background(windowBackground)
+        .environment(\.locale, locale)
     }
 
     private var windowBackground: some View {
@@ -724,7 +728,8 @@ private struct AppUpdateWindowView: View {
                         Text(heroTitle)
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(.primary)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         if case .available = model.phase {
                             Text(AppLocalization.string("Recommended"))
@@ -783,7 +788,7 @@ private struct AppUpdateWindowView: View {
                     )
 
                 if let build = model.targetBuild, !build.isEmpty {
-                    Text(verbatim: "· Build \(build)")
+                    Text(AppLocalization.format("· Build %@", build))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1076,13 +1081,22 @@ private struct AppUpdateWindowView: View {
             if item.body.isEmpty {
                 return Text(leadAttr)
             }
-            var bodyAttr = AttributedString("：\(item.body)")
+            var bodyAttr = AttributedString("\(AppLocalization.string(": "))\(item.body)")
             bodyAttr.font = .footnote
             bodyAttr.foregroundColor = .secondary
             leadAttr.append(bodyAttr)
             return Text(leadAttr)
         }
         return Text(item.body).foregroundColor(.secondary)
+    }
+
+    private var showsFooterBar: Bool {
+        switch model.phase {
+        case .extracting, .installing, .idle:
+            return false
+        case .checking, .available, .downloading, .readyToInstall, .upToDate, .error:
+            return true
+        }
     }
 
     private var footerBar: some View {
@@ -1313,7 +1327,12 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
             return window
         }
 
-        let host = NSHostingController(rootView: AppUpdateWindowView(model: model))
+        let host = NSHostingController(
+            rootView: AppUpdateWindowView(
+                model: model,
+                locale: AppLocalization.currentLocale
+            )
+        )
         // Disable AppKit preferredContentSize constraint feedback: fractional SwiftUI
         // heights (such as .5 pt on multi-line release summaries) oscillate against
         // integer NSWindow frame snapping on macOS 27 and crash NSDisplayCycle.
@@ -1342,6 +1361,10 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         let isNew = (window == nil)
         let panel = ensureWindowCreated()
         if !isNew {
+            hostingController?.rootView = AppUpdateWindowView(
+                model: model,
+                locale: AppLocalization.currentLocale
+            )
             scheduleWindowResize()
         }
         if panel.isMiniaturized {

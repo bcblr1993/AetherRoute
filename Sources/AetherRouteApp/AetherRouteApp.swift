@@ -1096,37 +1096,12 @@ private struct MenuBarContent: View {
                         }
                     )
                 )
-                .toggleStyle(.switch)
-                .controlSize(.small)
+                .toggleStyle(MenuPopoverSwitchToggleStyle())
                 .labelsHidden()
                 .accessibilityIdentifier("menu-allow-lan-toggle")
             }
             if tunnel.localProxySettings.allowLAN {
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    HStack(spacing: AetherVisual.s2) {
-                        Image(systemName: "iphone.and.arrow.forward")
-                            .foregroundStyle(.teal)
-                            .font(.callout)
-                        let lanIP = LANProxyServerController.shared.currentLANIP
-                        let port = tunnel.localProxySettings.httpPort
-                        Text(verbatim: "\(lanIP):\(port)")
-                            .font(.callout.monospaced().weight(.semibold))
-                        Spacer()
-                        LanCopyGuideButton(
-                            guideText: tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP)
-                        )
-                    }
-                    Text(AppLocalization.string("Other devices on this Wi-Fi can connect to this proxy."))
-                        .font(.caption2)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                }
-                .padding(.horizontal, AetherVisual.s3)
-                .padding(.vertical, AetherVisual.s2)
-                .background(AetherVisual.tintWash(.teal), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous))
-                .padding(.horizontal, AetherVisual.s2)
-                .padding(.bottom, AetherVisual.s2)
-                .transition(AetherVisual.insertion)
-                .clipped()
+                MenuBarLANAddressBanner(tunnel: tunnel)
             }
 #endif
         }
@@ -1168,10 +1143,7 @@ private struct MenuBarContent: View {
     private var directExitRow: some View {
         HStack(spacing: AetherVisual.s2) {
             AetherIconTile(symbol: "bolt.fill", color: .green, size: Self.rowTileSize)
-            Text(verbatim: aetherBilingualText(
-                en: "Direct outbound (no proxy)",
-                zhHans: "直连出站（不经代理）"
-            ))
+            Text(verbatim: AppLocalization.string("Direct outbound (no proxy)"))
             .font(.body.weight(.medium))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -1481,41 +1453,121 @@ private struct MenuBarContent: View {
     }
 }
 
+private struct MenuPopoverSwitchToggleStyle: ToggleStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            withAnimation(AetherVisual.animation(AetherVisual.switchToggle)) {
+                configuration.isOn.toggle()
+            }
+        } label: {
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(configuration.isOn ? Color.green : AetherVisual.neutralFill)
+                    .frame(width: 32, height: 18)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 14, height: 14)
+                    .padding(AetherVisual.sMicro)
+            }
+            .animation(reduceMotion ? nil : AetherVisual.animation(AetherVisual.switchToggle), value: configuration.isOn)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(
+            configuration.isOn
+                ? AppLocalization.string("On")
+                : AppLocalization.string("Off")
+        )
+    }
+}
+
+private struct MenuBarLANAddressBanner: View {
+    @ObservedObject var tunnel: TunnelManager
+    @ObservedObject private var lanController = LANProxyServerController.shared
+
+    var body: some View {
+        let lanIP = lanController.currentLANIP
+        let port = tunnel.localProxySettings.httpPort
+        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+            HStack(spacing: AetherVisual.s2) {
+                Image(systemName: "iphone.and.arrow.forward")
+                    .foregroundStyle(AetherReadableTint(color: .teal))
+                    .font(.callout)
+                    .accessibilityHidden(true)
+                Text(verbatim: "\(lanIP):\(port)")
+                    .font(.callout.monospaced().weight(.semibold))
+                Spacer()
+                LanCopyGuideButton(
+                    guideText: tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP),
+                    isPopover: true
+                )
+            }
+            Text(AppLocalization.string("Other devices on this Wi-Fi can connect to this proxy."))
+                .font(.caption2)
+                .foregroundStyle(AetherVisual.secondaryText)
+        }
+        .padding(.horizontal, AetherVisual.s3)
+        .padding(.vertical, AetherVisual.s2)
+        .background(AetherVisual.tintWash(.teal), in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous))
+        .padding(.horizontal, AetherVisual.s2)
+        .padding(.bottom, AetherVisual.s2)
+        .transition(AetherVisual.insertion)
+        .clipped()
+    }
+}
+
 private struct LanCopyGuideButton: View {
     let guideText: String
+    var isPopover: Bool = false
     var accessibilityIdentifier: String = "menu-copy-lan-guide-button"
     @State private var didCopy = false
     @State private var resetTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(guideText, forType: .string)
-            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
-                didCopy = true
-            }
-            resetTask?.cancel()
-            resetTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1.6))
-                guard !Task.isCancelled else { return }
-                withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
-                    didCopy = false
-                }
-            }
-        } label: {
-            HStack(spacing: AetherVisual.sMicro) {
-                Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
-                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-                    .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.primary))
-                Text(didCopy ? AppLocalization.string("Copied") : AppLocalization.string("Copy Guide"))
-                    .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.primary))
-            }
-            .font(.caption.weight(.medium))
+        let labelContent = HStack(spacing: AetherVisual.sMicro) {
+            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.primary))
+            Text(didCopy ? AppLocalization.string("Copied") : AppLocalization.string("Copy Guide"))
+                .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(Color.primary))
         }
-        .buttonStyle(.aetherGlassCapsule)
+        .font(.caption.weight(.medium))
+
+        Group {
+            if isPopover {
+                Button(action: copyGuide) {
+                    labelContent
+                }
+                .buttonStyle(.aetherGlassCapsule)
+            } else {
+                Button(action: copyGuide) {
+                    labelContent
+                }
+                .aetherButton()
+                .controlSize(.small)
+            }
+        }
         .accessibilityIdentifier(accessibilityIdentifier)
         .onDisappear { resetTask?.cancel() }
+    }
+
+    private func copyGuide() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(guideText, forType: .string)
+        withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+            didCopy = true
+        }
+        resetTask?.cancel()
+        resetTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                didCopy = false
+            }
+        }
     }
 }
 
@@ -2119,6 +2171,7 @@ private struct MenuTrafficGraph: View {
 }
 
 private struct MenuLiveTrafficGraph: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Like Overview's graph, the waveform is its own observing leaf, and only
     /// mounts while `isMenuVisible` is true so a closed popover never wakes on ticks.
     @ObservedObject var model: NetworkTelemetryViewModel
@@ -2142,7 +2195,7 @@ private struct MenuLiveTrafficGraph: View {
             TimelineView(
                 .animation(
                     minimumInterval: Self.frameInterval,
-                    paused: !model.history.hasActiveTraffic
+                    paused: reduceMotion || !model.history.hasActiveTraffic
                 )
             ) { context in
                 let now = windowEnd(at: context.date, lastSample: lastSample)
@@ -2654,19 +2707,13 @@ private struct SettingsView: View {
                         set: { tunnel.setUnifiedDelayEnabled($0) }
                     )
                 ) {
-                    Text(verbatim: aetherBilingualText(
-                        en: "Unified delay (exclude handshake)",
-                        zhHans: "统一延迟（去除握手耗时）"
-                    ))
+                    Text(verbatim: AppLocalization.string("Unified delay (exclude handshake)"))
                 }
                 .accessibilityIdentifier("unified-delay-toggle")
             } header: {
                 Text(AppLocalization.string("Advanced"))
             } footer: {
-                Text(verbatim: aetherBilingualText(
-                    en: "Sends two probes over the same connection and records the second round-trip, removing TLS/QUIC handshake overhead for fairer cross-protocol comparison.",
-                    zhHans: "在同一条代理连接上连续探测两次并取第二次往返耗时，剔除首次握手开销，使不同协议节点的延迟对比更准确。"
-                ))
+                Text(verbatim: AppLocalization.string("Sends two probes over the same connection and records the second round-trip, removing TLS/QUIC handshake overhead for fairer cross-protocol comparison."))
             }
 
             Section {
@@ -2856,7 +2903,7 @@ private struct SettingsView: View {
             .accessibilityIdentifier("local-proxy-toggle")
 
             Toggle(
-                AppLocalization.inline("Set as macOS System Proxy", chinese: "设为 macOS 系统代理"),
+                AppLocalization.string("Set as macOS System Proxy"),
                 isOn: Binding(
                     get: { tunnel.localProxySettings.setAsSystemProxy },
                     set: { enabled in
@@ -2870,17 +2917,15 @@ private struct SettingsView: View {
             .accessibilityIdentifier("local-proxy-system-proxy-toggle")
 
             if tunnel.localProxySettings.setAsSystemProxy {
-                LabeledContent(AppLocalization.inline("System proxy status", chinese: "系统代理状态")) {
+                LabeledContent(AppLocalization.string("System proxy status")) {
                     Text(
                         tunnel.isSystemProxyActive
-                            ? AppLocalization.inline(
-                                "Active (127.0.0.1:\(tunnel.localProxySettings.httpPort) / :\(tunnel.localProxySettings.socksPort))",
-                                chinese: "已生效（127.0.0.1:\(tunnel.localProxySettings.httpPort) / :\(tunnel.localProxySettings.socksPort)）"
+                            ? AppLocalization.format(
+                                "Active (127.0.0.1:%@ / :%@)",
+                                String(tunnel.localProxySettings.httpPort),
+                                String(tunnel.localProxySettings.socksPort)
                             )
-                            : AppLocalization.inline(
-                                "Ready (applies automatically when active)",
-                                chinese: "已就绪（连接或独立模式启用时自动接管）"
-                            )
+                            : AppLocalization.string("Ready (applies automatically when active)")
                     )
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(tunnel.isSystemProxyActive ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(AetherVisual.secondaryText))
@@ -2908,17 +2953,7 @@ private struct SettingsView: View {
             .accessibilityIdentifier("local-proxy-allow-lan-toggle")
 
             if tunnel.localProxySettings.allowLAN {
-                let lanIP = LANProxyServerController.shared.currentLANIP
-                LabeledContent(AppLocalization.string("LAN proxy")) {
-                    HStack(spacing: AetherVisual.s2) {
-                        Text(verbatim: "\(lanIP):\(tunnel.localProxySettings.httpPort)")
-                            .font(.callout.monospaced())
-                        LanCopyGuideButton(
-                            guideText: tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP),
-                            accessibilityIdentifier: "copy-lan-guide-button"
-                        )
-                    }
-                }
+                SettingsLANAddressRow(tunnel: tunnel)
             }
 
             LabeledContent(AppLocalization.string("Mixed proxy (HTTP and SOCKS5)")) {
@@ -2952,48 +2987,47 @@ private struct SettingsView: View {
                 )
             }
 
-            HStack {
-                AetherCopyButton(
-                    title: Text(AppLocalization.string("Copy Shell Environment")),
-                    systemImage: "terminal",
-                    action: copyLocalProxyShellEnvironment
-                )
-                .disabled(!canCopyLocalProxyEnvironment)
-                .accessibilityIdentifier("copy-shell-proxy-button")
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                AetherFlowLayout(spacing: AetherVisual.s2) {
+                    AetherCopyButton(
+                        title: Text(AppLocalization.string("Copy Shell Environment")),
+                        systemImage: "terminal",
+                        action: copyLocalProxyShellEnvironment
+                    )
+                    .disabled(!canCopyLocalProxyEnvironment)
+                    .accessibilityIdentifier("copy-shell-proxy-button")
 
-                AetherCopyButton(
-                    title: Text(AppLocalization.string("Copy Clear Command")),
-                    systemImage: "xmark.circle"
-                ) {
-                    copyToPasteboard(
-                        TerminalProxyEnvGenerator.unsetCommand(
-                            dialect: selectedShellDialect
+                    AetherCopyButton(
+                        title: Text(AppLocalization.string("Copy Clear Command")),
+                        systemImage: "xmark.circle"
+                    ) {
+                        copyToPasteboard(
+                            TerminalProxyEnvGenerator.unsetCommand(
+                                dialect: selectedShellDialect
+                            )
                         )
+                        localProxyCopyMessage = AppLocalization.string(
+                            "Clear command copied."
+                        )
+                        return true
+                    }
+                    .accessibilityIdentifier("copy-clear-proxy-button")
+
+                    AetherCopyButton(
+                        title: Text(AppLocalization.string("Copy PAC Script")),
+                        systemImage: "doc.text",
+                        action: copyLocalProxyPACScript
                     )
-                    localProxyCopyMessage = AppLocalization.string(
-                        "Clear command copied."
-                    )
-                    return true
+                    .disabled(!canCopyLocalProxyEnvironment)
+                    .accessibilityIdentifier("copy-pac-script-button")
                 }
-                .accessibilityIdentifier("copy-clear-proxy-button")
-
-                AetherCopyButton(
-                    title: Text(AppLocalization.string("Copy PAC Script")),
-                    systemImage: "doc.text",
-                    action: copyLocalProxyPACScript
-                )
-                .disabled(!canCopyLocalProxyEnvironment)
-                .accessibilityIdentifier("copy-pac-script-button")
-
-                Spacer(minLength: AetherVisual.s3)
 
                 if let message = localProxyCopyMessage
                     ?? tunnel.localProxySettingsMessage {
                     Text(message)
                         .font(.caption)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.trailing)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("local-proxy-status")
                 }
             }
@@ -3020,16 +3054,10 @@ private struct SettingsView: View {
 
     private var localProxyDetail: String {
         if tunnel.localProxySettings.setAsSystemProxy {
-            return AppLocalization.inline(
-                "Configures macOS HTTP, HTTPS, and SOCKS5 System Proxy (127.0.0.1) across active network services and restores prior settings automatically on disconnect or quit. Works standalone or alongside TUN / Transparent Proxy.",
-                chinese: "自动将活跃网卡的 macOS HTTP/HTTPS/SOCKS5 系统代理指向 127.0.0.1，并在断开连接或退出应用时自动恢复原有设置；支持独立本地代理模式或与 TUN / 透明代理配合使用。"
-            )
+            return AppLocalization.string("Configures macOS HTTP, HTTPS, and SOCKS5 System Proxy (127.0.0.1) across active network services and restores prior settings automatically on disconnect or quit. Works standalone or alongside TUN / Transparent Proxy.")
         }
         if tunnel.networkEngineMode != .tun {
-            return AppLocalization.inline(
-                "Runs a standalone local HTTP & SOCKS5 proxy on 127.0.0.1 even outside TUN mode. Optionally enable System Proxy above to route macOS apps automatically.",
-                chinese: "即使在透明代理或未连接状态下，也可在 127.0.0.1 运行独立本地 HTTP / SOCKS5 代理；勾选上方「设为 macOS 系统代理」可自动接管系统流量。"
-            )
+            return AppLocalization.string("Runs a standalone local HTTP & SOCKS5 proxy on 127.0.0.1 even outside TUN mode. Optionally enable System Proxy above to route macOS apps automatically.")
         }
         // TUN already carries Terminal traffic, so the copied environment is
         // rarely needed; say when it still helps instead of implying a step.
@@ -3185,7 +3213,7 @@ private struct SettingsView: View {
             }
 
             Toggle(
-                AppLocalization.inline("Allow control URL scheme (aetherroute://)", chinese: "允许通过 URL Scheme 控制（aetherroute://）"),
+                AppLocalization.string("Allow control URL scheme (aetherroute://)"),
                 isOn: Binding(
                     get: { tunnel.controlURLSchemePreferences.allowControlURLScheme },
                     set: { tunnel.setControlURLSchemeEnabled($0) }
@@ -3196,17 +3224,14 @@ private struct SettingsView: View {
             if tunnel.controlURLSchemePreferences.allowControlURLScheme {
                 VStack(alignment: .leading, spacing: AetherVisual.s2) {
                     Text(
-                        AppLocalization.inline(
-                            "Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=... (append ?token=<secret> for silent script execution; links without a token require confirmation).",
-                            chinese: "支持命令：aetherroute://connect、disconnect、toggle、set-mode?mode=rule|global|direct|tun|transparent、switch-profile?name=...（脚本静默调用请附带 ?token=<密钥>，未携带令牌的外部链接将弹窗确认）。"
-                        )
+                        AppLocalization.string("Supported actions: aetherroute://connect, disconnect, toggle, set-mode?mode=rule|global|direct|tun|transparent, switch-profile?name=... (append ?token=<secret> for silent script execution; links without a token require confirmation).")
                     )
                     .font(.caption.monospaced())
                     .foregroundStyle(AetherVisual.secondaryText)
 
                     HStack(spacing: AetherVisual.s2) {
                         AetherCopyButton(
-                            title: Text(AppLocalization.inline("Copy Token", chinese: "复制令牌")),
+                            title: Text(AppLocalization.string("Copy Token")),
                             systemImage: "key.fill"
                         ) {
                             NSPasteboard.general.clearContents()
@@ -3216,7 +3241,7 @@ private struct SettingsView: View {
                         Button {
                             _ = tunnel.regenerateControlURLSchemeToken()
                         } label: {
-                            Text(AppLocalization.inline("Regenerate Token", chinese: "重置令牌"))
+                            Text(AppLocalization.string("Regenerate Token"))
                         }
                         .aetherButton()
                         .controlSize(.small)
@@ -3401,64 +3426,70 @@ private struct NetworkAutomationRulesEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            HStack(spacing: AetherVisual.s2) {
-                Picker(AppLocalization.string("Condition"), selection: $triggerKind) {
-                    Text(AppLocalization.string("Router gateway")).tag(NetworkTriggerKind.gatewayAddress)
-                    Text(AppLocalization.string("Wired Ethernet")).tag(NetworkTriggerKind.ethernet)
-                    Text(AppLocalization.string("Wi-Fi SSID")).tag(NetworkTriggerKind.wifiSSID)
-                }
-                .labelsHidden()
-                .frame(width: 140)
-                .accessibilityIdentifier("network-automation-trigger-picker")
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                HStack(spacing: AetherVisual.s2) {
+                    Picker(AppLocalization.string("Condition"), selection: $triggerKind) {
+                        Text(AppLocalization.string("Router gateway")).tag(NetworkTriggerKind.gatewayAddress)
+                        Text(AppLocalization.string("Wired Ethernet")).tag(NetworkTriggerKind.ethernet)
+                        Text(AppLocalization.string("Wi-Fi SSID")).tag(NetworkTriggerKind.wifiSSID)
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                    .accessibilityIdentifier("network-automation-trigger-picker")
 
-                if triggerKind != .ethernet {
-                    TextField(
-                        triggerKind == .gatewayAddress
-                            ? AppLocalization.string("e.g. 192.168.50.1")
-                            : AppLocalization.string("e.g. Office-5G"),
-                        text: $triggerValue
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .font(.callout.monospaced())
-                    .accessibilityIdentifier("network-automation-value-field")
+                    if triggerKind != .ethernet {
+                        TextField(
+                            triggerKind == .gatewayAddress
+                                ? AppLocalization.string("e.g. 192.168.50.1")
+                                : AppLocalization.string("e.g. Office-5G"),
+                            text: $triggerValue
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.callout.monospaced())
+                        .accessibilityIdentifier("network-automation-value-field")
 
-                    if triggerKind == .gatewayAddress,
-                       let currentGateway = automation.currentNetworkEnvironment?.gatewayAddress,
-                       !currentGateway.isEmpty {
-                        Button(AppLocalization.string("Use current")) {
-                            triggerValue = currentGateway
+                        if triggerKind == .gatewayAddress,
+                           let currentGateway = automation.currentNetworkEnvironment?.gatewayAddress,
+                           !currentGateway.isEmpty {
+                            Button(AppLocalization.string("Use current")) {
+                                triggerValue = currentGateway
+                            }
+                            .aetherButton()
+                            .controlSize(.small)
                         }
-                        .aetherButton()
-                        .controlSize(.small)
                     }
                 }
 
-                Picker(AppLocalization.string("Action"), selection: $selectedAction) {
-                    ForEach(availableActions, id: \.self) { action in
-                        Text(actionTitle(action)).tag(action)
+                HStack(spacing: AetherVisual.s2) {
+                    Picker(AppLocalization.string("Action"), selection: $selectedAction) {
+                        ForEach(availableActions, id: \.self) { action in
+                            Text(actionTitle(action)).tag(action)
+                        }
                     }
-                }
-                .labelsHidden()
-                .frame(width: 140)
-                .accessibilityIdentifier("network-automation-action-picker")
+                    .labelsHidden()
+                    .frame(minWidth: 160, maxWidth: 240, alignment: .leading)
+                    .accessibilityIdentifier("network-automation-action-picker")
 
-                Button(AppLocalization.string("Add")) {
-                    let rule = NetworkAutomationRule(
-                        isEnabled: true,
-                        triggerKind: triggerKind,
-                        matchValue: triggerKind == .ethernet ? "" : triggerValue,
-                        action: selectedAction
+                    Spacer(minLength: AetherVisual.s2)
+
+                    Button(AppLocalization.string("Add")) {
+                        let rule = NetworkAutomationRule(
+                            isEnabled: true,
+                            triggerKind: triggerKind,
+                            matchValue: triggerKind == .ethernet ? "" : triggerValue,
+                            action: selectedAction
+                        )
+                        if automation.addOrUpdateNetworkRule(rule) {
+                            triggerValue = ""
+                        }
+                    }
+                    .aetherButton(prominent: true)
+                    .disabled(
+                        triggerKind != .ethernet
+                            && triggerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
-                    if automation.addOrUpdateNetworkRule(rule) {
-                        triggerValue = ""
-                    }
+                    .accessibilityIdentifier("network-automation-add-button")
                 }
-                .aetherButton(prominent: true)
-                .disabled(
-                    triggerKind != .ethernet
-                        && triggerValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                )
-                .accessibilityIdentifier("network-automation-add-button")
             }
 
             if let message = automation.networkAutomationMessage {
@@ -3531,14 +3562,14 @@ private struct NetworkAutomationRulesEditor: View {
         case .disconnect:
             AppLocalization.string("Disconnect")
         case .setEngineMode(.transparent):
-            AppLocalization.inline("Engine: Transparent", chinese: "切换引擎：透明代理")
+            AppLocalization.string("Engine: Transparent")
         case .setEngineMode(.tun):
-            AppLocalization.inline("Engine: TUN", chinese: "切换引擎：TUN")
+            AppLocalization.string("Engine: TUN")
         case let .switchProfile(profileID):
             if let managed = tunnel.profiles.first(where: { $0.id == profileID }) {
-                AppLocalization.inline("Profile: \(managed.profile.name)", chinese: "切换配置：\(managed.profile.name)")
+                AppLocalization.format("Profile: %@", managed.profile.name)
             } else {
-                AppLocalization.inline("Switch profile", chinese: "切换配置")
+                AppLocalization.string("Switch profile")
             }
         }
     }
@@ -3554,11 +3585,11 @@ private struct SystemProxyBypassEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack(spacing: AetherVisual.s2) {
-                Text(AppLocalization.inline("System proxy bypass domains", chinese: "系统代理绕过域名 / 网段"))
+                Text(AppLocalization.string("System proxy bypass domains"))
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer(minLength: AetherVisual.s2)
-                Button(AppLocalization.inline("Reset defaults", chinese: "恢复默认")) {
+                Button(AppLocalization.string("Reset defaults")) {
                     onSave(LocalProxySettings.defaultSystemProxyBypassDomains)
                 }
                 .aetherButton()
@@ -3567,14 +3598,14 @@ private struct SystemProxyBypassEditor: View {
             }
             HStack(spacing: AetherVisual.s2) {
                 TextField(
-                    AppLocalization.inline("localhost, 127.0.0.1, *.local", chinese: "localhost, 127.0.0.1, *.local"),
+                    AppLocalization.string("localhost, 127.0.0.1, *.local"),
                     text: $text
                 )
                 .textFieldStyle(.roundedBorder)
                 .font(.caption.monospaced())
                 .disabled(isDisabled)
                 .onSubmit(commit)
-                Button(AppLocalization.inline("Apply", chinese: "应用")) {
+                Button(AppLocalization.string("Apply")) {
                     commit()
                 }
                 .aetherButton()
@@ -3723,6 +3754,25 @@ private struct MenuBarStatusItemImage: View {
     }
 }
 
+private struct SettingsLANAddressRow: View {
+    @ObservedObject var tunnel: TunnelManager
+    @ObservedObject private var lanController = LANProxyServerController.shared
+
+    var body: some View {
+        let lanIP = lanController.currentLANIP
+        LabeledContent(AppLocalization.string("LAN proxy")) {
+            HStack(spacing: AetherVisual.s2) {
+                Text(verbatim: "\(lanIP):\(tunnel.localProxySettings.httpPort)")
+                    .font(.callout.monospaced())
+                LanCopyGuideButton(
+                    guideText: tunnel.localProxySettings.lanConfigurationGuide(lanIP: lanIP),
+                    accessibilityIdentifier: "copy-lan-guide-button"
+                )
+            }
+        }
+    }
+}
+
 private struct MenuBarIconPickerView: View {
     @ObservedObject var controller: AppMenuBarIconController
     let isConnected: Bool
@@ -3757,10 +3807,10 @@ private struct MenuBarIconPickerView: View {
 
                 Text(isConnected ? AppLocalization.string("Connected") : AppLocalization.string("Disconnected"))
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(isConnected ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isConnected ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(AetherVisual.secondaryText))
                     .padding(.horizontal, AetherVisual.sCompact)
                     .padding(.vertical, AetherVisual.sMicro)
-                    .background(isConnected ? AetherVisual.selectionFill : AetherVisual.neutralFill, in: Capsule())
+                    .background(isConnected ? AetherVisual.tintFill(.green) : AetherVisual.neutralFill, in: Capsule())
             }
             .frame(width: 96)
             .accessibilityElement(children: .combine)

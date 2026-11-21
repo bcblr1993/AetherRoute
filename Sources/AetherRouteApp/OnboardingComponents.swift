@@ -268,7 +268,7 @@ private struct OnboardingCardRowView: View {
         let icon = Image(systemName: "checkmark.circle.fill")
             .font(.title2)
             .symbolRenderingMode(.palette)
-            .foregroundStyle(Color.white, AetherReadableTint(color: .green))
+            .foregroundStyle(Color(nsColor: .windowBackgroundColor), AetherReadableTint(color: .green))
         if reduceMotion {
             icon
         } else {
@@ -386,7 +386,7 @@ struct OnboardingDoneIllustration: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.largeTitle)
                 .symbolRenderingMode(.palette)
-                .foregroundStyle(Color.white, AetherReadableTint(color: .green))
+                .foregroundStyle(Color(nsColor: .windowBackgroundColor), AetherReadableTint(color: .green))
                 .background(Color(nsColor: .windowBackgroundColor), in: Circle())
                 .offset(x: AetherVisual.s2, y: AetherVisual.s2)
                 .scaleEffect(hasAppeared ? 1 : 0.4)

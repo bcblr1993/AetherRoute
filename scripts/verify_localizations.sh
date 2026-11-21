@@ -127,5 +127,9 @@ if missing:
 print(f"AppLocalization direct literals verified: {len(checked)} keys")
 PY
 
+if rg -n 'aetherBilingualText\(|AppLocalization\.inline\(' "$ROOT/Sources/AetherRouteApp" >/dev/null; then
+  fail "legacy inline bilingual helpers are forbidden; use Localizable.xcstrings via AppLocalization.string/format"
+fi
+
 count=$(jq '.strings | length' "$CATALOG")
 printf 'Localization catalog verified: %s keys, en + zh-Hans\n' "$count"

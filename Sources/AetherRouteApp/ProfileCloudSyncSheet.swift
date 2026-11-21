@@ -29,9 +29,37 @@ struct ProfileCloudSyncSheet: View {
                 Divider()
 
                 accountDiagnosticsSection
+
+                Divider()
+
+                AetherFlowLayout(spacing: AetherVisual.s2) {
+                    Button {
+                        revealLocalStorageFolder()
+                    } label: {
+                        HStack(spacing: AetherVisual.sCompact) {
+                            Image(systemName: "folder")
+                            Text(AppLocalization.string("Reveal Local Sync Folder"))
+                        }
+                    }
+                    .aetherButton()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("icloud-reveal-folder-button")
+
+                    Button {
+                        openSystemICloudSettings()
+                    } label: {
+                        HStack(spacing: AetherVisual.sCompact) {
+                            Image(systemName: "gearshape")
+                            Text(AppLocalization.string("Open System iCloud Settings"))
+                        }
+                    }
+                    .aetherButton()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("icloud-open-settings-button")
+                }
             }
             .padding(AetherVisual.s4)
-            .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+            .aetherPanel()
 
             if cloudSync.isCloudSyncEnabled {
                 if cloudSync.isSyncing {
@@ -66,7 +94,7 @@ struct ProfileCloudSyncSheet: View {
 
                     Divider()
 
-                    HStack(spacing: AetherVisual.s3) {
+                    AetherFlowLayout(spacing: AetherVisual.s2) {
                         Button {
                             Task {
                                 do {
@@ -128,32 +156,10 @@ struct ProfileCloudSyncSheet: View {
                     }
                 }
                 .padding(AetherVisual.s4)
-                .background(AetherVisual.subtleFill, in: RoundedRectangle(cornerRadius: AetherVisual.insetRadius))
+                .aetherPanel()
             }
 
-            HStack(spacing: AetherVisual.s3) {
-                Button {
-                    revealLocalStorageFolder()
-                } label: {
-                    HStack(spacing: AetherVisual.sCompact) {
-                        Image(systemName: "folder")
-                        Text(AppLocalization.string("Reveal Local Sync Folder"))
-                    }
-                }
-                .aetherButton()
-                .accessibilityIdentifier("icloud-reveal-folder-button")
-
-                Button {
-                    openSystemICloudSettings()
-                } label: {
-                    HStack(spacing: AetherVisual.sCompact) {
-                        Image(systemName: "gearshape")
-                        Text(AppLocalization.string("Open System iCloud Settings"))
-                    }
-                }
-                .aetherButton()
-                .accessibilityIdentifier("icloud-open-settings-button")
-
+            HStack {
                 Spacer()
                 Button(AppLocalization.string("Done")) {
                     dismiss()
@@ -163,6 +169,7 @@ struct ProfileCloudSyncSheet: View {
                 .accessibilityIdentifier("icloud-sync-done-button")
                 .disabled(cloudSync.isSyncing)
             }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
@@ -177,7 +184,7 @@ struct ProfileCloudSyncSheet: View {
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             HStack(alignment: .center, spacing: AetherVisual.s2) {
                 Circle()
-                    .fill(diag.isICloudAccountSignedIn ? AnyShapeStyle(Color.mint) : AnyShapeStyle(AetherVisual.tertiaryText))
+                    .fill(diag.isICloudAccountSignedIn ? AnyShapeStyle(Color.green) : AnyShapeStyle(AetherVisual.tertiaryText))
                     .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
                 Text(AppLocalization.string("iCloud Account:"))
                     .font(.caption)
@@ -189,7 +196,7 @@ struct ProfileCloudSyncSheet: View {
                 if let fingerprint = diag.pairingFingerprint {
                     Text(AppLocalization.format("Pairing Code %@", fingerprint))
                         .font(.caption2.monospaced().weight(.semibold))
-                        .foregroundStyle(AetherVisual.iCloudTint)
+                        .foregroundStyle(AetherReadableTint(color: .blue))
                         .padding(.horizontal, AetherVisual.s2)
                         .padding(.vertical, AetherVisual.sMicro)
                         .background(

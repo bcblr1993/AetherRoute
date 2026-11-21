@@ -51,19 +51,19 @@ extension TunnelManager {
     ) -> String {
         switch blocker {
         case .awaitingApproval:
-            AppLocalization.inline(
-                "Current connection kept. Allow \(targetMode.localizedTitle) extension in System Settings before switching.",
-                chinese: "已保持当前连接。请先在系统设置中允许 \(targetMode.localizedTitle) 系统扩展后再切换。"
+            AppLocalization.format(
+                "Current connection kept. Allow %@ extension in System Settings before switching.",
+                targetMode.localizedTitle
             )
         case .notInstalled:
-            AppLocalization.inline(
-                "Current connection kept. Install and allow \(targetMode.localizedTitle) extension in Network Setup before switching.",
-                chinese: "已保持当前连接。请先在网络引导中安装并授权 \(targetMode.localizedTitle) 系统扩展后再切换。"
+            AppLocalization.format(
+                "Current connection kept. Install and allow %@ extension in Network Setup before switching.",
+                targetMode.localizedTitle
             )
         case .rebootRequired, .uninstalling:
-            AppLocalization.inline(
-                "Current connection kept. Restart your Mac to finish \(targetMode.localizedTitle) extension update before switching.",
-                chinese: "已保持当前连接。请先重启 Mac 以完成 \(targetMode.localizedTitle) 扩展更新后再切换。"
+            AppLocalization.format(
+                "Current connection kept. Restart your Mac to finish %@ extension update before switching.",
+                targetMode.localizedTitle
             )
         }
     }
@@ -465,10 +465,7 @@ extension TunnelManager {
             && updated.setAsSystemProxy
             && !localProxySettings.isEnabled
             && !localProxySettings.setAsSystemProxy {
-            localProxySettingsMessage = AppLocalization.inline(
-                "Reconnect TUN so its loopback listener starts on the configured ports.",
-                chinese: "请先断开并重连 TUN，以启用本地回环代理端口。"
-            )
+            localProxySettingsMessage = AppLocalization.string("Reconnect TUN so its loopback listener starts on the configured ports.")
             return
         }
         do {
@@ -493,24 +490,19 @@ extension TunnelManager {
             localProxySettings = validated
             if validated.setAsSystemProxy {
                 if state == .connected {
-                    localProxySettingsMessage = AppLocalization.inline(
-                        "macOS System Proxy is pointing to 127.0.0.1:\(validated.httpPort) / :\(validated.socksPort).",
-                        chinese: "已接管 macOS 系统代理（127.0.0.1:\(validated.httpPort) / :\(validated.socksPort)）。"
+                    localProxySettingsMessage = AppLocalization.format(
+                        "macOS System Proxy is pointing to 127.0.0.1:%@ / :%@.",
+                        String(validated.httpPort),
+                        String(validated.socksPort)
                     )
                 } else {
-                    localProxySettingsMessage = AppLocalization.inline(
-                        "System Proxy will activate automatically when connected.",
-                        chinese: "系统代理将在连接成功后自动接管。"
-                    )
+                    localProxySettingsMessage = AppLocalization.string("System Proxy will activate automatically when connected.")
                 }
             } else if validated.allowLAN {
                 if state == .connected {
                     localProxySettingsMessage = AppLocalization.string("LAN shared proxy is active.")
                 } else {
-                    localProxySettingsMessage = AppLocalization.inline(
-                        "LAN shared proxy will start automatically when connected.",
-                        chinese: "局域网共享代理将在连接成功后自动开启。"
-                    )
+                    localProxySettingsMessage = AppLocalization.string("LAN shared proxy will start automatically when connected.")
                 }
             } else if validated.isEnabled {
                 localProxySettingsMessage = AppLocalization.string("The loopback proxy will start with the next TUN connection.")

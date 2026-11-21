@@ -25,15 +25,15 @@ struct CustomProxyGroupSheet: View {
         var title: String {
             switch self {
             case .select:
-                AppLocalization.inline("Manual Select", chinese: "手动选择")
+                AppLocalization.string("Manual Select")
             case .urlTest:
-                AppLocalization.inline("Auto Latency (url-test)", chinese: "自动测速 (url-test)")
+                AppLocalization.string("Auto Latency (url-test)")
             case .fallback:
-                AppLocalization.inline("Fallback", chinese: "故障转移 (fallback)")
+                AppLocalization.string("Fallback")
             case .loadBalance:
-                AppLocalization.inline("Load Balance", chinese: "负载均衡 (load-balance)")
+                AppLocalization.string("Load Balance")
             case .smart:
-                AppLocalization.inline("Smart", chinese: "智能选路 (smart)")
+                AppLocalization.string("Smart")
             }
         }
     }
@@ -265,8 +265,8 @@ struct CustomProxyGroupSheet: View {
                     .accessibilityIdentifier("custom-group-name-field")
             }
             Divider().padding(.leading, AetherVisual.s4)
-            OverrideFormRow(AppLocalization.inline("Group type", chinese: "分组类型")) {
-                Picker(AppLocalization.inline("Group type", chinese: "分组类型"), selection: $groupKindOption) {
+            OverrideFormRow(AppLocalization.string("Group type")) {
+                Picker(AppLocalization.string("Group type"), selection: $groupKindOption) {
                     ForEach(GroupKindOption.allCases) { option in
                         Text(verbatim: option.title).tag(option)
                     }
@@ -277,12 +277,12 @@ struct CustomProxyGroupSheet: View {
             }
             if groupKindOption == .urlTest || groupKindOption == .fallback {
                 Divider().padding(.leading, AetherVisual.s4)
-                OverrideFormRow(AppLocalization.inline("Probe interval", chinese: "探测间隔")) {
-                    Picker(AppLocalization.inline("Probe interval", chinese: "探测间隔"), selection: $probeInterval) {
-                        Text(AppLocalization.inline("120s", chinese: "120 秒")).tag(120)
-                        Text(AppLocalization.inline("300s", chinese: "300 秒")).tag(300)
-                        Text(AppLocalization.inline("600s", chinese: "600 秒")).tag(600)
-                        Text(AppLocalization.inline("1800s", chinese: "1800 秒")).tag(1_800)
+                OverrideFormRow(AppLocalization.string("Probe interval")) {
+                    Picker(AppLocalization.string("Probe interval"), selection: $probeInterval) {
+                        Text(AppLocalization.string("120s")).tag(120)
+                        Text(AppLocalization.string("300s")).tag(300)
+                        Text(AppLocalization.string("600s")).tag(600)
+                        Text(AppLocalization.string("1800s")).tag(1_800)
                     }
                     .labelsHidden()
                     .fixedSize()
@@ -291,12 +291,12 @@ struct CustomProxyGroupSheet: View {
             }
             if groupKindOption == .urlTest {
                 Divider().padding(.leading, AetherVisual.s4)
-                OverrideFormRow(AppLocalization.inline("Tolerance", chinese: "容差阈值")) {
-                    Picker(AppLocalization.inline("Tolerance", chinese: "容差阈值"), selection: $urlTestTolerance) {
-                        Text(AppLocalization.inline("20 ms", chinese: "20 毫秒")).tag(20)
-                        Text(AppLocalization.inline("50 ms", chinese: "50 毫秒")).tag(50)
-                        Text(AppLocalization.inline("100 ms", chinese: "100 毫秒")).tag(100)
-                        Text(AppLocalization.inline("150 ms", chinese: "150 毫秒")).tag(150)
+                OverrideFormRow(AppLocalization.string("Tolerance")) {
+                    Picker(AppLocalization.string("Tolerance"), selection: $urlTestTolerance) {
+                        Text(AppLocalization.string("20 ms")).tag(20)
+                        Text(AppLocalization.string("50 ms")).tag(50)
+                        Text(AppLocalization.string("100 ms")).tag(100)
+                        Text(AppLocalization.string("150 ms")).tag(150)
                     }
                     .labelsHidden()
                     .fixedSize()
@@ -305,26 +305,28 @@ struct CustomProxyGroupSheet: View {
             }
             if groupKindOption == .loadBalance {
                 Divider().padding(.leading, AetherVisual.s4)
-                OverrideFormRow(AppLocalization.inline("Balance strategy", chinese: "均衡策略")) {
-                    Picker(AppLocalization.inline("Balance strategy", chinese: "均衡策略"), selection: $loadBalanceStrategy) {
-                        Text(AppLocalization.inline("Round Robin", chinese: "轮询 (round-robin)")).tag(LoadBalanceStrategy.roundRobin)
-                        Text(AppLocalization.inline("Consistent Hashing", chinese: "一致性哈希 (consistent-hashing)")).tag(LoadBalanceStrategy.consistentHashing)
-                        Text(AppLocalization.inline("Sticky Session", chinese: "会话粘滞 (sticky-session)")).tag(LoadBalanceStrategy.stickySession)
+                OverrideFormRow(AppLocalization.string("Balance strategy")) {
+                    Picker(AppLocalization.string("Balance strategy"), selection: $loadBalanceStrategy) {
+                        Text(AppLocalization.string("Round Robin")).tag(LoadBalanceStrategy.roundRobin)
+                        Text(AppLocalization.string("Consistent Hashing")).tag(LoadBalanceStrategy.consistentHashing)
+                        Text(AppLocalization.string("Sticky Session")).tag(LoadBalanceStrategy.stickySession)
                     }
                     .labelsHidden()
                     .fixedSize()
                     .accessibilityIdentifier("custom-group-lb-strategy-picker")
                 }
             }
-            Divider().padding(.leading, AetherVisual.s4)
-            OverrideFormRow(AppLocalization.string("Node selection")) {
-                AetherSegmentedPicker(
-                    selection: $mode,
-                    options: ProxySelectionMode.allCases.map { .init(value: $0, title: $0.localizedTitle) },
-                    accessibilityLabel: AppLocalization.string("Node selection"),
-                    accessibilityIdentifier: "custom-group-mode"
-                )
-                .fixedSize()
+            if groupKindOption == .select {
+                Divider().padding(.leading, AetherVisual.s4)
+                OverrideFormRow(AppLocalization.string("Node selection")) {
+                    AetherSegmentedPicker(
+                        selection: $mode,
+                        options: ProxySelectionMode.allCases.map { .init(value: $0, title: $0.localizedTitle) },
+                        accessibilityLabel: AppLocalization.string("Node selection"),
+                        accessibilityIdentifier: "custom-group-mode"
+                    )
+                    .fixedSize()
+                }
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Show in")) {
@@ -517,14 +519,26 @@ struct RegionGroupsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var tunnel: TunnelManager
 
+    private let initialParentGroup: String
     @State private var chosen: Set<String> = []
     @State private var parentGroup: String
     @State private var mode: ProxySelectionMode = .fastest
     @State private var isSaving = false
     @State private var saveFailed = false
+    @State private var requestsCancel = false
 
     init(defaultParent: String?) {
-        _parentGroup = State(initialValue: defaultParent ?? "")
+        let resolvedParent = defaultParent ?? ""
+        self.initialParentGroup = resolvedParent
+        _parentGroup = State(initialValue: resolvedParent)
+    }
+
+    private var defaultChosenCodes: Set<String> {
+        Set(regions.filter { !takenNames.contains(Self.groupName(for: $0)) }.map(\.code))
+    }
+
+    private var hasChanges: Bool {
+        chosen != defaultChosenCodes || parentGroup != initialParentGroup || mode != .fastest
     }
 
     /// Regions with at least two nodes: one node needs no group.
@@ -632,9 +646,10 @@ struct RegionGroupsSheet: View {
 
             HStack(spacing: AetherVisual.s2) {
                 Spacer()
-                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .aetherButton()
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isSaving)
                 Button {
                     create()
                 } label: {
@@ -653,9 +668,11 @@ struct RegionGroupsSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .onAppear {
             // Every region with a free name starts chosen.
-            chosen = Set(regions.filter { !takenNames.contains(Self.groupName(for: $0)) }.map(\.code))
+            chosen = defaultChosenCodes
         }
         // A container's identifier would otherwise replace every child's.
         .accessibilityElement(children: .contain)
@@ -698,6 +715,12 @@ struct HiddenNodesSheet: View {
     @State private var draft = ""
     @State private var isSaving = false
     @State private var saveFailed = false
+    @State private var requestsCancel = false
+
+    private var hasChanges: Bool {
+        keywords != tunnel.activeProfileOverrides.hiddenNodeKeywords
+            || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     private var nodes: [String] { tunnel.activeProfileNodeNames }
 
@@ -777,9 +800,10 @@ struct HiddenNodesSheet: View {
 
             HStack(spacing: AetherVisual.s2) {
                 Spacer()
-                Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
+                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                     .aetherButton()
                     .keyboardShortcut(.cancelAction)
+                    .disabled(isSaving)
                 Button {
                     save()
                 } label: {
@@ -795,6 +819,8 @@ struct HiddenNodesSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: keywords)
         .onAppear { keywords = tunnel.activeProfileOverrides.hiddenNodeKeywords }
         // A container's identifier would otherwise replace every child's.
@@ -1100,39 +1126,67 @@ struct ChainedProxySheet: View {
     }
 
     private var chainDiagramCard: some View {
-        HStack(spacing: AetherVisual.s3) {
-            chainHopStep(
-                symbol: "laptopcomputer",
-                tint: .secondary,
-                label: AppLocalization.string("This Mac"),
-                value: AppLocalization.string("Local apps")
-            )
-            Image(systemName: "arrow.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(AetherVisual.tertiaryText)
-                .accessibilityHidden(true)
-            chainHopStep(
-                symbol: "bolt.horizontal.fill",
-                tint: AppSection.proxies.tileColor,
-                label: AppLocalization.string("First hop (entry)"),
-                value: dialerProxy.isEmpty ? "—" : dialerProxy
-            )
-            Image(systemName: "arrow.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(AetherVisual.tertiaryText)
-                .accessibilityHidden(true)
-            chainHopStep(
-                symbol: "globe",
-                tint: AetherVisual.manualNodesTint,
-                label: AppLocalization.string("Second hop (landing)"),
-                value: secondHopSummary
-            )
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: AetherVisual.s3) {
+                chainHopStep(
+                    symbol: "laptopcomputer",
+                    tint: .secondary,
+                    label: AppLocalization.string("This Mac"),
+                    value: AppLocalization.string("Local apps")
+                )
+                chainDiagramArrow(systemImage: "arrow.right")
+                chainHopStep(
+                    symbol: "bolt.horizontal.fill",
+                    tint: AppSection.proxies.tileColor,
+                    label: AppLocalization.string("First hop (entry)"),
+                    value: dialerProxy.isEmpty ? "—" : dialerProxy
+                )
+                chainDiagramArrow(systemImage: "arrow.right")
+                chainHopStep(
+                    symbol: "globe",
+                    tint: AetherVisual.manualNodesTint,
+                    label: AppLocalization.string("Second hop (landing)"),
+                    value: secondHopSummary
+                )
+            }
+
+            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                chainHopStep(
+                    symbol: "laptopcomputer",
+                    tint: .secondary,
+                    label: AppLocalization.string("This Mac"),
+                    value: AppLocalization.string("Local apps")
+                )
+                chainDiagramArrow(systemImage: "arrow.down")
+                    .padding(.leading, AetherVisual.s3)
+                chainHopStep(
+                    symbol: "bolt.horizontal.fill",
+                    tint: AppSection.proxies.tileColor,
+                    label: AppLocalization.string("First hop (entry)"),
+                    value: dialerProxy.isEmpty ? "—" : dialerProxy
+                )
+                chainDiagramArrow(systemImage: "arrow.down")
+                    .padding(.leading, AetherVisual.s3)
+                chainHopStep(
+                    symbol: "globe",
+                    tint: AetherVisual.manualNodesTint,
+                    label: AppLocalization.string("Second hop (landing)"),
+                    value: secondHopSummary
+                )
+            }
         }
         .padding(AetherVisual.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .aetherPanel()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("chained-proxy-flow-diagram")
+    }
+
+    private func chainDiagramArrow(systemImage: String) -> some View {
+        Image(systemName: systemImage)
+            .font(.caption.weight(.bold))
+            .foregroundStyle(AetherVisual.tertiaryText)
+            .accessibilityHidden(true)
     }
 
     private func chainHopStep(
@@ -1731,6 +1785,16 @@ private struct KeywordChip: View {
     let systemImage: String
     let action: () -> Void
 
+    private var actionAccessibilityLabel: String {
+        if systemImage == "xmark" {
+            return String.localizedStringWithFormat(AppLocalization.string("Remove %@"), title)
+        }
+        if systemImage == "plus" {
+            return String.localizedStringWithFormat(AppLocalization.string("Add %@"), title)
+        }
+        return title
+    }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: AetherVisual.sMicro) {
@@ -1746,7 +1810,7 @@ private struct KeywordChip: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.aetherPressable)
-        .accessibilityLabel(title)
+        .accessibilityLabel(actionAccessibilityLabel)
     }
 }
 
@@ -1796,23 +1860,36 @@ private struct NodeChecklist: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSearchField(text: $search, prompt: AppLocalization.string("Search nodes"), accessibilityIdentifier: "node-checklist-search")
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filtered, id: \.self) { node in
-                        Toggle(isOn: Binding(
-                            get: { selection.contains(node) },
-                            set: { isOn in
-                                if isOn { selection.append(node) } else { selection.removeAll { $0 == node } }
+            if nodes.isEmpty {
+                ContentUnavailableView(
+                    AppLocalization.string("No Nodes"),
+                    systemImage: "point.3.connected.trianglepath.dotted"
+                )
+                .frame(height: 260)
+                .frame(maxWidth: .infinity)
+            } else if filtered.isEmpty {
+                ContentUnavailableView.search(text: search)
+                    .frame(height: 260)
+                    .frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filtered, id: \.self) { node in
+                            Toggle(isOn: Binding(
+                                get: { selection.contains(node) },
+                                set: { isOn in
+                                    if isOn { selection.append(node) } else { selection.removeAll { $0 == node } }
+                                }
+                            )) {
+                                Text(verbatim: node).lineLimit(1).truncationMode(.middle)
                             }
-                        )) {
-                            Text(verbatim: node).lineLimit(1).truncationMode(.middle)
+                            .toggleStyle(.checkbox)
+                            .frame(minHeight: AetherVisual.tableRowHeight)
                         }
-                        .toggleStyle(.checkbox)
-                        .frame(minHeight: AetherVisual.tableRowHeight)
                     }
                 }
+                .frame(height: 260)
             }
-            .frame(height: 260)
         }
         .padding(AetherVisual.s3)
         .frame(width: 320)

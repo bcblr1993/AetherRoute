@@ -125,6 +125,11 @@ fail_if_found \
   "shadows and glows are forbidden; use fills, separators and motion for emphasis" \
   '\.shadow\('
 
+fail_if_found \
+  "aetherGlassCapsule belongs only to the menu bar popover, never on page cards" \
+  '\.buttonStyle\([[:space:]]*\.aetherGlassCapsule[[:space:]]*\)' \
+  -g '!AetherRouteApp.swift' -g '!AetherRouteVisualSystem.swift'
+
 # The header must be localized *and* carry the column budget. Matching a bare
 # "Duration" literal here meant the guard demanded the untranslated string, so
 # localizing the header turned this into a false failure that blocked main even

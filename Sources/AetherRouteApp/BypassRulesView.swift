@@ -173,10 +173,10 @@ private struct BypassRuleRowView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: "trash")
+                    AetherRowIconLabel(symbol: "trash", tint: .red)
                 }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .disabled(!canModify || removingRuleID != nil)
             .help(AppLocalization.string("Remove bypass rule"))
             .accessibilityLabel(

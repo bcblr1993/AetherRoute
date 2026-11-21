@@ -13,10 +13,10 @@ enum RulesPageSectionFilter: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .all: AppLocalization.string("All")
-        case .appAndCustom: AppLocalization.inline("App & Custom", chinese: "应用与自定义")
+        case .appAndCustom: AppLocalization.string("App & Custom")
         case .providers: AppLocalization.string("Providers")
         case .profileRules: AppLocalization.string("Profile rules")
-        case .routeTester: AppLocalization.inline("Route Tester", chinese: "路由测试")
+        case .routeTester: AppLocalization.string("Route Tester")
         }
     }
 }
@@ -104,16 +104,20 @@ struct RuleDistributionBar: View {
     }
 }
 
+private struct RouteTestRequest: Equatable {
+    let id = UUID()
+    let query: String
+}
+
 struct RulesView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.openSettings) private var openSettings
     @State private var selectedSection: RulesPageSectionFilter = .all
     @State private var searchText = ""
     @State private var selectedAction: RuleActionFilter = .all
-    @State private var testQuery: String = ""
-    @State private var testResult: RouteMatchResult? = nil
-    @State private var hasAttemptedMatch: Bool = false
-    @State private var matchExplanation = ""
+    @State private var externalRouteTestRequest: RouteTestRequest? = nil
+    @State private var pageContentWidth: CGFloat = 0
+    @State private var rulesFilterBarWidth: CGFloat = 0
     @State private var highlightedRuleID: Int? = nil
     @State private var showsAllProfileRules: Bool = false
     @State private var showAddRuleSheet: Bool = false
@@ -149,7 +153,7 @@ struct RulesView: View {
                         // stays lazy inside the same scroll view.
                         VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing + AetherVisual.s1) {
                             AetherPageHeader(.rules) {
-                                HStack(spacing: AetherVisual.s2) {
+                                AetherFlowLayout(spacing: AetherVisual.s2) {
                                     blockQUICButton
                                     Button {
                                         editingRule = nil
@@ -170,19 +174,18 @@ struct RulesView: View {
                                 limitedOptions: []
                             ))
 
-                            AetherSegmentedPicker(
-                                selection: $selectedSection,
-                                options: RulesPageSectionFilter.allCases.map {
-                                    .init(value: $0, title: $0.title)
-                                },
-                                accessibilityLabel: AppLocalization.inline("Rule sections", chinese: "规则分组"),
-                                accessibilityIdentifier: "rules-section-filter",
-                                fillsWidth: true
-                            )
+                            rulesSectionFilterControl
 
                             if selectedSection == .all || selectedSection == .routeTester {
-                                routeTester(summary: summary, scrollProxy: scrollProxy)
-                                    .transition(.opacity)
+                                RouteTesterCard(
+                                    summary: summary,
+                                    externalRequest: externalRouteTestRequest,
+                                    onLocateRule: { matchedRuleID in
+                                        locateRule(matchedRuleID, using: scrollProxy)
+                                    }
+                                )
+                                .environmentObject(tunnel)
+                                .transition(.opacity)
                             }
 
                             if selectedSection == .all || selectedSection == .appAndCustom {
@@ -254,6 +257,13 @@ struct RulesView: View {
                             }
                         }
                         .aetherPageContent(.wide)
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.width
+                        } action: { newWidth in
+                            if abs(pageContentWidth - newWidth) >= 1 {
+                                pageContentWidth = newWidth
+                            }
+                        }
                         .animation(AetherVisual.animation(AetherVisual.quickFade), value: selectedSection)
                         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.customRuleMessage)
                         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.ruleProviderMessage)
@@ -317,13 +327,10 @@ struct RulesView: View {
         }
         .sheet(item: $previewingRuleProvider) { provider in
             RuleProviderPreviewSheet(provider: provider) { sample in
-                testQuery = sample
                 if selectedSection != .all && selectedSection != .routeTester {
                     selectedSection = .all
                 }
-                if let summary = tunnel.activeProfileSummary {
-                    performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
-                }
+                externalRouteTestRequest = RouteTestRequest(query: sample)
             }
             .environmentObject(tunnel)
         }
@@ -357,122 +364,35 @@ struct RulesView: View {
         }
     }
 
-    // MARK: Route tester
-
-    /// "Where would this go?" answered in place: the page's most useful
-    /// question, so it leads the page instead of hiding behind a button.
-    private func routeTester(summary: ProfileConfigurationSummary, scrollProxy: ScrollViewProxy) -> some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+    @ViewBuilder
+    private var rulesSectionFilterControl: some View {
+        if pageContentWidth > 0 && pageContentWidth < 600 {
             HStack(spacing: AetherVisual.s2) {
-                HStack(spacing: AetherVisual.s2) {
-                    Image(systemName: "globe")
-                        .foregroundStyle(AetherVisual.secondaryText)
-                        .accessibilityHidden(true)
-                    TextField(
-                        AppLocalization.string("Enter a website or IP to see which route it takes"),
-                        text: $testQuery
-                    )
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .onSubmit { performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount) }
-                    .accessibilityIdentifier("rule-test-field")
-                    if !testQuery.isEmpty {
-                        Button {
-                            testQuery = ""
-                            testResult = nil
-                            hasAttemptedMatch = false
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(AetherVisual.secondaryText)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(AppLocalization.string("Clear"))
-                    }
-                }
-                .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
-                .frame(minHeight: AetherVisual.tableRowHeight)
-                .background(AetherVisual.neutralFill, in: Capsule())
-
-                Button(AppLocalization.string("Test")) {
-                    performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
-                }
-                .aetherButton(prominent: true)
-                .controlSize(.large)
-                .disabled(testQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityIdentifier("rule-test-button")
-            }
-
-            if let result = testResult {
-                HStack(spacing: AetherVisual.s2) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(AetherReadableTint(color: .green))
-                        .accessibilityHidden(true)
-                    Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
-                        .font(.callout.weight(.semibold))
-                    RuleKindTag(kind: result.matchedRule.kind)
-                    if let criteria = result.matchedRule.criteria {
-                        Text(verbatim: criteria)
-                            .font(.callout.monospaced())
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Image(systemName: "arrow.right")
-                        .font(.caption)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                        .accessibilityHidden(true)
-                    RuleTargetLabel(target: result.target)
-                    Spacer(minLength: AetherVisual.s2)
-                    Button {
-                        withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
-                            if selectedSection == .routeTester {
-                                selectedSection = .all
-                            }
-                            highlightedRuleID = result.matchedRule.id
-                            scrollProxy.scrollTo(result.matchedRule.id, anchor: .center)
-                        }
-                    } label: {
-                        Label(AppLocalization.string("Locate"), systemImage: "scope")
-                    }
-                    .aetherButton()
-                    .controlSize(.small)
-                }
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("rule-test-result")
-                .transition(AetherVisual.insertion)
-            } else if hasAttemptedMatch && !testQuery.isEmpty {
-                Label(matchExplanation, systemImage: "info.circle")
-                    .font(.callout)
+                Text(AppLocalization.string("Rule sections"))
+                    .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("rule-test-explanation")
-                    .transition(AetherVisual.insertion)
-            } else {
-                HStack(spacing: AetherVisual.s1) {
-                    Text(AppLocalization.string("Try:"))
-                        .font(.caption)
-                        .foregroundStyle(AetherVisual.secondaryText)
-                    ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
-                        Button(domain) {
-                            testQuery = domain
-                            performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
-                        }
-                        .buttonStyle(.aetherPressable)
-                        .font(.caption)
-                        .padding(.horizontal, AetherVisual.s2)
-                        .padding(.vertical, AetherVisual.sMicro)
-                        .background(AetherVisual.neutralFill, in: Capsule())
-                        // A bare domain read as an unclear label; say the action.
-                        .accessibilityLabel(String.localizedStringWithFormat(AppLocalization.string("Test %@"), domain))
-                        .accessibilityIdentifier("rule-quick-test-\(domain)")
+                Spacer(minLength: AetherVisual.s2)
+                Picker(AppLocalization.string("Rule sections"), selection: $selectedSection) {
+                    ForEach(RulesPageSectionFilter.allCases) { sectionFilter in
+                        Text(sectionFilter.title).tag(sectionFilter)
                     }
                 }
-                .transition(.opacity)
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                .accessibilityIdentifier("rules-section-filter")
             }
+        } else {
+            AetherSegmentedPicker(
+                selection: $selectedSection,
+                options: RulesPageSectionFilter.allCases.map {
+                    .init(value: $0, title: $0.title)
+                },
+                accessibilityLabel: AppLocalization.string("Rule sections"),
+                accessibilityIdentifier: "rules-section-filter",
+                fillsWidth: true
+            )
         }
-        .padding(AetherVisual.cardPadding)
-        .aetherPanel()
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: testResult?.matchedRule.id)
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: hasAttemptedMatch)
     }
 
     // MARK: Custom rules
@@ -554,8 +474,8 @@ struct RulesView: View {
                                         if selectedSection != .all && selectedSection != .routeTester {
                                             selectedSection = .all
                                         }
-                                        testQuery = rule.kind == .dstPort ? "example.com:\(rule.value)" : rule.value
-                                        performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
+                                        let query = rule.kind == .dstPort ? "example.com:\(rule.value)" : rule.value
+                                        externalRouteTestRequest = RouteTestRequest(query: query)
                                     }
                                 )
                                 .transition(AetherVisual.insertion)
@@ -599,8 +519,8 @@ struct RulesView: View {
         } label: {
             Label(
                 existing?.isEnabled == true
-                    ? AppLocalization.inline("QUIC Blocked (UDP 443)", chinese: "已屏蔽 QUIC (UDP 443)")
-                    : AppLocalization.inline("Block QUIC (UDP 443)", chinese: "屏蔽 QUIC (UDP 443)"),
+                    ? AppLocalization.string("QUIC Blocked (UDP 443)")
+                    : AppLocalization.string("Block QUIC (UDP 443)"),
                 systemImage: existing?.isEnabled == true ? "checkmark.shield.fill" : "bolt.slash.fill"
             )
             .labelStyle(.titleAndIcon)
@@ -634,12 +554,33 @@ struct RulesView: View {
         if selectedSection != .all {
             selectedSection = .all
         }
-        testQuery = pending
-        performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
-        if let matchedRuleID = testResult?.matchedRule.id {
+        externalRouteTestRequest = RouteTestRequest(query: pending)
+        let customHosts = Dictionary(
+            tunnel.activeProfileOverrides.customHosts
+                .filter(\.isEnabled)
+                .map { ($0.domain.lowercased(), $0.ip) },
+            uniquingKeysWith: { _, last in last }
+        )
+        if case let .matched(result) = RouteTesterCard.evaluateMatch(
+            query: pending,
+            rules: summary.allRules,
+            totalRuleCount: summary.ruleCount,
+            customHosts: customHosts,
+            geoSiteData: tunnel.bundledGeoSiteData
+        ) {
+            locateRule(result.matchedRule.id, using: scrollProxy)
+        }
+    }
+
+    private func locateRule(_ ruleID: Int, using scrollProxy: ScrollViewProxy) {
+        if selectedSection == .routeTester {
+            selectedSection = .all
+        }
+        highlightedRuleID = ruleID
+        Task { @MainActor in
+            await Task.yield()
             withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
-                highlightedRuleID = matchedRuleID
-                scrollProxy.scrollTo(matchedRuleID, anchor: .center)
+                scrollProxy.scrollTo(ruleID, anchor: .center)
             }
         }
     }
@@ -790,6 +731,13 @@ struct RulesView: View {
                         rulesSearchField
                     }
                     .padding(AetherVisual.s3)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.width
+                    } action: { newWidth in
+                        if abs(rulesFilterBarWidth - newWidth) >= 1 {
+                            rulesFilterBarWidth = newWidth
+                        }
+                    }
 
                     if let modeNote {
                         Label(modeNote, systemImage: "info.circle")
@@ -833,8 +781,7 @@ struct RulesView: View {
                                         if selectedSection != .all && selectedSection != .routeTester {
                                             selectedSection = .all
                                         }
-                                        testQuery = destination
-                                        performMatch(rules: summary.allRules, totalRuleCount: summary.ruleCount)
+                                        externalRouteTestRequest = RouteTestRequest(query: destination)
                                     },
                                     onOverride: { target in
                                         guard let customRule = rule.makeCustomRuleOverride(target: target) else { return }
@@ -894,7 +841,7 @@ struct RulesView: View {
             }
             .aetherPanel()
 
-            HStack(spacing: AetherVisual.s1) {
+            AetherFlowLayout(spacing: AetherVisual.s1) {
                 Text(AppLocalization.string("This is a summary of the profile; bypass rules and runtime optimization can also affect traffic."))
                 Button(AppLocalization.string("Manage bypass rules")) {
                     openSettings()
@@ -919,25 +866,37 @@ struct RulesView: View {
         }
     }
 
+    @ViewBuilder
     private func actionFilter(summary: ProfileConfigurationSummary) -> some View {
-        AetherSegmentedPicker(
-            selection: $selectedAction,
-            options: RuleActionFilter.allCases.map { action in
-                let count: Int = switch action {
-                case .all: summary.ruleCount
-                case .direct: summary.directRuleCount
-                case .proxy: summary.proxyRuleCount
-                case .reject: summary.rejectRuleCount
+        let items: [(filter: RuleActionFilter, title: String)] = RuleActionFilter.allCases.map { action in
+            let count: Int = switch action {
+            case .all: summary.ruleCount
+            case .direct: summary.directRuleCount
+            case .proxy: summary.proxyRuleCount
+            case .reject: summary.rejectRuleCount
+            }
+            return (action, "\(action.shortTitle) \(count)")
+        }
+        if rulesFilterBarWidth > 0 && rulesFilterBarWidth < 520 {
+            Picker(AppLocalization.string("Filter by target"), selection: $selectedAction) {
+                ForEach(items, id: \.filter.id) { entry in
+                    Text(verbatim: entry.title).tag(entry.filter)
                 }
-                return .init(
-                    value: action,
-                    title: "\(action.shortTitle) \(count)"
-                )
-            },
-            accessibilityLabel: AppLocalization.string("Filter by target"),
-            accessibilityIdentifier: "rules-action-filter"
-        )
-        .fixedSize()
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            .accessibilityLabel(AppLocalization.string("Filter by target"))
+            .accessibilityIdentifier("rules-action-filter")
+        } else {
+            AetherSegmentedPicker(
+                selection: $selectedAction,
+                options: items.map { .init(value: $0.filter, title: $0.title) },
+                accessibilityLabel: AppLocalization.string("Filter by target"),
+                accessibilityIdentifier: "rules-action-filter"
+            )
+            .fixedSize()
+        }
     }
 
     private var rulesSearchField: some View {
@@ -946,61 +905,6 @@ struct RulesView: View {
             prompt: AppLocalization.string("Search rules"),
             accessibilityIdentifier: "rules-search-field"
         )
-    }
-
-    private func performMatch(rules: [RuleConfigurationSummary], totalRuleCount: Int) {
-        hasAttemptedMatch = true
-        testResult = nil
-        var assessment = RouteMatchEngine.assess(
-            destination: testQuery,
-            against: rules,
-            totalRuleCount: totalRuleCount,
-            geoSiteData: tunnel.bundledGeoSiteData
-        )
-        let customHosts = Dictionary(
-            tunnel.activeProfileOverrides.customHosts
-                .filter(\.isEnabled)
-                .map { ($0.domain.lowercased(), $0.ip) },
-            uniquingKeysWith: { _, last in last }
-        )
-        if !customHosts.isEmpty {
-            let trimmedQuery = testQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let resolvedHost = ProfileHostsInspector.resolveAlias(trimmedQuery, in: customHosts)
-            if resolvedHost != trimmedQuery {
-                let aliasAssessment = RouteMatchEngine.assess(
-                    destination: resolvedHost,
-                    against: rules,
-                    totalRuleCount: totalRuleCount,
-                    geoSiteData: tunnel.bundledGeoSiteData
-                )
-                if case let .matched(aliasMatch) = aliasAssessment {
-                    switch assessment {
-                    case let .matched(directMatch) where aliasMatch.order < directMatch.order:
-                        assessment = aliasAssessment
-                    case .indeterminate, .noMatch:
-                        assessment = aliasAssessment
-                    default:
-                        break
-                    }
-                }
-            }
-        }
-        switch assessment {
-        case let .matched(result): testResult = result
-        case let .indeterminate(ruleOrder?):
-            // A GEOSITE/GEOIP or similar rule needs the core's databases; say
-            // which rule stops the preview rather than guessing past it.
-            matchExplanation = String.localizedStringWithFormat(
-                AppLocalization.string("Rule #%lld needs data only available once connected, so the route is decided by the core."),
-                Int64(ruleOrder)
-            )
-        case .indeterminate:
-            matchExplanation = AppLocalization.string("Cannot determine the route: runtime data or rules outside this preview are required.")
-        case .noMatch:
-            matchExplanation = AppLocalization.string("No preview rule matched. The runtime routing mode remains authoritative.")
-        case .invalidDestination:
-            matchExplanation = AppLocalization.string("Enter a valid domain, IP address, or URL.")
-        }
     }
 
     private func filteredRules(from rules: [RuleConfigurationSummary]) -> [RuleConfigurationSummary] {
@@ -1017,6 +921,205 @@ struct RulesView: View {
             if String(rule.order) == text { return true }
             return false
         }
+    }
+}
+
+private struct RouteTesterCard: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    let summary: ProfileConfigurationSummary
+    let externalRequest: RouteTestRequest?
+    let onLocateRule: (Int) -> Void
+
+    @State private var testQuery: String = ""
+    @State private var testResult: RouteMatchResult? = nil
+    @State private var hasAttemptedMatch: Bool = false
+    @State private var matchExplanation: String = ""
+    @State private var lastConsumedRequestID: UUID? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            HStack(spacing: AetherVisual.s2) {
+                HStack(spacing: AetherVisual.s2) {
+                    Image(systemName: "globe")
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityHidden(true)
+                    TextField(
+                        AppLocalization.string("Enter a website or IP to see which route it takes"),
+                        text: $testQuery
+                    )
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .onSubmit { performMatch() }
+                    .accessibilityIdentifier("rule-test-field")
+                    if !testQuery.isEmpty {
+                        Button {
+                            testQuery = ""
+                            testResult = nil
+                            hasAttemptedMatch = false
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(AetherVisual.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(AppLocalization.string("Clear"))
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s3 + AetherVisual.sMicro)
+                .frame(minHeight: AetherVisual.tableRowHeight)
+                .background(AetherVisual.neutralFill, in: Capsule())
+
+                Button(AppLocalization.string("Test")) {
+                    performMatch()
+                }
+                .aetherButton(prominent: true)
+                .controlSize(.large)
+                .disabled(testQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("rule-test-button")
+            }
+
+            if let result = testResult {
+                AetherFlowLayout(spacing: AetherVisual.s2) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(AetherReadableTint(color: .green))
+                        .accessibilityHidden(true)
+                    Text(String.localizedStringWithFormat(AppLocalization.string("Matched Rule #%lld"), Int64(result.order)))
+                        .font(.callout.weight(.semibold))
+                    RuleKindTag(kind: result.matchedRule.kind)
+                    if let criteria = result.matchedRule.criteria {
+                        Text(verbatim: criteria)
+                            .font(.callout.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Image(systemName: "arrow.right")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .accessibilityHidden(true)
+                    RuleTargetLabel(target: result.target)
+                    Button {
+                        onLocateRule(result.matchedRule.id)
+                    } label: {
+                        Label(AppLocalization.string("Locate"), systemImage: "scope")
+                    }
+                    .aetherButton()
+                    .controlSize(.small)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("rule-test-result")
+                .transition(AetherVisual.insertion)
+            } else if hasAttemptedMatch && !testQuery.isEmpty {
+                Label(matchExplanation, systemImage: "info.circle")
+                    .font(.callout)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("rule-test-explanation")
+                    .transition(AetherVisual.insertion)
+            } else {
+                AetherFlowLayout(spacing: AetherVisual.s1) {
+                    Text(AppLocalization.string("Try:"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                    ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
+                        Button(domain) {
+                            testQuery = domain
+                            performMatch()
+                        }
+                        .buttonStyle(.aetherPressable)
+                        .font(.caption)
+                        .padding(.horizontal, AetherVisual.s2)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .background(AetherVisual.neutralFill, in: Capsule())
+                        // A bare domain read as an unclear label; say the action.
+                        .accessibilityLabel(String.localizedStringWithFormat(AppLocalization.string("Test %@"), domain))
+                        .accessibilityIdentifier("rule-quick-test-\(domain)")
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(AetherVisual.cardPadding)
+        .aetherPanel()
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: testResult?.matchedRule.id)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: hasAttemptedMatch)
+        .onAppear { consumeExternalRequest() }
+        .onChange(of: externalRequest) { _, _ in consumeExternalRequest() }
+    }
+
+    private func consumeExternalRequest() {
+        guard let request = externalRequest, request.id != lastConsumedRequestID else { return }
+        lastConsumedRequestID = request.id
+        testQuery = request.query
+        performMatch()
+    }
+
+    private func performMatch() {
+        hasAttemptedMatch = true
+        testResult = nil
+        let customHosts = Dictionary(
+            tunnel.activeProfileOverrides.customHosts
+                .filter(\.isEnabled)
+                .map { ($0.domain.lowercased(), $0.ip) },
+            uniquingKeysWith: { _, last in last }
+        )
+        let assessment = Self.evaluateMatch(
+            query: testQuery,
+            rules: summary.allRules,
+            totalRuleCount: summary.ruleCount,
+            customHosts: customHosts,
+            geoSiteData: tunnel.bundledGeoSiteData
+        )
+        switch assessment {
+        case let .matched(result): testResult = result
+        case let .indeterminate(ruleOrder?):
+            matchExplanation = String.localizedStringWithFormat(
+                AppLocalization.string("Rule #%lld needs data only available once connected, so the route is decided by the core."),
+                Int64(ruleOrder)
+            )
+        case .indeterminate:
+            matchExplanation = AppLocalization.string("Cannot determine the route: runtime data or rules outside this preview are required.")
+        case .noMatch:
+            matchExplanation = AppLocalization.string("No preview rule matched. The runtime routing mode remains authoritative.")
+        case .invalidDestination:
+            matchExplanation = AppLocalization.string("Enter a valid domain, IP address, or URL.")
+        }
+    }
+
+    static func evaluateMatch(
+        query: String,
+        rules: [RuleConfigurationSummary],
+        totalRuleCount: Int,
+        customHosts: [String: String],
+        geoSiteData: Data?
+    ) -> RouteMatchAssessment {
+        var assessment = RouteMatchEngine.assess(
+            destination: query,
+            against: rules,
+            totalRuleCount: totalRuleCount,
+            geoSiteData: geoSiteData
+        )
+        if !customHosts.isEmpty {
+            let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let resolvedHost = ProfileHostsInspector.resolveAlias(trimmedQuery, in: customHosts)
+            if resolvedHost != trimmedQuery {
+                let aliasAssessment = RouteMatchEngine.assess(
+                    destination: resolvedHost,
+                    against: rules,
+                    totalRuleCount: totalRuleCount,
+                    geoSiteData: geoSiteData
+                )
+                if case let .matched(aliasMatch) = aliasAssessment {
+                    switch assessment {
+                    case let .matched(directMatch) where aliasMatch.order < directMatch.order:
+                        assessment = aliasAssessment
+                    case .indeterminate, .noMatch:
+                        assessment = aliasAssessment
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+        return assessment
     }
 }
 
@@ -1212,6 +1315,21 @@ private struct RuleRow: View {
             }
         }
         .accessibilityElement(children: .contain)
+        .accessibilityAction(named: AppLocalization.string("Copy Criteria")) {
+            copyText(rule.criteria ?? rule.kind)
+        }
+        .accessibilityAction(named: AppLocalization.string("Copy Full Rule")) {
+            let line = "\(rule.kind),\(rule.criteria.map { $0 + "," } ?? "")\(rule.target)"
+            copyText(line)
+        }
+        .accessibilityAction(named: AppLocalization.string("Copy Target Name")) {
+            copyText(rule.target)
+        }
+        .accessibilityAction(named: AppLocalization.string("Test This Destination")) {
+            if let criteria = rule.criteria {
+                onTest(criteria)
+            }
+        }
     }
 
     private func overrideTargetTitle(_ target: CustomRuleTarget) -> String {
@@ -1298,73 +1416,74 @@ struct CustomRuleRow: View {
 
             Spacer(minLength: AetherVisual.s2)
 
-            // Swap target label and hover actions in the same trailing slot so row content never shifts horizontally.
-            ZStack(alignment: .trailing) {
-                RuleTargetLabel(target: rule.target.rawString)
-                    .frame(maxWidth: 160, alignment: .trailing)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .opacity(isHovered ? 0 : 1)
-                    .accessibilityHidden(isHovered)
-
-                HStack(spacing: AetherVisual.sMicro) {
-                    if let onMoveUp {
-                        Button {
-                            onMoveUp()
-                        } label: {
-                            AetherRowIconLabel(symbol: "chevron.up")
-                        }
-                        .buttonStyle(.aetherPressable)
-                        .disabled(!canMoveUp)
-                        .help(AppLocalization.string("Move rule up"))
-                        .accessibilityLabel(AppLocalization.string("Move rule up"))
-                    }
-
-                    if let onMoveDown {
-                        Button {
-                            onMoveDown()
-                        } label: {
-                            AetherRowIconLabel(symbol: "chevron.down")
-                        }
-                        .buttonStyle(.aetherPressable)
-                        .disabled(!canMoveDown)
-                        .help(AppLocalization.string("Move rule down"))
-                        .accessibilityLabel(AppLocalization.string("Move rule down"))
-                    }
-
+            RuleTargetLabel(target: rule.target.rawString)
+                .frame(maxWidth: 160, alignment: .trailing)
+                .opacity(isHovered ? 0 : 1)
+                .accessibilityHidden(isHovered)
+        }
+        .overlay(alignment: .trailing) {
+            HStack(spacing: AetherVisual.sMicro) {
+                if let onMoveUp {
                     Button {
-                        onTest()
+                        onMoveUp()
                     } label: {
-                        AetherRowIconLabel(symbol: "bolt.badge.clock", tint: .accentColor)
+                        AetherRowIconLabel(symbol: "chevron.up")
                     }
                     .buttonStyle(.aetherPressable)
-                    .help(AppLocalization.string("Verify rule"))
-                    .accessibilityLabel(AppLocalization.string("Verify rule"))
-
-                    Button {
-                        onEdit()
-                    } label: {
-                        AetherRowIconLabel(symbol: "pencil")
-                    }
-                    .buttonStyle(.aetherPressable)
-                    .help(AppLocalization.string("Edit rule"))
-                    .accessibilityLabel(AppLocalization.string("Edit rule"))
-
-                    Button {
-                        onDelete()
-                    } label: {
-                        AetherRowIconLabel(symbol: "trash", tint: .red)
-                    }
-                    .buttonStyle(.aetherPressable)
-                    .help(AppLocalization.string("Delete rule"))
-                    .accessibilityLabel(AppLocalization.string("Delete rule"))
+                    .disabled(!canMoveUp)
+                    .help(AppLocalization.string("Move rule up"))
+                    .accessibilityLabel(AppLocalization.string("Move rule up"))
                 }
-                .padding(.horizontal, AetherVisual.s1)
-                .padding(.vertical, AetherVisual.sMicro)
-                .background(.regularMaterial, in: Capsule())
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
-                .accessibilityHidden(!isHovered)
+
+                if let onMoveDown {
+                    Button {
+                        onMoveDown()
+                    } label: {
+                        AetherRowIconLabel(symbol: "chevron.down")
+                    }
+                    .buttonStyle(.aetherPressable)
+                    .disabled(!canMoveDown)
+                    .help(AppLocalization.string("Move rule down"))
+                    .accessibilityLabel(AppLocalization.string("Move rule down"))
+                }
+
+                Button {
+                    onTest()
+                } label: {
+                    AetherRowIconLabel(symbol: "bolt.badge.clock", tint: .accentColor)
+                }
+                .buttonStyle(.aetherPressable)
+                .help(AppLocalization.string("Verify rule"))
+                .accessibilityLabel(AppLocalization.string("Verify rule"))
+
+                Button {
+                    onEdit()
+                } label: {
+                    AetherRowIconLabel(symbol: "pencil")
+                }
+                .buttonStyle(.aetherPressable)
+                .help(AppLocalization.string("Edit rule"))
+                .accessibilityLabel(AppLocalization.string("Edit rule"))
+
+                Button {
+                    onDelete()
+                } label: {
+                    AetherRowIconLabel(symbol: "trash", tint: .red)
+                }
+                .buttonStyle(.aetherPressable)
+                .help(AppLocalization.string("Delete rule"))
+                .accessibilityLabel(AppLocalization.string("Delete rule"))
             }
+            .padding(.horizontal, AetherVisual.s1)
+            .padding(.vertical, AetherVisual.sMicro)
+            .background(Color(nsColor: .windowBackgroundColor), in: Capsule())
+            .background(AetherVisual.cardFill, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(AetherVisual.cardStroke, lineWidth: 0.5)
+            }
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
+            .accessibilityHidden(!isHovered)
         }
         .padding(.horizontal, AetherVisual.sRow)
         .padding(.vertical, AetherVisual.sCompact)
@@ -1423,6 +1542,21 @@ struct CustomRuleRow: View {
             } label: {
                 Label(AppLocalization.string("Delete rule"), systemImage: "trash")
             }
+        }
+        .accessibilityAction(named: AppLocalization.string("Verify rule")) {
+            onTest()
+        }
+        .accessibilityAction(named: AppLocalization.string("Edit rule")) {
+            onEdit()
+        }
+        .accessibilityAction(named: AppLocalization.string("Delete rule")) {
+            onDelete()
+        }
+        .accessibilityAction(named: AppLocalization.string("Move rule up")) {
+            if canMoveUp { onMoveUp?() }
+        }
+        .accessibilityAction(named: AppLocalization.string("Move rule down")) {
+            if canMoveDown { onMoveDown?() }
         }
     }
 }
@@ -1660,7 +1794,7 @@ struct CustomRuleEditorSheet: View {
                                     .init(value: "UDP", title: "UDP"),
                                     .init(value: "TCP", title: "TCP"),
                                 ],
-                                accessibilityLabel: AppLocalization.inline("Transport protocol", chinese: "传输层协议"),
+                                accessibilityLabel: AppLocalization.string("Transport protocol"),
                                 accessibilityIdentifier: "custom-rule-network-picker"
                             )
                             .fixedSize()
@@ -1928,18 +2062,18 @@ struct CustomRuleEditorSheet: View {
         case .domainSuffix: AppLocalization.string("e.g. example.com")
         case .domain: AppLocalization.string("e.g. my.server.com")
         case .domainKeyword: AppLocalization.string("e.g. tailscale or internal")
-        case .domainWildcard: AppLocalization.inline("e.g. *.dev.local or api-?.example.com", chinese: "例如 *.dev.local 或 api-?.example.com")
-        case .domainRegex: AppLocalization.inline("e.g. ^api-\\d{1,3}\\.example\\.com$", chinese: "例如 ^api-\\d{1,3}\\.example\\.com$")
+        case .domainWildcard: AppLocalization.string("e.g. *.dev.local or api-?.example.com")
+        case .domainRegex: AppLocalization.string("e.g. ^api-\\d{1,3}\\.example\\.com$")
         case .ipCIDR: AppLocalization.string("e.g. 100.64.0.0/10 or 192.168.1.0/24")
         case .ipCIDR6: AppLocalization.string("e.g. fd7a:115c:a1e0::/48")
         case .geoIP: AppLocalization.string("e.g. CN or US")
         case .geoSite: AppLocalization.string("e.g. openai, apple, cn or netflix")
-        case .ipASN: AppLocalization.inline("e.g. 13335 or AS15169", chinese: "例如 13335 或 AS15169")
+        case .ipASN: AppLocalization.string("e.g. 13335 or AS15169")
         case .dstPort: AppLocalization.string("e.g. 443, 80 or 853")
-        case .network: AppLocalization.inline("TCP or UDP", chinese: "TCP 或 UDP")
-        case .processName: AppLocalization.inline("e.g. curl, ssh or node", chinese: "例如 curl、ssh 或 node")
-        case .processPath: AppLocalization.inline("e.g. /usr/bin/curl", chinese: "例如 /usr/bin/curl")
-        case .and: AppLocalization.inline("e.g. ((NETWORK,UDP),(DST-PORT,443))", chinese: "例如 ((NETWORK,UDP),(DST-PORT,443))")
+        case .network: AppLocalization.string("TCP or UDP")
+        case .processName: AppLocalization.string("e.g. curl, ssh or node")
+        case .processPath: AppLocalization.string("e.g. /usr/bin/curl")
+        case .and: AppLocalization.string("e.g. ((NETWORK,UDP),(DST-PORT,443))")
         case .application: ""
         }
     }
@@ -1979,10 +2113,7 @@ struct CustomRuleEditorSheet: View {
                 .replacingOccurrences(of: "?", with: "1")
             destination = sample
         case .domainRegex:
-            testExplanation = AppLocalization.inline(
-                "Regex syntax verified; evaluated against each requested hostname at connection time.",
-                chinese: "正则表达式语法校验通过；连接时将按请求域名实时匹配。"
-            )
+            testExplanation = AppLocalization.string("Regex syntax verified; evaluated against each requested hostname at connection time.")
             return
         case .ipCIDR:
             let ipPart = rule.value.split(separator: "/").first.map(String.init) ?? rule.value
@@ -1995,24 +2126,15 @@ struct CustomRuleEditorSheet: View {
         case .geoSite:
             destination = "example.com"
         case .ipASN:
-            testExplanation = AppLocalization.inline(
-                "ASN rule syntax verified; evaluated at runtime against ASN.mmdb.",
-                chinese: "ASN 规则语法校验通过；运行时将基于 ASN.mmdb 自动匹配。"
-            )
+            testExplanation = AppLocalization.string("ASN rule syntax verified; evaluated at runtime against ASN.mmdb.")
             return
         case .dstPort:
             destination = "example.com:\(rule.value)"
         case .network, .and:
-            testExplanation = AppLocalization.inline(
-                "Transport/composite rule syntax verified; evaluated by the core router on live connections.",
-                chinese: "传输层/组合规则语法校验通过；将在实际连接时由核心路由器实时评估。"
-            )
+            testExplanation = AppLocalization.string("Transport/composite rule syntax verified; evaluated by the core router on live connections.")
             return
         case .processName, .processPath:
-            testExplanation = AppLocalization.inline(
-                "Process rules match the originating local binary or process name at connection time.",
-                chinese: "进程规则会在发起连接时按本地进程名或可执行文件路径实时匹配。"
-            )
+            testExplanation = AppLocalization.string("Process rules match the originating local binary or process name at connection time.")
             return
         case .application:
             // Matched by the connecting app, not a destination.
@@ -2177,7 +2299,28 @@ private struct RuleProviderEditorSheet: View {
     @State private var defaultTarget: String = "PROXY"
     @State private var intervalHours: Int = 24
     @State private var isSaving: Bool = false
+    @State private var requestsCancel: Bool = false
     @State private var errorMessage: String?
+
+    private var hasChanges: Bool {
+        if let initialProvider {
+            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+            let initialHours = max(1, Int(initialProvider.intervalSeconds / 3_600))
+            return trimmedName != initialProvider.name
+                || trimmedURL != initialProvider.url.absoluteString
+                || behavior != initialProvider.behavior
+                || format != initialProvider.format
+                || defaultTarget != initialProvider.defaultTarget
+                || intervalHours != initialHours
+        }
+        return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || behavior != .domain
+            || format != .text
+            || defaultTarget != "PROXY"
+            || intervalHours != 24
+    }
 
     init(
         initialProvider: RuleProviderMetadata?,
@@ -2222,7 +2365,7 @@ private struct RuleProviderEditorSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+        VStack(alignment: .leading, spacing: 0) {
             AetherSheetHeader(
                 symbol: "shippingbox.fill",
                 title: initialProvider == nil
@@ -2231,6 +2374,7 @@ private struct RuleProviderEditorSheet: View {
                 subtitle: AppLocalization.string("Subscribe to an HTTPS rule provider list."),
                 tint: AppSection.rules.tileColor
             )
+            .padding([.horizontal, .top], AetherVisual.dialogPadding)
 
             Form {
                 Section {
@@ -2262,33 +2406,43 @@ private struct RuleProviderEditorSheet: View {
                 }
             }
             .aetherSettingsForm(isSheet: true)
+            .frame(
+                minHeight: AetherVisual.sheetFormMinHeight,
+                idealHeight: AetherVisual.sheetFormIdealHeight,
+                maxHeight: AetherVisual.sheetFormMaxHeight
+            )
 
-            if let errorMessage {
-                AetherInlineMessage(text: errorMessage, kind: .warning)
-            }
-
-            HStack(spacing: AetherVisual.s2) {
-                Spacer()
-                Button(AppLocalization.string("Cancel"), role: .cancel) {
-                    dismiss()
+            VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                if let errorMessage {
+                    AetherInlineMessage(text: errorMessage, kind: .warning)
                 }
-                .aetherButton()
-                .disabled(isSaving)
-                .keyboardShortcut(.cancelAction)
 
-                Button {
-                    save()
-                } label: {
-                    AetherProgressButtonLabel(AppLocalization.string("Save"), isWorking: isSaving)
+                HStack(spacing: AetherVisual.s2) {
+                    Spacer()
+                    Button(AppLocalization.string("Cancel"), role: .cancel) {
+                        requestsCancel = true
+                    }
+                    .aetherButton()
+                    .controlSize(.large)
+                    .disabled(isSaving)
+                    .keyboardShortcut(.cancelAction)
+
+                    Button {
+                        save()
+                    } label: {
+                        AetherProgressButtonLabel(AppLocalization.string("Save"), isWorking: isSaving)
+                    }
+                    .aetherButton(prominent: true)
+                    .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isValid || isSaving)
+                    .accessibilityIdentifier("save-rule-provider-button")
                 }
-                .aetherButton(prominent: true)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!isValid || isSaving)
-                .accessibilityIdentifier("save-rule-provider-button")
             }
+            .padding([.horizontal, .bottom], AetherVisual.dialogPadding)
         }
-        .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
     }
 
     private func save() {
@@ -2358,11 +2512,13 @@ private struct RuleProviderPreviewSheet: View {
             )
 
             if items.isEmpty {
-                FeatureEmptyState(
-                    symbol: "magnifyingglass",
-                    title: AppLocalization.string("No matching rules"),
-                    detail: AppLocalization.string("Update the rule set or try another search keyword.")
+                ContentUnavailableView(
+                    AppLocalization.string("No matching rules"),
+                    systemImage: "magnifyingglass",
+                    description: Text(AppLocalization.string("Update the rule set or try another search keyword."))
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .aetherPanel()
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -2411,7 +2567,7 @@ private struct RuleProviderPreviewSheet: View {
             }
         }
         .padding(AetherVisual.dialogPadding)
-        .aetherSheetFrame()
+        .aetherLargeSheetFrame()
         .task(id: query) {
             items = (try? await RuleProviderEngine.shared.searchRules(
                 for: provider.id,
@@ -2436,11 +2592,8 @@ private struct RoutingResourceMirrorSettingsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(
-                title: AppLocalization.inline("Database Mirrors & ASN.mmdb", chinese: "路由数据库与 ASN.mmdb 镜像源"),
-                note: AppLocalization.inline(
-                    "Customize HTTPS mirror URLs for Country.mmdb, GeoSite.dat, and ASN.mmdb",
-                    chinese: "自定义 Country.mmdb、GeoSite.dat 与 ASN.mmdb 的 HTTPS 镜像地址"
-                )
+                title: AppLocalization.string("Database Mirrors & ASN.mmdb"),
+                note: AppLocalization.string("Customize HTTPS mirror URLs for Country.mmdb, GeoSite.dat, and ASN.mmdb")
             ) {
                 Button {
                     withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
@@ -2449,8 +2602,8 @@ private struct RoutingResourceMirrorSettingsCard: View {
                 } label: {
                     Label(
                         isExpanded
-                            ? AppLocalization.inline("Hide", chinese: "收起")
-                            : AppLocalization.inline("Configure", chinese: "配置"),
+                            ? AppLocalization.string("Hide")
+                            : AppLocalization.string("Configure"),
                         systemImage: isExpanded ? "chevron.up" : "slider.horizontal.3"
                     )
                 }
@@ -2507,14 +2660,14 @@ private struct RoutingResourceMirrorSettingsCard: View {
                 .controlSize(.small)
                 .disabled(!tunnel.canModifyProfiles || isBusy)
 
-                Button(AppLocalization.inline("Reset", chinese: "恢复默认")) {
+                Button(AppLocalization.string("Reset")) {
                     resetMirror(for: kind)
                 }
                 .aetherButton()
                 .controlSize(.small)
                 .disabled(isBusy)
 
-                Button(AppLocalization.inline("Save & Download", chinese: "保存并更新")) {
+                Button(AppLocalization.string("Save & Download")) {
                     saveAndDownloadMirror(for: kind)
                 }
                 .aetherButton(prominent: true)
@@ -2523,7 +2676,7 @@ private struct RoutingResourceMirrorSettingsCard: View {
             }
 
             TextField(
-                AppLocalization.inline("HTTPS database URL", chinese: "HTTPS 数据库下载地址"),
+                AppLocalization.string("HTTPS database URL"),
                 text: Binding(
                     get: { resourceURLStrings[kind] ?? defaultResourceURLString(for: kind) },
                     set: { resourceURLStrings[kind] = $0 }
@@ -2533,7 +2686,7 @@ private struct RoutingResourceMirrorSettingsCard: View {
             .font(.caption.monospaced())
 
             TextField(
-                AppLocalization.inline("Optional HTTPS .sha256sum URL (defaults to <URL>.sha256sum)", chinese: "可选 HTTPS .sha256sum 校验地址（默认追加 .sha256sum）"),
+                AppLocalization.string("Optional HTTPS .sha256sum URL (defaults to <URL>.sha256sum)"),
                 text: Binding(
                     get: { checksumURLStrings[kind] ?? "" },
                     set: { checksumURLStrings[kind] = $0 }
@@ -2568,9 +2721,9 @@ private struct RoutingResourceMirrorSettingsCard: View {
             try store.clearCustomMirrorURLs(for: kind)
             resourceURLStrings[kind] = defaultResourceURLString(for: kind)
             checksumURLStrings[kind] = ""
-            statusMessage = AppLocalization.inline(
-                "Reset \(kind.fileName) to the maintained default URL.",
-                chinese: "已将 \(kind.fileName) 恢复为默认镜像地址。"
+            statusMessage = AppLocalization.format(
+                "Reset %@ to the maintained default URL.",
+                kind.fileName
             )
             statusIsError = false
         } catch {
@@ -2617,9 +2770,9 @@ private struct RoutingResourceMirrorSettingsCard: View {
                     _ = try await downloadClient.downloadAndInstall(descriptor, into: store)
                 }.value
                 tunnel.refreshRoutingResourceStatuses()
-                statusMessage = AppLocalization.inline(
-                    "Updated \(kind.fileName) from the configured mirror.",
-                    chinese: "已从自定义镜像成功更新并校验 \(kind.fileName)。"
+                statusMessage = AppLocalization.format(
+                    "Updated %@ from the configured mirror.",
+                    kind.fileName
                 )
                 statusIsError = false
             } catch {

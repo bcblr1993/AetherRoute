@@ -260,7 +260,9 @@ private struct ComponentRow: View {
             Text(verbatim: component.version + "  " + component.license)
                 .font(.caption)
                 .foregroundStyle(
-                    isSelected ? AetherVisual.selectedSecondaryText : Color.secondary
+                    isSelected
+                        ? AnyShapeStyle(AetherVisual.selectedSecondaryText)
+                        : AnyShapeStyle(AetherVisual.secondaryText)
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
@@ -351,6 +353,6 @@ private extension View {
             .foregroundStyle(AetherVisual.secondaryText)
             .padding(.horizontal, AetherVisual.s3)
             .padding(.vertical, AetherVisual.s2)
-            .background(.quaternary, in: Capsule())
+            .background(AetherVisual.neutralFill, in: Capsule())
     }
 }

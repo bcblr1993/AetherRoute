@@ -24,20 +24,42 @@ else
 fi
 
 # Timing lives only in the token files. A hand-tuned curve elsewhere
-# (`withAnimation(.easeInOut(duration: 1.2))`) drifts from the vocabulary in
-# Docs/Design.md; add a token instead.
+# (`withAnimation(.easeInOut(duration: 1.2))` or multiline `.animation(\n  ..., .smooth(duration: ...))`)
+# drifts from the vocabulary in Docs/Design.md; add a token instead.
 if find "$ROOT/Sources/AetherRouteApp" -name '*.swift' \
-  ! -name 'AetherMotion.swift' ! -name 'AetherRouteVisualSystem.swift' -print0 | xargs -0 perl -ne '
-  BEGIN { $curves = "easeIn|easeOut|easeInOut|spring|interpolatingSpring|linear|smooth|snappy|bouncy|default" }
-  if (/withAnimation\s*(?:\(\s*\))?\s*\{/ || /withAnimation\(\.(?:$curves)\b/ || /\.animation\(\.(?:$curves)\b/ || /\bAnimation\.(?:$curves)\b/) {
-    print "$ARGV:$.: $_"; $found = 1
+  ! -name 'AetherMotion.swift' ! -name 'AetherRouteVisualSystem.swift' -print0 | xargs -0 perl -0777 -ne '
+  $curves = qr/easeIn|easeOut|easeInOut|spring|interpolatingSpring|linear|smooth|snappy|bouncy|default/;
+  if (
+    /withAnimation\s*(?:\(\s*\))?\s*\{/ ||
+    /withAnimation\([^;{}]*?\.(?:$curves)\b/s ||
+    /(?<!AetherVisual)\.animation\(\s*(?:(?!value:|AetherVisual\.)[^;{}]){0,200}?\.(?:$curves)\b/s ||
+    /\bAnimation\.(?:$curves)\b/
+  ) {
+    print "$ARGV\n"; $found = 1
   }
-  close ARGV if eof;
   END { exit($found ? 1 : 0) }
 '; then
   echo "Motion guards passed: no hand-tuned animation outside the motion tokens."
 else
   echo "Hand-tuned animations are forbidden; add a token to AetherVisual (AetherMotion.swift) and use it." >&2
+  exit 1
+fi
+
+# Every TimelineView(.animation(...)) must pass `paused:` referencing reduceMotion
+# so continuous animations pause cleanly when Reduce Motion is enabled.
+if find "$ROOT/Sources/AetherRouteApp" -name '*.swift' -print0 | xargs -0 perl -0777 -ne '
+  while (/TimelineView\(\s*\.animation\b((?:[^()]|\([^()]*\))*)\)/g) {
+    $args = $1;
+    if ($args !~ /paused:\s*[^,)]*reduceMotion/i) {
+      print "$ARGV: TimelineView(.animation$args) lacks paused: ...reduceMotion\n";
+      $found = 1;
+    }
+  }
+  END { exit($found ? 1 : 0) }
+'; then
+  echo "Motion guards passed: all TimelineView(.animation) loops respect Reduce Motion."
+else
+  echo "TimelineView(.animation(...)) must pass paused: referencing reduceMotion." >&2
   exit 1
 fi
 

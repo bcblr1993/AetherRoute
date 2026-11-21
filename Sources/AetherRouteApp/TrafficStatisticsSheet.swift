@@ -112,6 +112,7 @@ struct TrafficStatisticsSheet: View {
                 Button(AppLocalization.string("Clear Statistics…"), role: .destructive) {
                     isClearConfirmationPresented = true
                 }
+                .aetherButton()
                 .disabled(statistics.ledger.days.isEmpty)
                 .accessibilityIdentifier("traffic-statistics-clear")
                 .confirmationDialog(
@@ -129,6 +130,7 @@ struct TrafficStatisticsSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("traffic-statistics-done")
             }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
@@ -223,13 +225,14 @@ private struct StatisticsRow: View {
                     .frame(height: AetherVisual.statusDotSize)
                     .accessibilityHidden(true)
             }
-            Spacer(minLength: AetherVisual.s3)
             VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
                 Text(verbatim: "↓ \(formattedBytes(volume.download))")
                 Text(verbatim: "↑ \(formattedBytes(volume.upload))")
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(AetherVisual.secondaryText)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s2)

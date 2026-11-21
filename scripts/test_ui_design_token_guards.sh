@@ -181,6 +181,11 @@ printf '\nText("x").foregroundStyle(.red)\n' >>"$FIXTURE/Sources/AetherRouteApp/
 expect_failure 1 'state colours on text and symbols use AetherReadableTint' \
   "$FIXTURE/scripts/verify_ui_design_tokens.sh"
 
+write_valid_source
+printf '\nButton("Test") {}.buttonStyle(.aetherGlassCapsule)\n' >>"$FIXTURE/Sources/AetherRouteApp/ConnectionsPageView.swift"
+expect_failure 1 'aetherGlassCapsule belongs only to the menu bar popover' \
+  "$FIXTURE/scripts/verify_ui_design_tokens.sh"
+
 # Two violations of different rules must both be reported, not just the
 # first one found.
 write_valid_source

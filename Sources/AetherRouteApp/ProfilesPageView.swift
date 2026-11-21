@@ -488,7 +488,7 @@ struct ProfilesView: View {
                     isMergeProfilesSheetPresented = true
                 } label: {
                     Label(
-                        AppLocalization.inline("Merge Profiles…", chinese: "组合订阅…"),
+                        AppLocalization.string("Merge Profiles…"),
                         systemImage: "square.stack.3d.up"
                     )
                 }
@@ -510,7 +510,7 @@ struct ProfilesView: View {
                     isGlobalOverrideSheetPresented = true
                 } label: {
                     Label(
-                        AppLocalization.inline("Global Override…", chinese: "全局覆写模板…"),
+                        AppLocalization.string("Global Override…"),
                         systemImage: "slider.horizontal.3"
                     )
                 }
@@ -1124,10 +1124,19 @@ struct RoutingResourcesCard: View {
 
 /// A profile as a System Settings row: kind tile, name, details, and on the
 /// trailing edge either "Current" or a Use button.
+private struct ManagedProfileRowHoverModifier: ViewModifier {
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(isHovered ? AetherVisual.hoverFill : Color.clear)
+            .onHover { isHovered = $0 }
+    }
+}
+
 private struct ManagedProfileRow: View {
     static let tileSize = AetherVisual.cardTileSize
     @EnvironmentObject private var tunnel: TunnelManager
-    @State private var isHovered = false
     @State private var inspectedNodeCount: Int?
     @State private var inspectedFallbackUsage: SubscriptionUsage?
     let managed: ManagedProfile
@@ -1226,7 +1235,7 @@ private struct ManagedProfileRow: View {
                         Task { await tunnel.rebuildMergedProfile(id: managed.id) }
                     } label: {
                         Label(
-                            AppLocalization.inline("Rebuild Merged Profile", chinese: "重新合并源订阅"),
+                            AppLocalization.string("Rebuild Merged Profile"),
                             systemImage: "arrow.triangle.merge"
                         )
                     }
@@ -1295,8 +1304,7 @@ private struct ManagedProfileRow: View {
         .padding(.vertical, AetherVisual.sRow)
         .frame(minHeight: AetherVisual.twoLineRowHeight)
         .contentShape(Rectangle())
-        .background(isHovered ? AetherVisual.hoverFill : Color.clear)
-        .onHover { isHovered = $0 }
+        .modifier(ManagedProfileRowHoverModifier())
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isActive)
         .onTapGesture(count: 2) {
             if !isActive && canActivate {
@@ -1609,17 +1617,19 @@ struct SubscriptionEditorSheet: View {
     }
 }
 
-/// Node counts of the profiles in the library, keyed by identity, timestamps,
-/// content hash, and overrides so refreshes and equal-length quota updates
-/// invalidate stale values while bounding dictionary size.
+/// Node counts of the profiles in the library, keyed by identity and lightweight
+/// metadata so refreshes and override updates invalidate stale values without
+/// hashing full multi-hundred-kilobyte YAML bodies during SwiftUI layout passes.
 @MainActor
 private enum ProfileNodeCountCache {
     struct Key: Hashable {
         let id: UUID
+        let updatedAt: Date
         let importedAt: Date
         let lastUpdatedAt: Date?
         let length: Int
-        let contentAndOverrideHash: Int
+        let nativeNodeCount: Int?
+        let overrideSummaryHash: Int
     }
 
     private static let maximumEntries = 128
@@ -1628,17 +1638,24 @@ private enum ProfileNodeCountCache {
 
     static func key(for managed: ManagedProfile) -> Key {
         var hasher = Hasher()
-        hasher.combine(managed.profile.yaml)
-        if let overrides = managed.profile.overrides,
-           let encoded = try? JSONEncoder().encode(overrides) {
-            hasher.combine(encoded)
+        if let overrides = managed.profile.overrides {
+            hasher.combine(overrides.groups.count)
+            for group in overrides.groups {
+                hasher.combine(group.name)
+            }
+            hasher.combine(overrides.hiddenNodeKeywords)
+            hasher.combine(overrides.chainedProxies.count)
+            hasher.combine(overrides.customHosts.count)
+            hasher.combine(overrides.scenarioPresets.count)
         }
         return Key(
             id: managed.id,
+            updatedAt: managed.updatedAt,
             importedAt: managed.profile.importedAt,
             lastUpdatedAt: managed.profile.subscription?.lastUpdatedAt,
             length: managed.profile.yaml.utf8.count,
-            contentAndOverrideHash: hasher.finalize()
+            nativeNodeCount: managed.profile.nativeNodes?.count,
+            overrideSummaryHash: hasher.finalize()
         )
     }
 
@@ -1658,41 +1675,50 @@ struct SubscriptionUsageLine: View {
     let usage: SubscriptionUsage
 
     var body: some View {
-        TimelineView(.everyMinute) { context in
-            let alert = SubscriptionUsageAlert.evaluate(usage, now: context.date)
-            HStack(spacing: AetherVisual.s2) {
-                if let fraction = usage.usedFraction {
-                    // Drawn rather than ProgressView, which turns grey in an
-                    // inactive window and would hide the warning colour.
-                    Capsule()
-                        .fill(AetherVisual.neutralFill)
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(tint(for: alert))
-                                .frame(width: max(4, 96 * min(max(fraction, 0), 1)))
-                        }
-                        .frame(width: 96, height: 5)
-                        .accessibilityHidden(true)
-                }
-                Text(Self.summary(usage, alert: alert, now: context.date))
-                    .font(.caption)
-                    .foregroundStyle(
-                        alert == .none
-                            ? AnyShapeStyle(AetherVisual.secondaryText)
-                            : AnyShapeStyle(tint(for: alert))
-                    )
-                    // Two lines rather than cutting off the expiry in a
-                    // narrow window.
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+        if usage.expiresAt != nil {
+            TimelineView(.everyMinute) { context in
+                content(now: context.date)
             }
-            .help(AppLocalization.format(
-                "Reported by the provider %@",
-                AppLocalization.date(usage.reportedAt, date: .abbreviated, time: .shortened)
-            ))
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("subscription-usage")
+        } else {
+            content(now: .now)
         }
+    }
+
+    private func content(now: Date) -> some View {
+        let alert = SubscriptionUsageAlert.evaluate(usage, now: now)
+        return HStack(spacing: AetherVisual.s2) {
+            if let fraction = usage.usedFraction {
+                let clamped = min(max(fraction, 0), 1)
+                // Drawn rather than ProgressView, which turns grey in an
+                // inactive window and would hide the warning colour.
+                Capsule()
+                    .fill(AetherVisual.neutralFill)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(tint(for: alert))
+                            .frame(width: clamped <= 0 ? 0 : max(4, 96 * clamped))
+                    }
+                    .frame(width: 96, height: 5)
+                    .accessibilityHidden(true)
+            }
+            Text(Self.summary(usage, alert: alert, now: now))
+                .font(.caption)
+                .foregroundStyle(
+                    alert == .none
+                        ? AnyShapeStyle(AetherVisual.secondaryText)
+                        : AnyShapeStyle(tint(for: alert))
+                )
+                // Two lines rather than cutting off the expiry in a
+                // narrow window.
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .help(AppLocalization.format(
+            "Reported by the provider %@",
+            AppLocalization.date(usage.reportedAt, date: .abbreviated, time: .shortened)
+        ))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("subscription-usage")
     }
 
     private func tint(for alert: SubscriptionUsageAlert) -> Color {
@@ -1753,7 +1779,7 @@ private extension ProfilesView {
     var externalProvidersCard: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(
-                title: AppLocalization.inline("External Providers", chinese: "外部规则与代理集合")
+                title: AppLocalization.string("External Providers")
             ) {
                 Button {
                     guard !isRefreshingProviders else { return }
@@ -1766,7 +1792,7 @@ private extension ProfilesView {
                     }
                 } label: {
                     AetherProgressButtonLabel(
-                        AppLocalization.inline("Refresh Providers", chinese: "刷新外部集合"),
+                        AppLocalization.string("Refresh Providers"),
                         systemImage: "arrow.clockwise",
                         isWorking: isRefreshingProviders
                     )
@@ -1786,12 +1812,9 @@ private extension ProfilesView {
                             size: AetherVisual.cardTileSize
                         )
                         VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                            Text(AppLocalization.inline("No staged providers yet", chinese: "尚未暂存外部集合"))
+                            Text(AppLocalization.string("No staged providers yet"))
                                 .font(.body.weight(.semibold))
-                            Text(AppLocalization.inline(
-                                "Remote rule-providers (.yaml, .txt, .mrs) and proxy-providers will be staged locally for TUN and Transparent Proxy.",
-                                chinese: "远程 rule-providers（含 .mrs 二进制规则集）和 proxy-providers 会暂存到本地并同步供 TUN 与透明代理使用。"
-                            ))
+                            Text(AppLocalization.string("Remote rule-providers (.yaml, .txt, .mrs) and proxy-providers will be staged locally for TUN and Transparent Proxy."))
                             .font(.caption)
                             .foregroundStyle(AetherVisual.secondaryText)
                         }
@@ -1811,9 +1834,9 @@ private extension ProfilesView {
                                 Text(verbatim: provider.name)
                                     .font(.body.weight(.semibold))
                                     .lineLimit(1)
-                                Text(AppLocalization.inline(
-                                    "Proxy provider · \(provider.proxyCount) nodes",
-                                    chinese: "代理集合 · \(provider.proxyCount) 个节点"
+                                Text(AppLocalization.format(
+                                    "Proxy provider · %@",
+                                    AppLocalization.format("%lld nodes", Int64(provider.proxyCount))
                                 ))
                                 .font(.caption)
                                 .foregroundStyle(AetherVisual.secondaryText)
@@ -1837,7 +1860,7 @@ private extension ProfilesView {
                         .padding(.horizontal, AetherVisual.s4)
                         .padding(.vertical, AetherVisual.sRow)
                         if index < proxyProviders.count - 1 || !ruleProviders.isEmpty {
-                            Divider().padding(.leading, AetherVisual.s4)
+                            Divider().padding(.leading, AetherVisual.s4 + AetherVisual.cardTileSize + AetherVisual.s3)
                         }
                     }
                     ForEach(Array(ruleProviders.enumerated()), id: \.element.id) { index, provider in
@@ -1851,7 +1874,11 @@ private extension ProfilesView {
                                 Text(verbatim: provider.name)
                                     .font(.body.weight(.semibold))
                                     .lineLimit(1)
-                                Text(verbatim: "Rule provider · \(provider.format.rawValue.uppercased()) · \(provider.behavior.rawValue)")
+                                Text(AppLocalization.format(
+                                    "Rule provider · %@ · %@",
+                                    provider.format.rawValue.uppercased(),
+                                    provider.behavior.rawValue
+                                ))
                                     .font(.caption)
                                     .foregroundStyle(AetherVisual.secondaryText)
                             }
@@ -1865,7 +1892,7 @@ private extension ProfilesView {
                         .padding(.horizontal, AetherVisual.s4)
                         .padding(.vertical, AetherVisual.sRow)
                         if index < ruleProviders.count - 1 {
-                            Divider().padding(.leading, AetherVisual.s4)
+                            Divider().padding(.leading, AetherVisual.s4 + AetherVisual.cardTileSize + AetherVisual.s3)
                         }
                     }
                 }
@@ -1884,20 +1911,25 @@ private struct MergeProfilesSheet: View {
     @State private var prefixSourceName = true
     @State private var deduplicateByServerPort = true
     @State private var isSaving = false
+    @State private var requestsCancel = false
 
     private var sourceProfiles: [ManagedProfile] {
         tunnel.profiles.filter { $0.mergedSpec == nil }
+    }
+
+    private var hasChanges: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !selectedIDs.isEmpty
+            || !prefixSourceName
+            || !deduplicateByServerPort
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
             AetherSheetHeader(
                 symbol: "square.stack.3d.up",
-                title: AppLocalization.inline("Merge Profiles", chinese: "创建组合订阅"),
-                subtitle: AppLocalization.inline(
-                    "Combine nodes from multiple profiles to build cross-subscription chains and unified routing.",
-                    chinese: "将多个订阅的节点合并为统一配置，可跨订阅配置链式代理与自动策略组。"
-                ),
+                title: AppLocalization.string("Merge Profiles"),
+                subtitle: AppLocalization.string("Combine nodes from multiple profiles to build cross-subscription chains and unified routing."),
                 tint: AppSection.profiles.tileColor
             )
 
@@ -1906,7 +1938,7 @@ private struct MergeProfilesSheet: View {
                     Text(AppLocalization.string("Name"))
                         .foregroundStyle(AetherVisual.secondaryText)
                     Spacer()
-                    TextField(AppLocalization.inline("e.g. Combined Airports", chinese: "例如：多机场组合"), text: $name)
+                    TextField(AppLocalization.string("e.g. Combined Airports"), text: $name)
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("merge-profile-name-field")
@@ -1917,22 +1949,24 @@ private struct MergeProfilesSheet: View {
                 Divider().padding(.leading, AetherVisual.s4)
 
                 Toggle(isOn: $prefixSourceName) {
-                    Text(AppLocalization.inline("Prefix node names with source profile", chinese: "节点名称前添加来源前缀"))
+                    Text(AppLocalization.string("Prefix node names with source profile"))
                 }
+                .toggleStyle(AetherRowToggleStyle())
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.vertical, AetherVisual.sRow)
 
                 Divider().padding(.leading, AetherVisual.s4)
 
                 Toggle(isOn: $deduplicateByServerPort) {
-                    Text(AppLocalization.inline("Deduplicate identical server & port", chinese: "按服务器与端口去重"))
+                    Text(AppLocalization.string("Deduplicate identical server & port"))
                 }
+                .toggleStyle(AetherRowToggleStyle())
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.vertical, AetherVisual.sRow)
             }
             .aetherPanel()
 
-            Text(AppLocalization.inline("Source Profiles", chinese: "选择源配置（至少 2 个）"))
+            Text(AppLocalization.string("Source Profiles"))
                 .font(.headline)
 
             ScrollView {
@@ -1953,6 +1987,7 @@ private struct MergeProfilesSheet: View {
                             Text(verbatim: managed.profile.name)
                                 .lineLimit(1)
                         }
+                        .toggleStyle(AetherRowToggleStyle())
                         .padding(.horizontal, AetherVisual.s4)
                         .padding(.vertical, AetherVisual.sRow)
                         if index < sourceProfiles.count - 1 {
@@ -1967,10 +2002,12 @@ private struct MergeProfilesSheet: View {
             HStack {
                 Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) {
-                    dismiss()
+                    requestsCancel = true
                 }
                 .aetherButton()
-                Button(AppLocalization.inline("Create Merged Profile", chinese: "创建组合订阅")) {
+                .keyboardShortcut(.cancelAction)
+                .disabled(isSaving)
+                Button {
                     isSaving = true
                     let spec = MergedProfileSpec(
                         sourceProfileIDs: selectedIDs,
@@ -1982,14 +2019,26 @@ private struct MergeProfilesSheet: View {
                         isSaving = false
                         if ok { dismiss() }
                     }
+                } label: {
+                    AetherProgressButtonLabel(
+                        AppLocalization.string("Create Merged Profile"),
+                        isWorking: isSaving
+                    )
                 }
                 .aetherButton(prominent: true)
+                .keyboardShortcut(.defaultAction)
                 .disabled(selectedIDs.count < 2 || isSaving)
                 .accessibilityIdentifier("confirm-merge-profiles")
             }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("merge-profiles-sheet")
     }
 }
 
@@ -2005,34 +2054,54 @@ private struct GlobalOverrideSheet: View {
     @State private var customHostIP = ""
     @State private var groups: [CustomProxyGroup] = []
     @State private var customHosts: [CustomHostMapping] = []
+    @State private var initialOverride = ProfileOverride()
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var requestsCancel = false
+
+    private var currentHiddenKeywords: [String] {
+        hiddenKeywordsText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var hasPendingDrafts: Bool {
+        !groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !includeKeywordsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !customHostDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !customHostIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var hasChanges: Bool {
+        currentHiddenKeywords != initialOverride.hiddenNodeKeywords
+            || groups != initialOverride.groups
+            || customHosts != initialOverride.customHosts
+            || hasPendingDrafts
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
             AetherSheetHeader(
                 symbol: "slider.horizontal.3",
-                title: AppLocalization.inline("Global Override Template", chinese: "全局覆写模板"),
-                subtitle: AppLocalization.inline(
-                    "Applied automatically before per-profile overrides across all profiles.",
-                    chinese: "对所有配置生效，在单配置覆写之前应用（单配置同名项优先）。"
-                ),
+                title: AppLocalization.string("Global Override Template"),
+                subtitle: AppLocalization.string("Applied automatically before per-profile overrides across all profiles."),
                 tint: AppSection.profiles.tileColor
             )
 
             ScrollView {
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        Text(AppLocalization.inline("Hidden Node Keywords (comma-separated)", chinese: "全局隐藏节点关键词（逗号分隔）"))
+                        Text(AppLocalization.string("Hidden Node Keywords (comma-separated)"))
                             .font(.subheadline.weight(.semibold))
-                        TextField(AppLocalization.inline("e.g. Expired, Traffic, Reset", chinese: "例如：过期, 剩余流量, 官网"), text: $hiddenKeywordsText)
+                        TextField(AppLocalization.string("e.g. Expired, Traffic, Reset"), text: $hiddenKeywordsText)
                             .textFieldStyle(.roundedBorder)
                     }
                     .padding(AetherVisual.s4)
                     .aetherPanel()
 
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        Text(AppLocalization.inline("Global Custom Groups", chinese: "全局自定义策略组"))
+                        Text(AppLocalization.string("Global Custom Groups"))
                             .font(.subheadline.weight(.semibold))
                         ForEach(groups) { group in
                             HStack {
@@ -2042,17 +2111,18 @@ private struct GlobalOverrideSheet: View {
                                 Button(role: .destructive) {
                                     groups.removeAll { $0.id == group.id }
                                 } label: {
-                                    Image(systemName: "trash")
+                                    AetherRowIconLabel(symbol: "trash", tint: .red)
                                 }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(AppLocalization.string("Delete"))
                             }
                         }
                         HStack(spacing: AetherVisual.s2) {
-                            TextField(AppLocalization.inline("Group name", chinese: "分组名称"), text: $groupName)
+                            TextField(AppLocalization.string("Group name"), text: $groupName)
                                 .textFieldStyle(.roundedBorder)
-                            TextField(AppLocalization.inline("Include keywords", chinese: "匹配关键词"), text: $includeKeywordsText)
+                            TextField(AppLocalization.string("Include keywords"), text: $includeKeywordsText)
                                 .textFieldStyle(.roundedBorder)
-                            Picker(AppLocalization.inline("Type", chinese: "类型"), selection: $groupKindTag) {
+                            Picker(AppLocalization.string("Type"), selection: $groupKindTag) {
                                 Text(verbatim: "select").tag("select")
                                 Text(verbatim: "url-test").tag("url-test")
                                 Text(verbatim: "fallback").tag("fallback")
@@ -2061,7 +2131,7 @@ private struct GlobalOverrideSheet: View {
                             }
                             .labelsHidden()
                             .fixedSize()
-                            Button(AppLocalization.inline("Add", chinese: "添加")) {
+                            Button(AppLocalization.string("Add")) {
                                 addGroup()
                             }
                             .aetherButton()
@@ -2071,7 +2141,7 @@ private struct GlobalOverrideSheet: View {
                     .aetherPanel()
 
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
-                        Text(AppLocalization.inline("Global Custom Hosts", chinese: "全局自定义 Hosts"))
+                        Text(AppLocalization.string("Global Custom Hosts"))
                             .font(.subheadline.weight(.semibold))
                         ForEach(customHosts) { host in
                             HStack {
@@ -2081,17 +2151,18 @@ private struct GlobalOverrideSheet: View {
                                 Button(role: .destructive) {
                                     customHosts.removeAll { $0.id == host.id }
                                 } label: {
-                                    Image(systemName: "trash")
+                                    AetherRowIconLabel(symbol: "trash", tint: .red)
                                 }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(AppLocalization.string("Delete"))
                             }
                         }
                         HStack(spacing: AetherVisual.s2) {
-                            TextField(AppLocalization.inline("Domain (e.g. nas.local)", chinese: "域名 (如 nas.local)"), text: $customHostDomain)
+                            TextField(AppLocalization.string("Domain (e.g. nas.local)"), text: $customHostDomain)
                                 .textFieldStyle(.roundedBorder)
-                            TextField(AppLocalization.inline("IP address", chinese: "IP 地址"), text: $customHostIP)
+                            TextField(AppLocalization.string("IP address"), text: $customHostIP)
                                 .textFieldStyle(.roundedBorder)
-                            Button(AppLocalization.inline("Add", chinese: "添加")) {
+                            Button(AppLocalization.string("Add")) {
                                 addHost()
                             }
                             .aetherButton()
@@ -2110,21 +2181,33 @@ private struct GlobalOverrideSheet: View {
             HStack {
                 Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) {
-                    dismiss()
+                    requestsCancel = true
                 }
                 .aetherButton()
-                Button(AppLocalization.string("Save")) {
+                .keyboardShortcut(.cancelAction)
+                .disabled(isSaving)
+                Button {
                     save()
+                } label: {
+                    AetherProgressButtonLabel(AppLocalization.string("Save"), isWorking: isSaving)
                 }
                 .aetherButton(prominent: true)
+                .keyboardShortcut(.defaultAction)
                 .disabled(isSaving)
                 .accessibilityIdentifier("save-global-override-button")
             }
+            .controlSize(.large)
         }
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
+        .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("global-override-sheet")
         .onAppear {
             let current = tunnel.loadGlobalProfileOverride()
+            initialOverride = current
             groups = current.groups
             customHosts = current.customHosts
             hiddenKeywordsText = current.hiddenNodeKeywords.joined(separator: ", ")

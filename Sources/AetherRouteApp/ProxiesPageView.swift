@@ -240,7 +240,7 @@ struct ProxiesView: View {
             .accessibilityIdentifier("proxies-hidden-nodes")
             Divider()
             Toggle(
-                AppLocalization.inline("Show subscription info entries", chinese: "显示订阅信息节点"),
+                AppLocalization.string("Show subscription info entries"),
                 isOn: $showsSubscriptionNotices
             )
             .accessibilityIdentifier("proxies-show-subscription-notices")
@@ -443,18 +443,7 @@ func primaryProxyGroup(
 /// GLOBAL is a Clash keyword; say what it is.
 func proxyGroupDisplayName(_ name: String) -> String {
     guard name == "GLOBAL" else { return name }
-    return AppLocalization.inline("GLOBAL (Global exit)", chinese: "GLOBAL（全局出口）")
-}
-
-extension AppLocalization {
-    /// Copy added before it reaches the string catalog. The catalog wins as
-    /// soon as it has the key; until then the Chinese text is used whenever
-    /// the app runs in Chinese (read from a key the catalog has always had).
-    static func inline(_ english: String, chinese: String) -> String {
-        let localized = string(english)
-        if localized != english { return localized }
-        return string("Proxy groups") == "Proxy groups" ? english : chinese
-    }
+    return AppLocalization.string("GLOBAL (Global exit)")
 }
 
 /// Shared with the overview, which shows a group when one is the outlet.
@@ -525,22 +514,22 @@ private struct ProxySubscriptionNoticeBar: View {
         var parts: [String] = []
         if let remaining = notice.remainingTraffic {
             parts.append(String(
-                format: AppLocalization.inline("Remaining %@", chinese: "剩余流量 %@"),
+                format: AppLocalization.string("Remaining %@"),
                 remaining
             ))
         }
         if notice.isLongTerm {
-            parts.append(AppLocalization.inline("No expiry", chinese: "长期有效"))
+            parts.append(AppLocalization.string("No expiry"))
         } else if let expiry = notice.expiry {
             parts.append(String(
-                format: AppLocalization.inline("Expires %@", chinese: "到期 %@"),
+                format: AppLocalization.string("Expires %@"),
                 expiry
             ))
         }
         if parts.isEmpty, let first = notice.contacts.first ?? notice.noticeNames.first {
             parts.append(first)
         } else if parts.isEmpty {
-            parts.append(AppLocalization.inline("Subscription info", chinese: "订阅信息"))
+            parts.append(AppLocalization.string("Subscription info"))
         }
         return parts.joined(separator: " · ")
     }
@@ -719,7 +708,16 @@ private struct ActiveProxyGroupView: View {
                     } else if sort == .latency || hidesTimedOutNodes {
                         ActiveProxyGroupLatencySortedList(
                             latencyStore: tunnel.latencyStore,
+                            egressStore: tunnel.egressProbeStore,
+                            observesEgress: filtersAIAvailableOnly,
                             computeRows: { computeMemberRows(from: allMembers, includeLatency: true) },
+                            nodeRow: { row in nodeRow(row, isCompact: usesGridLayout) },
+                            usesGridLayout: usesGridLayout
+                        )
+                    } else if filtersAIAvailableOnly {
+                        ActiveProxyGroupAIObservingList(
+                            egressStore: tunnel.egressProbeStore,
+                            computeRows: { computeMemberRows(from: allMembers, includeLatency: false) },
                             nodeRow: { row in nodeRow(row, isCompact: usesGridLayout) },
                             usesGridLayout: usesGridLayout
                         )
@@ -841,33 +839,33 @@ private struct ActiveProxyGroupView: View {
         selectedMember: String?,
         scroller: ScrollViewProxy
     ) -> some View {
-        HStack(spacing: AetherVisual.s2) {
-            AetherSearchField(
-                text: $searchText,
-                prompt: AppLocalization.string("Search nodes"),
-                accessibilityIdentifier: "proxy-node-search-field"
-            )
-            .frame(maxWidth: 320)
-            Text(String(
-                format: AppLocalization.inline("%lld nodes", chinese: "%lld 个节点"),
-                Int64(memberCount)
-            ))
-            .font(.caption)
-            .foregroundStyle(AetherVisual.secondaryText)
-            .monospacedDigit()
-            .lineLimit(1)
-            .fixedSize()
-            .accessibilityIdentifier("proxy-group-node-count")
-            Spacer(minLength: AetherVisual.s2)
-            aiFilterPill
-            sortMenu
-            layoutToggle
-            locateButton(selectedMember: selectedMember, scroller: scroller)
+        AetherWrapPairLayout {
+            HStack(spacing: AetherVisual.s2) {
+                AetherSearchField(
+                    text: $searchText,
+                    prompt: AppLocalization.string("Search nodes"),
+                    accessibilityIdentifier: "proxy-node-search-field"
+                )
+                .frame(minWidth: AetherVisual.searchFieldMinWidth, maxWidth: 260)
+                Text(AppLocalization.format("%lld nodes", Int64(memberCount)))
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+                    .accessibilityIdentifier("proxy-group-node-count")
+            }
+            AetherFlowLayout(spacing: AetherVisual.s2) {
+                aiFilterPill
+                sortMenu
+                layoutToggle
+                locateButton(selectedMember: selectedMember, scroller: scroller)
+            }
         }
     }
 
     private var aiFilterPill: some View {
-        let label = AppLocalization.inline("AI Available", chinese: "AI 可用")
+        let label = AppLocalization.string("AI Available")
         return Button {
             withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
                 filtersAIAvailableOnly.toggle()
@@ -900,10 +898,7 @@ private struct ActiveProxyGroupView: View {
         }
         .buttonStyle(.plain)
         .help(
-            AppLocalization.inline(
-                "Show only nodes verified as AI-available by an egress check",
-                chinese: "仅显示已通过出口检测且支持 AI 服务的节点"
-            )
+            AppLocalization.string("Show only nodes verified as AI-available by an egress check")
         )
         .accessibilityLabel(label)
         .accessibilityAddTraits(filtersAIAvailableOnly ? [.isSelected] : [])
@@ -928,12 +923,12 @@ private struct ActiveProxyGroupView: View {
 
     private var layoutToggleTitle: String {
         usesGridLayout
-            ? AppLocalization.inline("Show as list", chinese: "单列列表")
-            : AppLocalization.inline("Show as grid", chinese: "双列网格")
+            ? AppLocalization.string("Show as list")
+            : AppLocalization.string("Show as grid")
     }
 
     private func locateButton(selectedMember: String?, scroller: ScrollViewProxy) -> some View {
-        let title = AppLocalization.inline("Locate current node", chinese: "定位当前节点")
+        let title = AppLocalization.string("Locate current node")
         return Button {
             guard let selectedMember else { return }
             withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
@@ -1166,16 +1161,16 @@ private struct ActiveProxyGroupView: View {
         .id(row.member)
     }
 
-    private func memberType(_ member: String, groupNames: Set<String>) -> String {
+    private func memberType(_ member: String, groupNames: Set<String>) -> (label: String, canonicalKind: String?) {
         switch member.uppercased() {
-        case "DIRECT": return AppLocalization.string("Direct")
-        case "REJECT", "REJECT-DROP": return AppLocalization.string("Reject")
+        case "DIRECT": return (AppLocalization.string("Direct"), "DIRECT")
+        case "REJECT", "REJECT-DROP": return (AppLocalization.string("Reject"), "REJECT")
         default:
-            if let protocolName = protocols[member] { return protocolName.uppercased() }
+            if let protocolName = protocols[member] { return (protocolName.uppercased(), protocolName.uppercased()) }
             if groupNames.contains(member) {
-                return AppLocalization.string("Proxy group")
+                return (AppLocalization.string("Proxy group"), nil)
             }
-            return AppLocalization.string("Unknown")
+            return (AppLocalization.string("Unknown"), nil)
         }
     }
 
@@ -1209,10 +1204,16 @@ private struct ActiveProxyGroupView: View {
                 uniquingKeysWith: { first, _ in first }
             )
             : [:]
-        let typeByMember: [String: String] = Dictionary(
-            uniqueMembers.map { ($0, memberType($0, groupNames: groupNameSet)) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        var resolvedTypeLabels: [String: String] = [:]
+        var resolvedKinds: [String: String] = [:]
+        resolvedTypeLabels.reserveCapacity(uniqueMembers.count)
+        for member in uniqueMembers {
+            let resolved = memberType(member, groupNames: groupNameSet)
+            resolvedTypeLabels[member] = resolved.label
+            if let kind = resolved.canonicalKind {
+                resolvedKinds[member] = kind
+            }
+        }
         let chainedByName: [String: ChainedProxyOverride] = Dictionary(
             tunnel.activeProfileOverrides.chainedProxies.map { ($0.name, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -1224,7 +1225,7 @@ private struct ActiveProxyGroupView: View {
         }
         let ordered = NodeRegion.filterMembers(
             sorted,
-            protocolByName: typeByMember,
+            protocolByName: resolvedTypeLabels,
             transportByName: transports,
             dialerByName: dialers,
             query: searchText,
@@ -1246,7 +1247,8 @@ private struct ActiveProxyGroupView: View {
         return aiFiltered.map { member in
             ProxyMemberTableItem(
                 member: member,
-                protocolName: typeByMember[member],
+                protocolName: resolvedTypeLabels[member],
+                canonicalProtocolKind: resolvedKinds[member],
                 transportName: transports[member],
                 dialerProxy: dialers[member],
                 chainedOverride: chainedByName[member],
@@ -1342,9 +1344,52 @@ private struct ActiveProxyGroupView: View {
     }
 }
 
+private struct ActiveProxyGroupAIObservingList<RowContent: View>: View {
+    @ObservedObject var egressStore: EgressProbeStore
+    let computeRows: () -> [ProxyMemberTableItem]
+    let nodeRow: (ProxyMemberTableItem) -> RowContent
+    let usesGridLayout: Bool
+
+    var body: some View {
+        let _ = egressStore.cache
+        let rows = computeRows()
+        if rows.isEmpty {
+            Text(AppLocalization.string("No matching nodes"))
+                .font(.subheadline)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .frame(maxWidth: .infinity)
+                .padding(AetherVisual.s4)
+        } else {
+            Group {
+                if usesGridLayout {
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: AetherVisual.s2),
+                            GridItem(.flexible(), spacing: AetherVisual.s2),
+                        ],
+                        spacing: AetherVisual.s2
+                    ) {
+                        ForEach(rows, content: nodeRow)
+                    }
+                } else {
+                    LazyVStack(spacing: AetherVisual.sMicro) {
+                        ForEach(rows, content: nodeRow)
+                    }
+                }
+            }
+            .padding(AetherVisual.listCardInset)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(AppLocalization.string("Proxy group members"))
+            .accessibilityIdentifier("proxy-group-members-table")
+        }
+    }
+}
+
 /// Observes `ProxyLatencyStore` only when the user sorts by latency or hides timed-out nodes.
 private struct ActiveProxyGroupLatencySortedList<RowContent: View>: View {
     @ObservedObject var latencyStore: ProxyLatencyStore
+    @ObservedObject var egressStore: EgressProbeStore
+    let observesEgress: Bool
     let computeRows: () -> [ProxyMemberTableItem]
     let nodeRow: (ProxyMemberTableItem) -> RowContent
     let usesGridLayout: Bool
@@ -1353,6 +1398,7 @@ private struct ActiveProxyGroupLatencySortedList<RowContent: View>: View {
         let _ = latencyStore.proxyLatencies
         let _ = latencyStore.proxyLatencyRequests
         let _ = latencyStore.memberLatencyRequests
+        let _ = observesEgress ? egressStore.cache : nil
         let rows = computeRows()
         if rows.isEmpty {
             Text(AppLocalization.string("No matching nodes"))
@@ -1493,38 +1539,44 @@ private struct ProxyNodeRow: View {
     }
 
     private var gridCardBody: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
+        let cardContent = VStack(alignment: .leading, spacing: AetherVisual.sCompact) {
+            gridTopLine
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: AetherVisual.s1) {
+                gridMetadataBadges
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if onEditChained != nil {
+                    Color.clear.frame(width: AetherVisual.iconButtonSize, height: 1)
+                }
+                if row.showsLatency {
+                    Color.clear.frame(width: 56, height: 1)
+                }
+            }
+        }
+
+        return ZStack(alignment: .bottomTrailing) {
             if showsSelectionControl {
                 Button(action: onSelect) {
-                    gridTopLine
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
+                    cardContent.contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled((row.isBusy && !row.isPending) || !canSelect)
                 .accessibilityLabel(row.member)
                 .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+                .accessibilityAction(named: AppLocalization.string("Edit Chained Proxy…")) {
+                    onEditChained?()
+                }
             } else {
-                gridTopLine
+                cardContent
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(row.isSelected ? [.isSelected] : [])
+                    .accessibilityAction(named: AppLocalization.string("Edit Chained Proxy…")) {
+                        onEditChained?()
+                    }
             }
 
             HStack(spacing: AetherVisual.s1) {
-                if showsSelectionControl {
-                    Button(action: onSelect) {
-                        gridMetadataBadges
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled((row.isBusy && !row.isPending) || !canSelect)
-                    .accessibilityHidden(true)
-                } else {
-                    gridMetadataBadges
-                    Spacer(minLength: 0)
-                }
-
                 if let onEditChained {
                     editChainedButton(onEditChained)
                         .opacity(isHovered ? 1 : 0)
@@ -1577,7 +1629,11 @@ private struct ProxyNodeRow: View {
     private var gridMetadataBadges: some View {
         HStack(spacing: AetherVisual.s1) {
             if let protocolName = row.protocolName {
-                AetherProtocolBadge(type: protocolName, transport: row.transportName)
+                AetherProtocolBadge(
+                    type: protocolName,
+                    transport: row.transportName,
+                    canonicalKind: row.canonicalProtocolKind
+                )
             }
             if let dialer = row.dialerProxy {
                 dialerBadge(dialer)
@@ -1656,7 +1712,11 @@ private struct ProxyNodeRow: View {
             Spacer(minLength: AetherVisual.s1)
             selectionAccessory
             if let protocolName = row.protocolName {
-                AetherProtocolBadge(type: protocolName, transport: row.transportName)
+                AetherProtocolBadge(
+                    type: protocolName,
+                    transport: row.transportName,
+                    canonicalKind: row.canonicalProtocolKind
+                )
             }
         }
     }
@@ -1831,7 +1891,7 @@ private struct ProxyNodeLatencyAccessory: View {
             )
         }
         .buttonStyle(.plain)
-        .help(AppLocalization.inline("Latency history, jitter & packet loss", chinese: "延迟趋势、抖动与丢包率"))
+        .help(AppLocalization.string("Latency history, jitter & packet loss"))
         .accessibilityIdentifier("proxy-latency-sparkline-\(member)")
         .popover(isPresented: $showsHistoryPopover, arrowEdge: .bottom) {
             ProxyLatencyHistoryPopover(member: member, stats: stats)
@@ -1854,13 +1914,13 @@ private struct ProxyNodeLatencyAccessory: View {
         }
         if let jitter = stats.jitterMilliseconds {
             lines.append(
-                AppLocalization.inline("Jitter: ±\(jitter) ms", chinese: "抖动: ±\(jitter) ms")
+                AppLocalization.format("Jitter: ±%lld ms", Int64(jitter))
             )
         }
         if !stats.samples.isEmpty {
             let lossPercent = Int((stats.lossRate * 100.0).rounded())
             lines.append(
-                AppLocalization.inline("Loss: \(lossPercent)%", chinese: "丢包率: \(lossPercent)%")
+                AppLocalization.format("Loss: %lld%%", Int64(lossPercent))
             )
         }
         if let confidence {
@@ -1880,6 +1940,7 @@ private struct ProxyMemberTableItem: Identifiable {
 
     let member: String
     let protocolName: String?
+    var canonicalProtocolKind: String? = nil
     var transportName: String? = nil
     var dialerProxy: String? = nil
     var chainedOverride: ChainedProxyOverride? = nil
@@ -1988,7 +2049,7 @@ private struct ProxyLatencyHistoryPopover: View {
 
             HStack(spacing: AetherVisual.s4) {
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(AppLocalization.inline("Avg RTT", chinese: "平均延迟"))
+                    Text(AppLocalization.string("Avg RTT"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(
@@ -1998,7 +2059,7 @@ private struct ProxyLatencyHistoryPopover: View {
                 }
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(AppLocalization.inline("Jitter", chinese: "抖动"))
+                    Text(AppLocalization.string("Jitter"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(
@@ -2008,7 +2069,7 @@ private struct ProxyLatencyHistoryPopover: View {
                 }
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(AppLocalization.inline("Packet Loss", chinese: "丢包率"))
+                    Text(AppLocalization.string("Packet Loss"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     let lossPercent = Int((stats.lossRate * 100.0).rounded())
@@ -2024,7 +2085,7 @@ private struct ProxyLatencyHistoryPopover: View {
                 }
 
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
-                    Text(AppLocalization.inline("Samples", chinese: "采样"))
+                    Text(AppLocalization.string("Samples"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(verbatim: "\(stats.samples.count)/\(ProxyLatencyIndex.maxHistoryCount)")
@@ -2149,8 +2210,8 @@ private struct ProxyNodeAIAvailabilityBadge: View {
             let isAvailable = report.isAIAvailable
             let tint: Color = isAvailable ? .green : .orange
             let label = isAvailable
-                ? AppLocalization.inline("AI", chinese: "AI 可用")
-                : AppLocalization.inline("AI Limited", chinese: "AI 受限")
+                ? AppLocalization.string("AI")
+                : AppLocalization.string("AI Limited")
             let total = max(report.aiServices.count, EgressServiceKind.aiServices.count)
             Text(label)
                 .font(.caption2.weight(.semibold))
@@ -2164,10 +2225,7 @@ private struct ProxyNodeAIAvailabilityBadge: View {
                 .fixedSize()
                 .help(
                     String(
-                        format: AppLocalization.inline(
-                            "AI services available: %lld/%lld",
-                            chinese: "AI 服务可用：%lld/%lld"
-                        ),
+                        format: AppLocalization.string("AI services available: %lld/%lld"),
                         Int64(report.availableAICount),
                         Int64(total)
                     )

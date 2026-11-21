@@ -136,7 +136,12 @@ enum AetherVisual {
     /// Returns `animation` unless the user asked for reduced motion, in which
     /// case state still changes but does so without travel.
     static func animation(_ animation: Animation) -> Animation? {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+#if DEBUG
+        if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_REDUCE_MOTION"] == "1" {
+            return nil
+        }
+#endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             ? nil
             : animation
     }
@@ -320,17 +325,29 @@ struct ConnectionLuminousBar: View {
         .frame(height: 2.5)
         .clipped()
         .onAppear {
-            // Reduce Motion keeps the strip as a static progress cue.
-            guard !reduceMotion else {
+            updateAnimation(for: reduceMotion)
+        }
+        .onChange(of: reduceMotion) { _, newValue in
+            updateAnimation(for: newValue)
+        }
+    }
+
+    private func updateAnimation(for reduceMotion: Bool) {
+        // Reduce Motion keeps the strip as a static progress cue and stops ongoing repeats dynamically.
+        if reduceMotion {
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
                 phase = 0.275
-                return
             }
-            withAnimation(
-                .linear(duration: 1.3)
-                    .repeatForever(autoreverses: false)
-            ) {
-                phase = 1.1
-            }
+            return
+        }
+        phase = -0.5
+        withAnimation(
+            .linear(duration: 1.3)
+                .repeatForever(autoreverses: false)
+        ) {
+            phase = 1.1
         }
     }
 }
@@ -832,8 +849,15 @@ struct AetherRulesFilterBarLayout: Layout {
         if inlineNeeded <= width {
             return CGSize(width: width, height: inlineHeight)
         }
-        let row1Height = max(filter.height, search.height)
-        return CGSize(width: width, height: row1Height + AetherVisual.s2 + bar.height)
+        let twoRowNeeded = filter.width + AetherVisual.s3 + AetherVisual.searchFieldMinWidth
+        if twoRowNeeded <= width {
+            let row1Height = max(filter.height, search.height)
+            return CGSize(width: width, height: row1Height + AetherVisual.s2 + bar.height)
+        }
+        return CGSize(
+            width: width,
+            height: filter.height + AetherVisual.s2 + search.height + AetherVisual.s2 + bar.height
+        )
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -842,6 +866,7 @@ struct AetherRulesFilterBarLayout: Layout {
         let bar = subviews[1].sizeThatFits(.unspecified)
         let search = subviews[2].sizeThatFits(ProposedViewSize(width: AetherVisual.searchFieldWidth, height: nil))
         let inlineNeeded = filter.width + AetherVisual.s3 + Self.minBarWidth + AetherVisual.s3 + AetherVisual.searchFieldWidth
+        let twoRowNeeded = filter.width + AetherVisual.s3 + AetherVisual.searchFieldMinWidth
         if inlineNeeded <= bounds.width {
             let barWidth = max(Self.minBarWidth, bounds.width - filter.width - AetherVisual.searchFieldWidth - AetherVisual.s3 * 2)
             subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
@@ -855,7 +880,7 @@ struct AetherRulesFilterBarLayout: Layout {
                 anchor: .trailing,
                 proposal: ProposedViewSize(width: AetherVisual.searchFieldWidth, height: search.height)
             )
-        } else {
+        } else if twoRowNeeded <= bounds.width {
             let row1Height = max(filter.height, search.height)
             let searchWidth = max(AetherVisual.searchFieldMinWidth, bounds.width - filter.width - AetherVisual.s3)
             subviews[0].place(
@@ -870,6 +895,24 @@ struct AetherRulesFilterBarLayout: Layout {
             )
             subviews[1].place(
                 at: CGPoint(x: bounds.minX, y: bounds.minY + row1Height + AetherVisual.s2),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: bar.height)
+            )
+        } else {
+            let row2Y = bounds.minY + filter.height + AetherVisual.s2
+            let row3Y = row2Y + search.height + AetherVisual.s2
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + filter.height * 0.5),
+                anchor: .leading,
+                proposal: ProposedViewSize(width: min(filter.width, bounds.width), height: filter.height)
+            )
+            subviews[2].place(
+                at: CGPoint(x: bounds.minX, y: row2Y + search.height * 0.5),
+                anchor: .leading,
+                proposal: ProposedViewSize(width: bounds.width, height: search.height)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: row3Y),
                 anchor: .topLeading,
                 proposal: ProposedViewSize(width: bounds.width, height: bar.height)
             )
@@ -1209,21 +1252,30 @@ extension View {
 struct AetherProtocolBadge: View {
     let type: String
     var transport: String? = nil
+    var canonicalKind: String? = nil
 
     var body: some View {
         Text(displayLabel)
             .font(.caption2.weight(.semibold).monospaced())
-            .foregroundStyle(badgeColor == .secondary ? Color.secondary : badgeColor)
+            .foregroundStyle(
+                badgeColor == .secondary
+                    ? AnyShapeStyle(AetherVisual.secondaryText)
+                    : AnyShapeStyle(AetherReadableTint(color: badgeColor))
+            )
             .padding(.horizontal, AetherVisual.s1)
             .padding(.vertical, AetherVisual.sMicro)
             .background(AetherVisual.tintFill(badgeColor), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+    }
+
+    private var resolvedKind: String {
+        (canonicalKind ?? type).trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
     private var displayLabel: String {
         guard let transport,
               !transport.isEmpty,
               transport.lowercased() != "tcp",
-              !["DIRECT", "REJECT", "REJECT-DROP"].contains(displayType)
+              !["DIRECT", "REJECT", "REJECT-DROP"].contains(resolvedKind)
         else {
             return displayType
         }
@@ -1244,9 +1296,9 @@ struct AetherProtocolBadge: View {
     /// leave colour to latency and connection state. DIRECT and REJECT are
     /// routing outcomes and keep the same colours the rule targets use.
     private var badgeColor: Color {
-        switch displayType {
+        switch resolvedKind {
         case "DIRECT": return .green
-        case "REJECT": return .red
+        case "REJECT", "REJECT-DROP": return .red
         default: return .secondary
         }
     }
@@ -1356,6 +1408,7 @@ struct AetherGlassCapsuleButtonStyle: ButtonStyle {
 
 private struct AetherGlassCapsuleLabel: View {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let configuration: ButtonStyleConfiguration
 
     var body: some View {
@@ -1366,7 +1419,7 @@ private struct AetherGlassCapsuleLabel: View {
             .frame(minHeight: 32)
             .contentShape(Capsule())
             .aetherGlass(in: Capsule(), interactive: true)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .scaleEffect(!reduceMotion && isEnabled && configuration.isPressed ? 0.97 : 1)
             .opacity(isEnabled ? (configuration.isPressed ? 0.85 : 1) : 0.45)
             .animation(AetherVisual.animation(AetherVisual.pressFeedback), value: configuration.isPressed)
     }

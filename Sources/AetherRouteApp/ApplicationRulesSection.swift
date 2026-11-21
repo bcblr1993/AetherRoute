@@ -120,11 +120,11 @@ struct ApplicationRulesSection: View {
             }
             Button(AppLocalization.string("Choose an App…")) { chooseApp() }
             Divider()
-            Section(AppLocalization.inline("CLI Processes & Binaries", chinese: "命令行进程与可执行文件")) {
-                Button(AppLocalization.inline("Pick Running CLI Process…", chinese: "选择正在运行的命令行进程…")) {
+            Section(AppLocalization.string("CLI Processes & Binaries")) {
+                Button(AppLocalization.string("Pick Running CLI Process…")) {
                     showProcessPicker = true
                 }
-                Button(AppLocalization.inline("Choose Binary Executable…", chinese: "选择可执行文件…")) {
+                Button(AppLocalization.string("Choose Binary Executable…")) {
                     chooseBinaryExecutable()
                 }
             }
@@ -414,32 +414,23 @@ private struct RunningCLIProcessPickerSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
-            HStack(spacing: AetherVisual.s3) {
-                Text(AppLocalization.inline("Running CLI Processes", chinese: "正在运行的命令行进程"))
-                    .font(.headline)
-                Spacer(minLength: AetherVisual.s2)
-                Button(AppLocalization.string("Refresh")) {
-                    reload()
-                }
-                .aetherButton()
-                .controlSize(.small)
-                Button(AppLocalization.string("Close")) {
-                    dismiss()
-                }
-                .aetherButton()
-                .controlSize(.small)
-            }
+        VStack(alignment: .leading, spacing: AetherVisual.s4) {
+            AetherSheetHeader(
+                symbol: "terminal",
+                title: AppLocalization.string("Running CLI Processes"),
+                subtitle: AppLocalization.string("Select a running command-line process to create a process routing rule."),
+                tint: AppSection.rules.tileColor
+            )
 
             HStack(spacing: AetherVisual.s3) {
-                TextField(
-                    AppLocalization.inline("Filter process name or path…", chinese: "搜索进程名或可执行路径…"),
-                    text: $searchQuery
+                AetherSearchField(
+                    text: $searchQuery,
+                    prompt: AppLocalization.string("Filter process name or path…"),
+                    accessibilityIdentifier: "cli-process-search"
                 )
-                .textFieldStyle(.roundedBorder)
 
                 Picker(
-                    AppLocalization.inline("Match by", chinese: "匹配方式"),
+                    AppLocalization.string("Match by"),
                     selection: $matchByFullPath
                 ) {
                     Text(verbatim: "PROCESS-NAME").tag(false)
@@ -461,10 +452,17 @@ private struct RunningCLIProcessPickerSheet: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filteredProcesses.isEmpty {
-                Text(AppLocalization.inline("No matching CLI processes found.", chinese: "未找到匹配的命令行进程。"))
-                    .font(.subheadline)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Group {
+                    if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        ContentUnavailableView(
+                            AppLocalization.string("No matching CLI processes found."),
+                            systemImage: "terminal"
+                        )
+                    } else {
+                        ContentUnavailableView.search(text: searchQuery)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(filteredProcesses) { item in
                     HStack(spacing: AetherVisual.s3) {
@@ -494,15 +492,28 @@ private struct RunningCLIProcessPickerSheet: View {
                 }
                 .listStyle(.inset)
             }
+
+            HStack(spacing: AetherVisual.s2) {
+                Button(AppLocalization.string("Refresh"), systemImage: "arrow.clockwise") {
+                    reload()
+                }
+                .aetherButton()
+                .disabled(isLoading)
+                Spacer()
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                    dismiss()
+                }
+                .aetherButton()
+                .keyboardShortcut(.cancelAction)
+            }
+            .controlSize(.large)
         }
-        .padding(AetherVisual.s4)
-        .frame(
-            width: AetherVisual.s6 * 24,
-            height: AetherVisual.s6 * 16
-        )
+        .padding(AetherVisual.dialogPadding)
+        .aetherLargeSheetFrame()
         .task {
             reload()
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("running-cli-process-picker-sheet")
     }
 

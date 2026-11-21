@@ -35,8 +35,10 @@ struct MacUISmoothnessAndPolishTests {
         testAppWindowManagerRejectsSettingsAndSparkleWindows()
         testIncreaseContrastTokens()
         testCustomLayoutsHandleZeroAndCompactWidths()
+        testRulesFilterBarLayoutPreventsOverlapAtNarrowWidths()
         try testDesignTokenForegroundColorRegex(rootURL: rootURL)
         try testSourceAndDesignTokenGuards(rootURL: rootURL)
+        try testV312UIRegressionGuards(rootURL: rootURL)
 
         print("All MacUISmoothnessAndPolishTests passed.")
     }
@@ -359,5 +361,87 @@ struct MacUISmoothnessAndPolishTests {
         precondition(matches(".foregroundStyle(ok ? AnyShapeStyle(Color.orange) : AnyShapeStyle(Color.primary))"), "Must reject conditional Color.orange foregroundStyle")
         precondition(!matches("Circle().fill(Color.red)"), "Must allow Circle().fill(Color.red)")
         precondition(!matches(".foregroundStyle(AetherReadableTint(color: .green))"), "Must allow AetherReadableTint(color: .green)")
+    }
+
+    // 8. Narrow/overflowing filter width must promote AetherRulesFilterBarLayout to a 3-row stack
+    //    so searchField never overlaps the rightmost segment of actionFilter.
+    @MainActor
+    private static func testRulesFilterBarLayoutPreventsOverlapAtNarrowWidths() {
+        for width: CGFloat in [480, 360] {
+            let view = AetherRulesFilterBarLayout {
+                Color.clear.frame(width: 400, height: 30)
+                Color.clear.frame(height: 10)
+                Color.clear.frame(height: 30)
+            }
+            .frame(width: width)
+            let host = NSHostingView(rootView: view)
+            host.frame = NSRect(x: 0, y: 0, width: width, height: 200)
+            host.layoutSubtreeIfNeeded()
+            let fitting = host.fittingSize
+            precondition(
+                fitting.height >= 78,
+                "Expected 3-row non-overlapping height (>= 78pt) at width \(width), got \(fitting.height)"
+            )
+        }
+    }
+
+    // 9. v3.1.2 UI regression guards covering motion, privacy gate, glass-on-card,
+    //    deferred scroll navigation, sheet bounds, egress/onboarding polish, and protocol badge keys.
+    private static func testV312UIRegressionGuards(rootURL: URL) throws {
+        let appDir = rootURL.appendingPathComponent("Sources/AetherRouteApp")
+        func read(_ filename: String) throws -> String {
+            try String(contentsOf: appDir.appendingPathComponent(filename), encoding: .utf8)
+        }
+
+        let visualSystem = try read("AetherRouteVisualSystem.swift")
+        let contentView = try read("ContentView.swift")
+        let appFile = try read("AetherRouteApp.swift")
+        let commandPalette = try read("CommandPaletteView.swift")
+        let rulesPage = try read("RulesPageView.swift")
+        let egressRow = try read("OverviewEgressRow.swift")
+        let onboarding = try read("OnboardingComponents.swift")
+
+        var violations: [String] = []
+        if !visualSystem.contains("AETHERROUTE_UI_REVIEW_REDUCE_MOTION") {
+            violations.append("AetherVisual.animation(_:) must check AETHERROUTE_UI_REVIEW_REDUCE_MOTION")
+        }
+        if contentView.contains(".smooth(") {
+            violations.append("ContentView.swift must not use hand-tuned .smooth(...) curve")
+        }
+        if contentView.contains(".buttonStyle(.aetherGlassCapsule)") {
+            violations.append("ContentView.swift must not place .aetherGlassCapsule buttons on opaque cards")
+        }
+        if !contentView.contains("paused: reduceMotion || !isRealtime || !model.history.hasActiveTraffic") {
+            violations.append("LiveTrafficHistoryGraphActive must pause TimelineView when reduceMotion is active")
+        }
+        if !appFile.contains("paused: reduceMotion || !model.history.hasActiveTraffic") {
+            violations.append("MenuLiveTrafficGraph must pause TimelineView when reduceMotion is active")
+        }
+        if commandPalette.contains(".onTapGesture") {
+            violations.append("CommandPaletteView rows must use Button rather than .onTapGesture")
+        }
+        if !contentView.contains("guard tunnel.hasAcceptedPrivacyDisclosure else { return }\n            isCommandPalettePresented.toggle()") {
+            violations.append("Command Palette toggle notification must check tunnel.hasAcceptedPrivacyDisclosure")
+        }
+        if rulesPage.contains("scrollProxy.scrollTo(result.matchedRule.id") {
+            violations.append("RulesView must defer scrollProxy.scrollTo with Task.yield() so newly mounted rows exist")
+        }
+        if egressRow.contains("identity.flag") {
+            violations.append("OverviewEgressRow must use AetherRegionCode instead of raw flag emojis")
+        }
+        if !egressRow.contains("AetherDisclosureChevron(") || !egressRow.contains(".aetherCallout(tint: .orange)") {
+            violations.append("OverviewEgressRow must use AetherDisclosureChevron and .aetherCallout(tint: .orange)")
+        }
+        if onboarding.contains(".foregroundStyle(Color.white, AetherReadableTint(color: .green))") {
+            violations.append("OnboardingComponents must not draw Color.white over AetherReadableTint(color: .green)")
+        }
+        if !visualSystem.contains("var canonicalKind: String? = nil") {
+            violations.append("AetherProtocolBadge must support canonicalKind so localized DIRECT/REJECT labels retain tints")
+        }
+
+        precondition(
+            violations.isEmpty,
+            "v3.1.2 UI regression guard failures:\n - " + violations.joined(separator: "\n - ")
+        )
     }
 }

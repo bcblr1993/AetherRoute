@@ -107,10 +107,12 @@ extension TunnelManager {
     }
 
     func latestEgressReportForCurrentNode() -> EgressProbeReport? {
-        if let node = currentEgressProbeNodeName,
-           let cached = egressProbeStore.report(forNode: node) {
-            return cached
+        if let node = currentEgressProbeNodeName {
+            return egressProbeStore.report(forNode: node)
         }
-        return egressProbeStore.lastReport
+        guard let last = egressProbeStore.lastReport, last.nodeName == nil else {
+            return nil
+        }
+        return last
     }
 }

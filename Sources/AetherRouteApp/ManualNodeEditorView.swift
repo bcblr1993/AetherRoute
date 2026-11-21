@@ -21,6 +21,8 @@ struct ManualNodeEditorSheet: View {
     @State private var errorMessage: String?
     @State private var isPrivateKeyImporterPresented = false
     @State private var isSaving = false
+    @State private var hasEditedName = false
+    @State private var hasAttemptedSubmit = false
     @State private var isRealityExpanded = true
     @State private var requestsCancel = false
     @State private var showsAdvanced = false
@@ -86,6 +88,10 @@ struct ManualNodeEditorSheet: View {
         }
         .aetherLargeSheetFrame()
         .disabled(isSaving)
+        .interactiveDismissDisabled(isSaving)
+        .onChange(of: node.name) { _, _ in
+            hasEditedName = true
+        }
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .fileImporter(
             isPresented: $isPrivateKeyImporterPresented,
@@ -145,7 +151,8 @@ struct ManualNodeEditorSheet: View {
                 .textContentType(.name)
                 .accessibilityIdentifier("manual-node-name")
                 .fieldRow("Node name")
-            if node.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if (isEditing || hasEditedName || hasAttemptedSubmit || !node.server.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
+               node.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(AppLocalization.string("Enter a node name.")).font(.caption).foregroundStyle(AetherVisual.secondaryText)
             }
             TextField(AppLocalization.string("Server"), text: $node.server)
@@ -551,7 +558,8 @@ struct ManualNodeEditorSheet: View {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s2) {
+        let validatedCandidate = try? candidateForSubmission()
+        return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             if let errorMessage {
                 AetherInlineMessage(text: errorMessage)
             }
@@ -566,7 +574,7 @@ struct ManualNodeEditorSheet: View {
                 .disabled(isSaving)
                 .accessibilityIdentifier("paste-manual-node-link")
 
-                if let shareURI = (try? candidateForSubmission()).flatMap({ try? AetherNodeURIParser.format($0) }) {
+                if let shareURI = validatedCandidate.flatMap({ try? AetherNodeURIParser.format($0) }) {
                     AetherCopyButton(title: Text(AppLocalization.string("Copy Node Link"))) {
                         NSPasteboard.general.clearContents()
                         return NSPasteboard.general.setString(shareURI, forType: .string)
@@ -577,6 +585,7 @@ struct ManualNodeEditorSheet: View {
 
                 Spacer()
                 Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
+                    .aetherButton()
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Button {
@@ -592,7 +601,7 @@ struct ManualNodeEditorSheet: View {
                 .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(
-                    !isCreateEnabled
+                    validatedCandidate == nil
                         || tunnel.isUpdatingProfiles
                         || isSaving
                 )
@@ -747,6 +756,7 @@ struct ManualNodeEditorSheet: View {
     }
 
     private func submit() {
+        hasAttemptedSubmit = true
         errorMessage = nil
         do {
             let candidate = try candidateForSubmission()
@@ -763,10 +773,6 @@ struct ManualNodeEditorSheet: View {
         } catch {
             errorMessage = error.localizedDescription
         }
-    }
-
-    private var isCreateEnabled: Bool {
-        (try? candidateForSubmission()) != nil
     }
 
     private var certificateFingerprintMessage: String? {
