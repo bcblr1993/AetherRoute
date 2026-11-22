@@ -79,8 +79,8 @@ struct ProviderRow: View {
         }
         if provider.referencedRuleCount > 0 {
             parts.append(
-                String.localizedStringWithFormat(
-                    AppLocalization.string("Referenced by %lld rules"),
+                AppLocalization.format(
+                    "Referenced by %lld rules",
                     Int64(provider.referencedRuleCount)
                 )
             )
@@ -192,14 +192,23 @@ struct DiscardChangesModifier: ViewModifier {
         content
             .interactiveDismissDisabled(isDirty || isSaving)
             .confirmationDialog(AppLocalization.string("Discard unsaved changes?"), isPresented: Binding(
-                get: { requested && isDirty },
+                get: { requested && isDirty && !isSaving },
                 set: { requested = $0 }
             ), titleVisibility: .visible) {
-                Button(AppLocalization.string("Discard Changes"), role: .destructive) { dismiss() }
+                Button(AppLocalization.string("Discard Changes"), role: .destructive) {
+                    requested = false
+                    dismiss()
+                }
                 Button(AppLocalization.string("Keep Editing"), role: .cancel) { requested = false }
             }
             .onChange(of: requested) { _, value in
-                if value && !isDirty && !isSaving { dismiss() }
+                guard value else { return }
+                if isSaving {
+                    requested = false
+                } else if !isDirty {
+                    requested = false
+                    dismiss()
+                }
             }
     }
 }

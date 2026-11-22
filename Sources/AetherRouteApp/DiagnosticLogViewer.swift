@@ -44,13 +44,18 @@ struct DiagnosticLogViewer: View {
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
                 Spacer()
-                Button(AppLocalization.string("Copy")) { copyVisible() }
-                    .aetherButton()
-                    .disabled(filtered.isEmpty)
-                    .accessibilityIdentifier("logs-copy")
+                AetherCopyButton(
+                    title: Text(AppLocalization.string("Copy")),
+                    copiedTitle: Text(AppLocalization.string("Copied"))
+                ) {
+                    copyVisible()
+                }
+                .aetherButton()
+                .disabled(filtered.isEmpty)
+                .accessibilityIdentifier("logs-copy")
                 Button(AppLocalization.string("Done")) { dismiss() }
                     .aetherButton(prominent: true)
-                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("logs-done")
             }
             .controlSize(.large)
@@ -119,6 +124,7 @@ struct DiagnosticLogViewer: View {
             prompt: AppLocalization.string("Search logs"),
             accessibilityIdentifier: "logs-search-field"
         )
+        .onSubmit {}
         .frame(minWidth: 140, idealWidth: 180, maxWidth: AetherVisual.searchFieldWidth)
     }
 
@@ -210,12 +216,15 @@ struct DiagnosticLogViewer: View {
         isLoading = false
     }
 
-    private func copyVisible() {
-        let text = displayedLines(filteredLines).map { line in
+    @discardableResult
+    private func copyVisible() -> Bool {
+        let visible = displayedLines(filteredLines)
+        guard !visible.isEmpty else { return false }
+        let text = visible.map { line in
             "\(line.process): \(line.rawText)"
         }.joined(separator: "\n")
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        return NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

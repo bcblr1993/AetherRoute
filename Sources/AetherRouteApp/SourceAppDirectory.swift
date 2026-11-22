@@ -148,7 +148,8 @@ final class SourceAppDirectory {
         let key = "match:\(match?.bundleIdentifier ?? "")|\(match?.bundlePath ?? "")"
         if let cached = icons.get(key) { return cached }
         let image: NSImage
-        if let path = match?.bundlePath {
+        if let path = match?.bundlePath,
+           FileManager.default.fileExists(atPath: path) {
             image = NSWorkspace.shared.icon(forFile: path)
         } else {
             let identifier = match?.bundleIdentifier == "com.apple.WebKit.Networking"
@@ -232,7 +233,8 @@ final class SourceAppDirectory {
     }
 
     private func applicationURL(for identity: SourceAppIdentity) -> URL? {
-        if let path = identity.bundlePath {
+        if let path = identity.bundlePath,
+           FileManager.default.fileExists(atPath: path) {
             return URL(fileURLWithPath: path, isDirectory: true)
         }
         guard let identifier = identity.bundleIdentifier else { return nil }

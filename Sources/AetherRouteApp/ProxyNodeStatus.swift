@@ -62,10 +62,7 @@ enum ProxyLatencyStatus: Equatable {
     var localizedTitle: String {
         switch self {
         case let .responded(milliseconds):
-            String.localizedStringWithFormat(
-                AppLocalization.string("%lld ms"),
-                Int64(milliseconds)
-            )
+            AppLocalization.format("%lld ms", Int64(milliseconds))
         case .timedOut: AppLocalization.string("Timed out")
         case .testing: AppLocalization.string("Testing")
         case .untested: AppLocalization.string("Untested")

@@ -7,26 +7,18 @@ import SwiftUI
 /// without mutating the imported subscription YAML. All presets default to OFF.
 struct ScenarioRulePresetsSection: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var states: [ScenarioRulePresetState] {
-        tunnel.scenarioRulePresetStates
-    }
-
-    private var enabledCount: Int {
-        states.filter(\.isEnabled).count
-    }
-
-    private var enabledRuleCount: Int {
-        let enabledIDs = Set(states.filter(\.isEnabled).map(\.id))
-        return ScenarioRulePresetDefinition.all
-            .filter { enabledIDs.contains($0.id) }
-            .reduce(0) { $0 + $1.templates.count }
-    }
-
-    private var sectionNote: String {
+    private func sectionNote(for states: [ScenarioRulePresetState]) -> String {
+        let enabled = states.filter(\.isEnabled)
+        let enabledCount = enabled.count
         if enabledCount == 0 {
             return AppLocalization.string("Offline presets · 0 active")
         }
+        let enabledIDs = Set(enabled.map(\.id))
+        let enabledRuleCount = ScenarioRulePresetDefinition.all
+            .filter { enabledIDs.contains($0.id) }
+            .reduce(0) { $0 + $1.templates.count }
         return AppLocalization.format(
             "%lld active · %@",
             Int64(enabledCount),
@@ -34,22 +26,66 @@ struct ScenarioRulePresetsSection: View {
         )
     }
 
+    private var isBusy: Bool {
+        tunnel.isTransitioning || tunnel.isUpdatingCustomRules
+    }
+
+    private var hasProfilePresetOverride: Bool {
+        !(tunnel.activeProfile?.overrides?.scenarioPresets.isEmpty ?? true)
+    }
+
     var body: some View {
+        let presetStates = tunnel.scenarioRulePresetStates
+        let statesByID = Dictionary(
+            presetStates.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let availableGroups = tunnel.availableScenarioRulePresetGroups
+        let primaryGroupName = availableGroups.first { group in
+            let upper = group.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            return !upper.isEmpty && upper != "DIRECT" && upper != "REJECT" && upper != "REJECT-DROP"
+        }
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(
                 title: AppLocalization.string("Scenario Rule Presets"),
-                note: sectionNote
+                note: sectionNote(for: presetStates)
             )
+
+            if let message = tunnel.customRuleMessage {
+                Group {
+                    if tunnel.customRuleMessageIsError {
+                        AetherInlineMessage(text: message, kind: .failure, isCompact: true)
+                    } else {
+                        Label(message, systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(AetherReadableTint(color: .green))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s1)
+                .transition(.opacity)
+            }
+
+            if hasProfilePresetOverride {
+                AetherInlineMessage(
+                    text: AppLocalization.string("The active profile has its own scenario preset overrides that may take precedence."),
+                    kind: .warning,
+                    isCompact: true
+                )
+                .padding(.horizontal, AetherVisual.s1)
+            }
 
             VStack(spacing: 0) {
                 let definitions = ScenarioRulePresetDefinition.all
                 ForEach(definitions) { definition in
-                    let state = tunnel.scenarioRulePresetState(for: definition.id)
+                    let state = statesByID[definition.id]
+                        ?? ScenarioRulePresetState(id: definition.id, isEnabled: false, target: definition.id.defaultTarget)
                     ScenarioRulePresetRow(
                         definition: definition,
                         state: state,
-                        availableGroups: tunnel.availableScenarioRulePresetGroups,
-                        primaryGroupName: tunnel.primaryScenarioRulePresetGroupName,
+                        availableGroups: availableGroups,
+                        primaryGroupName: primaryGroupName,
+                        isBusy: isBusy,
                         onToggle: { isOn in
                             Task {
                                 _ = await tunnel.setScenarioRulePresetEnabled(isOn, for: definition.id)
@@ -68,6 +104,7 @@ struct ScenarioRulePresetsSection: View {
             }
             .aetherPanel()
         }
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: tunnel.customRuleMessage)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("scenario-rule-presets-section")
     }
@@ -78,17 +115,38 @@ private struct ScenarioRulePresetRow: View {
     let state: ScenarioRulePresetState
     let availableGroups: [String]
     let primaryGroupName: String?
+    let isBusy: Bool
     let onToggle: (Bool) -> Void
     let onSelectTarget: (ScenarioRulePresetTarget) -> Void
 
-    private var targetBinding: Binding<ScenarioRulePresetTarget> {
-        Binding(
-            get: { state.target },
-            set: { newValue in
-                guard newValue != state.target else { return }
-                onSelectTarget(newValue)
+    private var selectedTargetLabel: String {
+        switch state.target {
+        case .primaryProxy:
+            return primaryProxyLabel
+        case let .group(name):
+            return availableGroups.contains(name)
+                ? name
+                : AppLocalization.format("%@ (Fallback)", name)
+        case .direct:
+            return AppLocalization.string("DIRECT (Bypass)")
+        case .reject:
+            return AppLocalization.string("REJECT (Block)")
+        }
+    }
+
+    @ViewBuilder
+    private func targetMenuItem(title: String, target: ScenarioRulePresetTarget) -> some View {
+        Button {
+            if state.target != target {
+                onSelectTarget(target)
             }
-        )
+        } label: {
+            if state.target == target {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(verbatim: title)
+            }
+        }
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -138,43 +196,55 @@ private struct ScenarioRulePresetRow: View {
 
             Spacer(minLength: AetherVisual.s2)
 
-            Picker(
-                AppLocalization.string("Target policy"),
-                selection: targetBinding
-            ) {
-                Text(verbatim: primaryProxyLabel)
-                    .tag(ScenarioRulePresetTarget.primaryProxy)
+            Menu {
+                targetMenuItem(title: primaryProxyLabel, target: .primaryProxy)
                 if !availableGroups.isEmpty {
                     Divider()
                     ForEach(availableGroups, id: \.self) { group in
-                        Text(verbatim: group)
-                            .tag(ScenarioRulePresetTarget.group(group))
+                        targetMenuItem(title: group, target: .group(group))
                     }
                 }
                 if let missingName = missingCustomGroupName {
                     Divider()
-                    Text(verbatim: AppLocalization.format(
-                        "%@ (Fallback)",
-                        missingName
-                    ))
-                    .tag(ScenarioRulePresetTarget.group(missingName))
+                    targetMenuItem(
+                        title: AppLocalization.format("%@ (Fallback)", missingName),
+                        target: .group(missingName)
+                    )
                 }
                 Divider()
-                Text(verbatim: AppLocalization.string("DIRECT (Bypass)"))
-                    .tag(ScenarioRulePresetTarget.direct)
-                Text(verbatim: AppLocalization.string("REJECT (Block)"))
-                    .tag(ScenarioRulePresetTarget.reject)
+                targetMenuItem(
+                    title: AppLocalization.string("DIRECT (Bypass)"),
+                    target: .direct
+                )
+                targetMenuItem(
+                    title: AppLocalization.string("REJECT (Block)"),
+                    target: .reject
+                )
+            } label: {
+                Text(verbatim: selectedTargetLabel)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
+            .menuIndicator(.visible)
+            .aetherButton()
             .controlSize(.small)
-            .frame(maxWidth: AetherVisual.searchFieldMinWidth + AetherVisual.s5)
+            .frame(
+                minWidth: AetherVisual.searchFieldMinWidth + AetherVisual.s5,
+                maxWidth: AetherVisual.searchFieldWidth + AetherVisual.s5,
+                alignment: .trailing
+            )
+            .disabled(isBusy)
+            .help(AppLocalization.string("Choose which proxy group or action handles matching traffic."))
+            .accessibilityLabel(AppLocalization.string("Target policy"))
+            .accessibilityValue(Text(verbatim: selectedTargetLabel))
             .accessibilityIdentifier("scenario-preset-target-\(definition.id.rawValue)")
 
             Toggle(title, isOn: enabledBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
+                .disabled(isBusy)
+                .accessibilityLabel(title)
                 .accessibilityIdentifier("scenario-preset-toggle-\(definition.id.rawValue)")
         }
         .padding(.horizontal, AetherVisual.s4)

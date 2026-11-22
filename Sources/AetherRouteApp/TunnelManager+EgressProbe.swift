@@ -24,6 +24,10 @@ final class EgressProbeStore: ObservableObject {
         isProbing = true
     }
 
+    func cancelProbe() {
+        isProbing = false
+    }
+
     func completeProbe(report: EgressProbeReport, nodeName: String?) {
         lastReport = report
         if let nodeName, !nodeName.isEmpty {
@@ -35,9 +39,41 @@ final class EgressProbeStore: ObservableObject {
 
 private enum EgressProbeStoreAssociation {
     nonisolated(unsafe) static var key: UInt8 = 0
+    nonisolated(unsafe) static var taskKey: UInt8 = 0
+    nonisolated(unsafe) static var probeIDKey: UInt8 = 0
 }
 
 extension TunnelManager {
+    private var egressProbeTask: Task<Void, Never>? {
+        get { objc_getAssociatedObject(self, &EgressProbeStoreAssociation.taskKey) as? Task<Void, Never> }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &EgressProbeStoreAssociation.taskKey,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+
+    private var activeEgressProbeID: UUID? {
+        get { objc_getAssociatedObject(self, &EgressProbeStoreAssociation.probeIDKey) as? UUID }
+        set {
+            objc_setAssociatedObject(
+                self,
+                &EgressProbeStoreAssociation.probeIDKey,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+
+    func cancelEgressAvailabilityProbe() {
+        activeEgressProbeID = nil
+        egressProbeTask?.cancel()
+        egressProbeTask = nil
+        egressProbeStore.cancelProbe()
+    }
     /// Per-instance observable store for on-demand egress probe state and
     /// bounded per-node cache (max 64 entries). Kept as an associated object so
     /// high-frequency egress updates only redraw views that observe it.
@@ -96,14 +132,51 @@ extension TunnelManager {
 
         let nodeName = currentEgressProbeNodeName
         let proxyConfig = currentEgressProxyConfiguration
+        let expectedConnectionID = providerConnectionID
+        let expectedProfileID = activeProfileID
+        let probeID = UUID()
+        activeEgressProbeID = probeID
         store.beginProbe()
 
-        let report = await Task.detached(priority: .userInitiated) {
+        let task = Task.detached(priority: .userInitiated) {
             let probe = EgressAvailabilityProbe(proxy: proxyConfig)
             return await probe.run(nodeName: nodeName)
-        }.value
-
-        store.completeProbe(report: report, nodeName: nodeName)
+        }
+        let wrapper = Task { @MainActor in
+            let report = await withTaskCancellationHandler {
+                await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            guard !Task.isCancelled,
+                  self.activeEgressProbeID == probeID,
+                  self.isConnected,
+                  self.providerConnectionID == expectedConnectionID,
+                  self.activeProfileID == expectedProfileID,
+                  self.currentEgressProbeNodeName == nodeName else {
+                if self.activeEgressProbeID == probeID {
+                    self.activeEgressProbeID = nil
+                    store.cancelProbe()
+                }
+                return
+            }
+            self.activeEgressProbeID = nil
+            store.completeProbe(report: report, nodeName: nodeName)
+        }
+        egressProbeTask?.cancel()
+        egressProbeTask = wrapper
+        await withTaskCancellationHandler {
+            await wrapper.value
+        } onCancel: {
+            task.cancel()
+            wrapper.cancel()
+        }
+        if egressProbeTask == wrapper {
+            egressProbeTask = nil
+        }
+        if activeEgressProbeID == probeID {
+            activeEgressProbeID = nil
+        }
     }
 
     func latestEgressReportForCurrentNode() -> EgressProbeReport? {

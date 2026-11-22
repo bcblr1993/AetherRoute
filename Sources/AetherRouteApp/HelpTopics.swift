@@ -81,7 +81,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                     heading: AppLocalization.string("TUN · when you need to capture all traffic"),
                     lines: [
                         AppLocalization.string("Creates a virtual network interface and captures this Mac's IPv4 and IPv6 traffic at the network layer."),
-                        AppLocalization.string("Can offer a local HTTP / SOCKS proxy (127.0.0.1:7890) for Terminal and developer tools."),
+                        AppLocalization.string("Can offer a local HTTP / SOCKS proxy on 127.0.0.1 at your configured local proxy ports for Terminal and developer tools."),
                         AppLocalization.string("DNS behaviour, such as Fake-IP, can be adjusted on the DNS page."),
                         AppLocalization.string("Bypass rules use IP ranges only, not domains."),
                         AppLocalization.string("Works alongside Tailscale: tailnet addresses go straight to Tailscale, and HTTPS sites follow your rules by name even when Tailscale's DNS answers first."),
@@ -133,7 +133,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
             [
                 Section(heading: nil, lines: [
                     AppLocalization.string("Hosts entries in the profile pin a domain to a fixed IP address, like the system hosts file."),
-                    AppLocalization.string("This follows the profile and is shown here for reference; edit the profile to change it."),
+                    AppLocalization.string("Profile hosts entries follow the profile and are shown here for reference. Use Custom host mappings below to add or toggle overrides without modifying the profile."),
                 ]),
             ]
         case .applicationRules:
@@ -164,13 +164,13 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                     lines: [
                         AppLocalization.string("1. Open Settings › Wi-Fi and tap the \u{201C}i\u{201D} icon beside your connected Wi-Fi."),
                         AppLocalization.string("2. Scroll to the bottom and tap Configure Proxy › Manual."),
-                        AppLocalization.string("3. Enter this Mac's LAN IP for Server, and the port (7890) for Port. Tap Save."),
+                        AppLocalization.string("3. Enter this Mac's LAN IP for Server, and your configured HTTP proxy port (shown in Settings › Network) for Port. Tap Save."),
                     ]
                 ),
                 Section(
                     heading: AppLocalization.string("Android & other devices"),
                     lines: [
-                        AppLocalization.string("Android: Open Wi-Fi details › Advanced / Proxy › set to Manual and enter this Mac's IP and port 7890."),
+                        AppLocalization.string("Android: Open Wi-Fi details › Advanced / Proxy › set to Manual and enter this Mac's IP and configured HTTP proxy port."),
                         AppLocalization.string("Smart TV / Apple TV / Switch: Enter the same IP and port in network proxy settings."),
                     ]
                 ),
@@ -203,7 +203,7 @@ struct AetherHelpButton: View {
         }
         .buttonStyle(.borderless)
         .help(topic.title)
-        .accessibilityLabel(String.localizedStringWithFormat(AppLocalization.string("Help: %@"), topic.title))
+        .accessibilityLabel(AppLocalization.format("Help: %@", topic.title))
         .accessibilityIdentifier("help-\(topic.rawValue)")
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
             AetherHelpContent(topic: topic)
@@ -227,26 +227,34 @@ struct AetherHelpContent: View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
             Text(topic.title)
                 .font(.headline)
-            ForEach(topic.sections) { section in
-                VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                    if let heading = section.heading {
-                        Text(heading)
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    ForEach(section.lines, id: \.self) { line in
-                        HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                            if section.lines.count > 1 {
-                                Text(verbatim: "•")
-                                    .foregroundStyle(AetherVisual.tertiaryText)
+                .accessibilityAddTraits(.isHeader)
+            ScrollView {
+                VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                    ForEach(Array(topic.sections.enumerated()), id: \.offset) { _, section in
+                        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                            if let heading = section.heading {
+                                Text(heading)
+                                    .font(.subheadline.weight(.semibold))
                             }
-                            Text(line)
-                                .foregroundStyle(AetherVisual.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
+                            ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
+                                HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                                    if section.lines.count > 1 {
+                                        Text(verbatim: "•")
+                                            .foregroundStyle(AetherVisual.tertiaryText)
+                                    }
+                                    Text(line)
+                                        .foregroundStyle(AetherVisual.secondaryText)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .font(.callout)
+                            }
                         }
-                        .font(.callout)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: AetherVisual.helpPopoverMaxHeight)
             Divider()
             Link(destination: AetherLinks.product) {
                 Label(AppLocalization.string("Learn more on the AetherRoute website"), systemImage: "arrow.up.right.square")
@@ -254,7 +262,7 @@ struct AetherHelpContent: View {
             .font(.callout)
         }
         .padding(AetherVisual.s4)
-        .frame(width: 380, alignment: .leading)
+        .frame(width: AetherVisual.popoverWidth, alignment: .leading)
     }
 }
 

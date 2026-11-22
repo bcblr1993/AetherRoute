@@ -41,10 +41,7 @@ extension TunnelManager {
         let resolved = AetherNodeProfileCompiler.removingUnresolvedDialerProxies(from: parsed.nodes)
         let importedNodes = resolved.nodes
         let name = importedNodes.count == 1
-            ? String.localizedStringWithFormat(
-                AppLocalization.string("%@ · Manual"),
-                importedNodes[0].name
-            )
+            ? AppLocalization.format("%@ · Manual", importedNodes[0].name)
             : AppLocalization.format("Imported links · %lld nodes", Int64(importedNodes.count))
         do {
             let shouldActivate = !isEnabled || activeProfileID == nil

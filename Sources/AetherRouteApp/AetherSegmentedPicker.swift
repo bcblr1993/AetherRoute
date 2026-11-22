@@ -69,38 +69,50 @@ struct AetherSegmentedPicker<Value: Hashable>: NSViewRepresentable {
         where control.label(forSegment: index) != option.title {
             control.setLabel(option.title, forSegment: index)
         }
-        control.selectedSegment = options.firstIndex { $0.value == selection } ?? -1
-        control.isEnabled = context.environment.isEnabled
-        control.controlSize = switch context.environment.controlSize {
+        let targetSegment = options.firstIndex { $0.value == selection } ?? -1
+        if control.selectedSegment != targetSegment {
+            control.selectedSegment = targetSegment
+        }
+        let isEnabled = context.environment.isEnabled
+        if control.isEnabled != isEnabled {
+            control.isEnabled = isEnabled
+        }
+        let targetControlSize: NSControl.ControlSize = switch context.environment.controlSize {
         case .mini: .mini
         case .small: .small
         case .large, .extraLarge: .large
         default: .regular
+        }
+        if control.controlSize != targetControlSize {
+            control.controlSize = targetControlSize
         }
         // Equal segments, sized up front. `.fillEqually` widens the segments
         // only after the first layout pass, so the width SwiftUI measured
         // first was wrong and a narrow DNS page overflowed its window.
         // A full-width control is sized by its container, so AppKit can
         // share that width out equally without the first-pass problem.
-        control.segmentDistribution = fillsWidth ? .fillEqually : .fit
+        let targetDistribution: NSSegmentedControl.Distribution = fillsWidth ? .fillEqually : .fit
+        if control.segmentDistribution != targetDistribution {
+            control.segmentDistribution = targetDistribution
+        }
         let segmentWidth = fillsWidth
             ? 0
             : context.coordinator.segmentWidth(
                 for: options.map(\.title),
-                controlSize: control.controlSize
+                controlSize: targetControlSize
             )
         for index in 0..<options.count
         where control.width(forSegment: index) != segmentWidth {
             control.setWidth(segmentWidth, forSegment: index)
         }
-        control.setContentHuggingPriority(
-            fillsWidth ? .defaultLow : .required,
-            for: .horizontal
-        )
-        if let accessibilityIdentifier {
+        let targetHugging: NSLayoutConstraint.Priority = fillsWidth ? .defaultLow : .required
+        if control.contentHuggingPriority(for: .horizontal) != targetHugging {
+            control.setContentHuggingPriority(targetHugging, for: .horizontal)
+        }
+        if let accessibilityIdentifier, control.accessibilityIdentifier() != accessibilityIdentifier {
             control.setAccessibilityIdentifier(accessibilityIdentifier)
         }
-        if let accessibilityLabel {
+        if let accessibilityLabel, control.accessibilityLabel() != accessibilityLabel {
             control.setAccessibilityLabel(accessibilityLabel)
         }
     }

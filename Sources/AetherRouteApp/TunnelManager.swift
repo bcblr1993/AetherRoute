@@ -638,8 +638,12 @@ final class TunnelManager: ObservableObject {
     var latencyIndexToken: LatencyRunToken?
     var latencyRuntimeEpoch: UInt64 = 0
     var activeLatencyRunTasks: [UUID: Task<Void, Never>] = [:]
+    var activeMemberLatencyTokens: [String: UUID] = [:]
     var proxySelectionModeTokens: [String: UUID] = [:]
     var proxySelectionModeTasks: [String: Task<Void, Never>] = [:]
+    var prepareGeneration: UInt64 = 0
+    var pendingDNSRuntimePolicy: DNSRuntimePolicy?
+    var scenarioPresetQueueTask: Task<Void, Never>?
     var pendingLatencyFlush: Set<String> = []
     var lastLatencyFlushAt: ContinuousClock.Instant?
     var latencyFlushTask: Task<Void, Never>?
@@ -674,7 +678,6 @@ final class TunnelManager: ObservableObject {
             }
         }
     }
-    @Published var connectionStage: ConnectionStage = .systemAuthorization
     let telemetryViewModel = NetworkTelemetryViewModel()
     var telemetry: NetworkTelemetrySnapshot { telemetryViewModel.snapshot }
     var realtimeTelemetrySources: Set<String> = []
@@ -876,6 +879,9 @@ final class TunnelManager: ObservableObject {
         controlURLSchemePreferences = controlURLSchemePreferenceStore.load()
         controlURLSchemeToken = Self.loadOrCreateControlURLSchemeToken(in: userDefaults)
         self.systemProxyConfigurator = systemProxyConfigurator ?? SystemProxyConfigurator(defaults: userDefaults)
+        LANProxyServerController.localizedFailureFormatter = {
+            Self.localizedLANProxyStatusFailure($0)
+        }
         self.isDomesticOptimizationEnabled = DomesticRoutingOptimizer.isEnabled
         self.isAutomaticRoutingResourceUpdateEnabled = userDefaults.object(
             forKey: Self.automaticRoutingResourceUpdatePreferenceKey
@@ -955,6 +961,7 @@ final class TunnelManager: ObservableObject {
                 || environment["AETHERROUTE_UI_REVIEW_PROFILE"] == "none" {
                 if reviewState == "extension-approval" {
                     systemExtensionApprovalRequired = true
+                    isPreparing = false
                     failureContext = .configuration
                     state = .failed(AppLocalization.string(
                         "Approve the AetherRoute network extension to continue."
@@ -1162,7 +1169,10 @@ final class TunnelManager: ObservableObject {
                 guard let self, !self.isUIReviewMode else { return }
                 do {
                     let catalog = try ProfileCatalogStore.applicationGroup().loadOrMigrate()
-                    await self.applyProductionProfileCatalog(catalog)
+                    await self.applyProductionProfileCatalog(
+                        catalog,
+                        preserveConnectedRuntimeState: true
+                    )
                 } catch {
                     Self.runtimeLogger.error(
                         "stage=cloudSyncReload failed error=\(String(reflecting: error), privacy: .public)"
@@ -1299,10 +1309,13 @@ final class TunnelManager: ObservableObject {
     }
 
     private func performPrepare() async {
+        let generation = prepareGeneration
         isPreparing = true
         defer {
-            isPreparing = false
-            prepareTask = nil
+            if prepareGeneration == generation {
+                isPreparing = false
+                prepareTask = nil
+            }
         }
 
         do {
@@ -1352,25 +1365,32 @@ final class TunnelManager: ObservableObject {
             } else {
                 initialProjection = startup.profileProjection
             }
+            guard prepareGeneration == generation else { return }
             installProfileProjection(initialProjection)
             try await systemExtensionActivator.activate(
                 identifier: networkEngineMode.providerBundleIdentifier
             ) { [weak self] in
-                guard let self else { return }
-                failureContext = .configuration
-                systemExtensionApprovalRequired = true
-                state = .failed(
+                guard let self, self.prepareGeneration == generation else { return }
+                self.failureContext = .configuration
+                self.systemExtensionApprovalRequired = true
+                self.isPreparing = false
+                self.prepareTask = nil
+                self.state = .failed(
                     AppLocalization.string(
                         "Approve the AetherRoute network extension to continue."
                     )
                 )
             }
+            guard prepareGeneration == generation else { return }
             systemExtensionApprovalRequired = false
             await deactivateOpposingNetworkEngineManagers(for: networkEngineMode)
+            guard prepareGeneration == generation else { return }
             installManager(try await loadOrCreateManager())
             observeConfigurationChanges()
             updateState()
-            isPreparing = false
+            if prepareGeneration == generation {
+                isPreparing = false
+            }
             if !isUIReviewMode,
                qaAutomationEnvironment["AETHERROUTE_QA_AUTOCONNECT"] == nil,
                NSClassFromString("XCTestCase") == nil,
@@ -1393,7 +1413,10 @@ final class TunnelManager: ObservableObject {
             }
             await restorePreviousConnectionIfRequested()
             await connectForQAAutomationIfRequested()
+        } catch is CancellationError {
+            return
         } catch {
+            guard prepareGeneration == generation else { return }
             systemExtensionApprovalRequired = false
             recordFailure(error, context: .configuration)
         }
@@ -1666,6 +1689,7 @@ final class TunnelManager: ObservableObject {
     /// request as soon as approval is granted.
     func recheckSystemExtensionApproval() async {
         guard systemExtensionApprovalRequired else { return }
+        await systemExtensionActivator.recheckPendingApprovalNow()
         await prepare()
     }
 
@@ -1710,6 +1734,12 @@ final class TunnelManager: ObservableObject {
         if !enabled {
             cancelStartupRestore(reason: clearsUserIntent ? "userDisconnected" : "internalRestart")
             engineReconnect.cancel()
+            cancelEgressAvailabilityProbe()
+            if clearsUserIntent {
+                networkEngineMessage = nil
+                networkEngineMessageIsError = false
+                networkEngineBlockedNeedsSetup = false
+            }
             // Invalidate before any guard or await. A connect request may still
             // be preparing resources even though NetworkExtension has not
             // received startVPNTunnel yet.
@@ -1810,7 +1840,6 @@ final class TunnelManager: ObservableObject {
             }
             resetConnectionReadiness()
             lastObservedProviderStatus = manager?.connection.status
-            connectionStage = .systemAuthorization
             state = .connecting
         } else {
             disconnectErrorLookupID = nil
@@ -2248,8 +2277,9 @@ final class TunnelManager: ObservableObject {
     /// Stops any active session and detaches cached NetworkExtension state for
     /// uninstallation without writing new preferences or traffic statistics,
     /// ensuring subsequent configuration removal and process exit cannot stall.
-    func tearDownForUninstall() async {
-        isApplicationTerminating = true
+    /// Does not mark `isApplicationTerminating = true` so the app remains healthy
+    /// if the user cancels or uninstall fails.
+    func prepareForUninstall() async {
         userIntentEpoch &+= 1
         connectionGenerationToken &+= 1
         reconnectToken = nil
@@ -2261,6 +2291,7 @@ final class TunnelManager: ObservableObject {
         }
         cancelStartupRestore(reason: "uninstall")
         engineReconnect.cancel()
+        cancelEgressAvailabilityProbe()
         userIntendsToConnect = false
         cancelAutomaticReconnect(reason: "uninstall")
         stopTelemetryPolling()
@@ -2281,6 +2312,11 @@ final class TunnelManager: ObservableObject {
         }
         invalidateCachedManager()
         state = .disconnected
+    }
+
+    func tearDownForUninstall() async {
+        isApplicationTerminating = true
+        await prepareForUninstall()
     }
 
     static let networkEngineSwitchSettleTimeout = Duration.seconds(10)
@@ -2418,8 +2454,10 @@ final class TunnelManager: ObservableObject {
                 }
             }
         } catch ExternalSubscriptionLinkError.controlActionsDisabled {
-            externalSubscriptionLinkError = AppLocalization.string("Control URL actions are disabled. Enable them in Settings > Automation.")
+            pendingControlURLRequest = nil
+            externalSubscriptionLinkError = AppLocalization.string("Control URL actions are disabled. Enable them in Settings > General.")
         } catch {
+            pendingControlURLRequest = nil
             handleExternalURL(url)
         }
     }
@@ -2559,7 +2597,8 @@ final class TunnelManager: ObservableObject {
                activeProfileID == requestProfileID {
                 let liveNonFake = liveResult.dnsAddresses.filter { !DNSLookupInspector.isFakeIPAddress($0) }
                 let mergedDNS = liveNonFake.isEmpty ? resolvedDNS.addresses : liveNonFake
-                if mergedDNS != liveResult.dnsAddresses || liveResult.isFakeIP {
+                let resolvedIsFakeIP = liveResult.isFakeIP && liveNonFake.isEmpty
+                if mergedDNS != liveResult.dnsAddresses || resolvedIsFakeIP != liveResult.isFakeIP {
                     liveResult = RouteTraceResult(
                         routingMode: liveResult.routingMode,
                         matchedRuleKind: liveResult.matchedRuleKind,
@@ -2573,7 +2612,7 @@ final class TunnelManager: ObservableObject {
                             ?? (mergedDNS.isEmpty || resolvedDNS.latencyMilliseconds == 0
                                 ? nil
                                 : resolvedDNS.latencyMilliseconds),
-                        isFakeIP: false,
+                        isFakeIP: resolvedIsFakeIP,
                         source: .liveProvider
                     )
                 }
@@ -2582,7 +2621,7 @@ final class TunnelManager: ObservableObject {
         }
 
         let currentSelections = proxySelections.compactMapValues(\.selectedMember)
-        let effectiveMode = state == .connected ? (sessionRoutingMode ?? routingMode) : routingMode
+        let effectiveMode = effectiveRoutingMode
         return RouteSimulationInspector.evaluate(
             request: forwardedRequest,
             routingMode: effectiveMode,
@@ -2622,8 +2661,29 @@ final class TunnelManager: ObservableObject {
         localProxySettingsMessage = AppLocalization.format(
             "Local proxy port %@ is already in use or failed to bind (%@). System Proxy has been rolled back.",
             String(port),
-            error.localizedDescription
+            localizedLocalProxyError(error)
         )
+    }
+
+    static func localizedLANProxyStatusFailure(_ failure: LANProxyStatusFailure) -> String {
+        switch failure.kind {
+        case let .portInUse(port):
+            return AppLocalization.format("Port %@ is already in use by another app.", String(port))
+        case let .invalidPort(port):
+            return AppLocalization.format("Port %@ is not valid.", String(port))
+        case let .permissionDenied(port):
+            return AppLocalization.format("Permission was denied to listen on port %@.", String(port))
+        case .invalidHandshake:
+            return AppLocalization.string("Invalid proxy handshake.")
+        case let .remoteConnectionFailed(reason):
+            return AppLocalization.format("Remote connection failed: %@", reason)
+        case let .listenerFailed(port, detail):
+            return AppLocalization.format("Port %@ could not start: %@", String(port), detail)
+        }
+    }
+
+    func localizedLANProxyStatusFailure(_ failure: LANProxyStatusFailure) -> String {
+        Self.localizedLANProxyStatusFailure(failure)
     }
 
     func tunnelOwnsLoopbackListener(for settings: LocalProxySettings) -> Bool {
@@ -2634,6 +2694,9 @@ final class TunnelManager: ObservableObject {
         guard !isUIReviewMode else { return }
         switch newState {
         case .connected:
+            if !dnsRuntimePolicyMessageIsError {
+                dnsRuntimePolicyMessage = nil
+            }
             installLANProxyCallbacks()
             let usesHostProxyListener = !tunnelOwnsLoopbackListener(for: localProxySettings)
             if usesHostProxyListener,
@@ -2654,6 +2717,9 @@ final class TunnelManager: ObservableObject {
                 applySystemProxyIfNeeded()
             }
         case .recovering, .connecting, .disconnecting:
+            if !dnsRuntimePolicyMessageIsError {
+                dnsRuntimePolicyMessage = nil
+            }
             if isSystemProxyActive || oldState == .connected {
                 isSystemProxyActive = false
                 restoreSystemProxyIfNeeded()
@@ -2786,33 +2852,47 @@ final class TunnelManager: ObservableObject {
     }
 
     func setDNSRuntimePolicy(_ policy: DNSRuntimePolicy) async {
-        guard canModifyDNSRuntimePolicy, let activeProfile else { return }
+        guard canModifyDNSRuntimePolicy else { return }
+        if isUpdatingDNSRuntimePolicy {
+            pendingDNSRuntimePolicy = policy
+            return
+        }
+        guard activeProfile != nil else { return }
+        pendingDNSRuntimePolicy = policy
         isUpdatingDNSRuntimePolicy = true
-        defer { isUpdatingDNSRuntimePolicy = false }
-        do {
-            if !isUIReviewMode {
-                let profileYAML = activeProfile.yaml
-                try await Task.detached(priority: .userInitiated) {
-                    try DNSRuntimePolicyStore.applicationGroup().save(
-                        policy,
-                        forProfileYAML: profileYAML
-                    )
-                }.value
+        defer {
+            isUpdatingDNSRuntimePolicy = false
+            pendingDNSRuntimePolicy = nil
+        }
+        while let nextPolicy = pendingDNSRuntimePolicy {
+            pendingDNSRuntimePolicy = nil
+            guard !isEnabled, !isTransitioning, let currentActive = activeProfile else { break }
+            do {
+                if !isUIReviewMode {
+                    let profileYAML = currentActive.yaml
+                    try await Task.detached(priority: .userInitiated) {
+                        try DNSRuntimePolicyStore.applicationGroup().save(
+                            nextPolicy,
+                            forProfileYAML: profileYAML
+                        )
+                    }.value
+                }
+                dnsRuntimePolicy = nextPolicy
+                dnsRuntimePolicyMessage = nextPolicy.isInherited
+                    ? AppLocalization.string("DNS behavior will follow the active profile on the next TUN connection.")
+                    : AppLocalization.string("DNS overrides will apply on the next TUN connection.")
+                dnsRuntimePolicyMessageIsError = false
+            } catch {
+                dnsRuntimePolicyMessage = localizedLocalProxyError(error)
+                dnsRuntimePolicyMessageIsError = true
             }
-            dnsRuntimePolicy = policy
-            dnsRuntimePolicyMessage = policy.isInherited
-                ? AppLocalization.string("DNS behavior will follow the active profile on the next TUN connection.")
-                : AppLocalization.string("DNS overrides will apply on the next TUN connection.")
-            dnsRuntimePolicyMessageIsError = false
-        } catch {
-            dnsRuntimePolicyMessage = error.localizedDescription
-            dnsRuntimePolicyMessageIsError = true
         }
     }
 
     func setRoutingMode(_ mode: RoutingMode) async {
         guard ensurePrivacyConsent(), canChangeRoutingMode else { return }
         guard mode != routingMode || sessionRoutingMode != mode else { return }
+        cancelEgressAvailabilityProbe()
 
         if state != .connected {
             routingMode = mode
@@ -3001,12 +3081,17 @@ final class TunnelManager: ObservableObject {
 #endif
     }
 
+    var effectiveRoutingMode: RoutingMode {
+        state == .connected ? (sessionRoutingMode ?? routingMode) : routingMode
+    }
+
     var canChangeRoutingMode: Bool {
         let statePermitsChange = switch state {
         case .disconnected, .connected, .failed: true
         case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
         }
         return hasAcceptedPrivacyDisclosure
+            && !isNetworkSetupRequired
             && statePermitsChange
             && !isTransitioning
             && !isUpdatingRoutingMode
@@ -3022,8 +3107,9 @@ final class TunnelManager: ObservableObject {
         case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
         }
         return hasAcceptedPrivacyDisclosure
+            && !isNetworkSetupRequired
             && statePermitsChange
-            && !isPreparing
+            && (!isPreparing || systemExtensionApprovalRequired)
             && !isSwitchingNetworkEngine
             && !isImportingProfile
             && !isUpdatingProfiles
@@ -3037,8 +3123,9 @@ final class TunnelManager: ObservableObject {
         case .privacyConsentRequired, .loading, .connecting, .recovering, .disconnecting: false
         }
         return hasAcceptedPrivacyDisclosure
+            && !isNetworkSetupRequired
             && statePermitsChange
-            && !isPreparing
+            && (!isPreparing || systemExtensionApprovalRequired)
             && !isSwitchingNetworkEngine
             && !isRefreshingSubscription
             && !isImportingProfile
@@ -3123,8 +3210,18 @@ final class TunnelManager: ObservableObject {
     }
 
     var canModifyDNSRuntimePolicy: Bool {
-        canModifyProfiles
-            && !isUpdatingDNSRuntimePolicy
+        hasAcceptedPrivacyDisclosure
+            && !isEnabled
+            && !isTransitioning
+            && !isRefreshingSubscription
+            && !isImportingProfile
+            && !isUpdatingProfiles
+            && !isUpdatingBypassPolicy
+            && !isTransferringProfiles
+            && !isUpdatingRoutingMode
+            && !isSwitchingNetworkEngine
+            && !isUpdatingRoutingResources
+            && proxySelectionRequests.isEmpty
             && activeProfile != nil
     }
 
@@ -3201,6 +3298,8 @@ final class TunnelManager: ObservableObject {
         return switch state {
         case .privacyConsentRequired: AppLocalization.string("Privacy review")
         case .loading: AppLocalization.string("Preparing")
+        case .disconnected where !distributionConnectionAccess.permitsNewConnection:
+            AppLocalization.string("License required")
         case .disconnected: AppLocalization.string("Not connected")
         case .connecting: AppLocalization.string("Connecting")
         case .recovering: AppLocalization.string("Recovering")
@@ -3254,21 +3353,21 @@ final class TunnelManager: ObservableObject {
     private var distributionConnectionAccessDetail: String {
         switch distributionConnectionAccess {
         case .authorizedUntil where !distributionConnectionAccess.permitsNewConnection:
-            AppLocalization.string("The saved license has expired. Review Settings > License & Updates.")
+            AppLocalization.string("The saved license has expired. Review Settings > About.")
         case .free, .unrestrictedDevelopment, .authorized, .authorizedUntil:
             AppLocalization.string("Traffic is using the normal network path")
         case .activationRequired:
-            AppLocalization.string("Activate AetherRoute in Settings > License & Updates before connecting.")
+            AppLocalization.string("Activate AetherRoute in Settings > About before connecting.")
         case .restricted(.expired):
-            AppLocalization.string("The saved license has expired. Review Settings > License & Updates.")
+            AppLocalization.string("The saved license has expired. Review Settings > About.")
         case .restricted(.revoked):
-            AppLocalization.string("The saved license was revoked. Review Settings > License & Updates.")
+            AppLocalization.string("The saved license was revoked. Review Settings > About.")
         case .restricted(.deviceLimit):
-            AppLocalization.string("This license reached its device limit. Review Settings > License & Updates.")
+            AppLocalization.string("This license reached its device limit. Review Settings > About.")
         case .restricted(.active):
-            AppLocalization.string("The saved license cannot authorize a connection. Review Settings > License & Updates.")
+            AppLocalization.string("The saved license cannot authorize a connection. Review Settings > About.")
         case .verificationUnavailable:
-            AppLocalization.string("The saved license cannot be verified. Review Settings > License & Updates.")
+            AppLocalization.string("The saved license cannot be verified. Review Settings > About.")
         }
     }
 
@@ -3303,6 +3402,7 @@ final class TunnelManager: ObservableObject {
         return hasAcceptedPrivacyDisclosure
             && statePermitsRefresh
             && !isTransitioning
+            && !isRefreshingSubscription
             && !isImportingProfile
             && !isUpdatingProfiles
             && !isTransferringProfiles
@@ -3482,6 +3582,7 @@ final class TunnelManager: ObservableObject {
         guard let globalGroup = menuGlobalProxyGroup,
               globalGroup.members.contains(member),
               !proxySelectionRequests.contains("GLOBAL") else { return }
+        cancelEgressAvailabilityProbe()
         proxySelectionRequests.insert("GLOBAL")
         defer { proxySelectionRequests.remove("GLOBAL") }
 

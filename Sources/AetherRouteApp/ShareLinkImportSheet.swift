@@ -85,8 +85,14 @@ struct ShareLinkImportSheet: View {
     @State private var isImporting = false
     @State private var isImagePickerPresented = false
     @State private var qrMessage: String?
+    @State private var qrMessageIsError = false
+    @State private var qrNeedsScreenPermission = false
+    @State private var importErrorMessage: String?
     @State private var isScanningScreen = false
     @State private var requestsCancel = false
+    @State private var importTask: Task<Void, Never>?
+    @State private var qrTask: Task<Void, Never>?
+    @FocusState private var isEditorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
@@ -115,6 +121,8 @@ struct ShareLinkImportSheet: View {
                             .allowsHitTesting(false)
                     }
                 }
+                .focused($isEditorFocused)
+                .disabled(isImporting)
                 .onDrop(of: [.image, .fileURL], isTargeted: nil, perform: readDroppedImage)
                 .accessibilityLabel(AppLocalization.string("Node links"))
                 .accessibilityIdentifier("share-link-text")
@@ -124,11 +132,13 @@ struct ShareLinkImportSheet: View {
                     pasteFromClipboard()
                 }
                 .aetherButton()
+                .disabled(isImporting)
                 .accessibilityIdentifier("share-link-paste")
                 Button(AppLocalization.string("Choose QR Code Image…"), systemImage: "qrcode") {
                     isImagePickerPresented = true
                 }
                 .aetherButton()
+                .disabled(isImporting)
                 .accessibilityIdentifier("share-link-choose-image")
                 Button {
                     scanScreen()
@@ -140,16 +150,30 @@ struct ShareLinkImportSheet: View {
                     )
                 }
                 .aetherButton()
-                .disabled(isScanningScreen)
+                .disabled(isImporting || isScanningScreen)
                 .help(AppLocalization.string("Reads a QR code shown in another app's window, such as a browser or chat."))
                 .accessibilityIdentifier("share-link-scan-screen")
             }
 
             if let qrMessage {
-                Text(qrMessage)
-                    .font(.caption)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                    if qrMessageIsError {
+                        AetherInlineMessage(text: qrMessage, kind: .warning, isCompact: true)
+                    } else {
+                        Label(qrMessage, systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(AetherReadableTint(color: .green))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if qrNeedsScreenPermission {
+                        Button(AppLocalization.string("Open System Settings")) {
+                            openScreenRecordingSettings()
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                        .accessibilityIdentifier("share-link-open-screen-recording-settings")
+                    }
+                }
             }
 
             Text(AppLocalization.string("Links are parsed on this Mac; AetherRoute does not contact any of the servers until you connect."))
@@ -157,26 +181,31 @@ struct ShareLinkImportSheet: View {
                 .foregroundStyle(AetherVisual.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if tunnel.profileMessageIsError, let message = tunnel.profileMessage {
-                AetherInlineMessage(text: message)
+            if let importErrorMessage {
+                AetherInlineMessage(text: importErrorMessage)
             }
 
             HStack {
                 // Cancel and the primary action share the trailing edge, as in
                 // every macOS sheet.
                 Spacer()
-                Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
-                    .aetherButton()
-                    .keyboardShortcut(.cancelAction)
-                    .disabled(isImporting)
-                    .accessibilityIdentifier("share-link-cancel")
-                Button {
-                    isImporting = true
-                    Task {
-                        let imported = await tunnel.importShareLinks(text)
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                    if isImporting {
+                        importTask?.cancel()
+                        importTask = nil
+                        qrTask?.cancel()
+                        qrTask = nil
                         isImporting = false
-                        if imported { dismiss() }
+                        dismiss()
+                    } else {
+                        requestsCancel = true
                     }
+                }
+                .aetherButton()
+                .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("share-link-cancel")
+                Button {
+                    startImport()
                 } label: {
                     AetherProgressButtonLabel(
                         AppLocalization.string("Import"),
@@ -185,7 +214,11 @@ struct ShareLinkImportSheet: View {
                 }
                 .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
-                .disabled(isImporting || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(
+                    isImporting
+                        || !tunnel.canImportOrAddProfile
+                        || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
                 .accessibilityIdentifier("share-link-import")
             }
             .controlSize(.large)
@@ -203,23 +236,67 @@ struct ShareLinkImportSheet: View {
             allowedContentTypes: [.image],
             allowsMultipleSelection: false
         ) { result in
-            guard case let .success(urls) = result, let url = urls.first else { return }
-            Task {
-                let payloads = await Task.detached(priority: .userInitiated) {
-                    ShareLinkQRCodeReader.payloads(inImageAt: url)
-                }.value
-                append(payloads)
+            switch result {
+            case let .success(urls):
+                guard let url = urls.first else { return }
+                qrTask?.cancel()
+                qrTask = Task {
+                    let payloads = await Task.detached(priority: .userInitiated) {
+                        ShareLinkQRCodeReader.payloads(inImageAt: url)
+                    }.value
+                    guard !Task.isCancelled else { return }
+                    append(payloads)
+                }
+            case let .failure(error):
+                qrMessage = error.localizedDescription
+                qrMessageIsError = true
+                qrNeedsScreenPermission = false
             }
         }
-        .onAppear { tunnel.clearProfileMessage() }
+        .onChange(of: text) { _, _ in
+            importErrorMessage = nil
+        }
+        .onAppear {
+            tunnel.clearProfileMessage()
+            isEditorFocused = true
+        }
+        .onDisappear {
+            importTask?.cancel()
+            importTask = nil
+            qrTask?.cancel()
+            qrTask = nil
+        }
+    }
+
+    private func startImport() {
+        guard !isImporting else { return }
+        importErrorMessage = nil
+        tunnel.clearProfileMessage()
+        isImporting = true
+        importTask?.cancel()
+        importTask = Task {
+            let imported = await tunnel.importShareLinks(text)
+            importTask = nil
+            isImporting = false
+            guard !Task.isCancelled else { return }
+            if imported {
+                dismiss()
+            } else {
+                importErrorMessage = tunnel.profileMessage
+                    ?? AppLocalization.string("No valid node link was found. Paste links such as vless://, ss:// or hy2://, one per line.")
+            }
+        }
     }
 
     private func pasteFromClipboard() {
+        guard !isImporting else { return }
+        qrNeedsScreenPermission = false
         let pasteboard = NSPasteboard.general
         if let string = pasteboard.string(forType: .string),
            !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             text = text.isEmpty ? string : text + "\n" + string
             qrMessage = nil
+            qrMessageIsError = false
             return
         }
         // A copied screenshot of a QR code.
@@ -227,43 +304,86 @@ struct ShareLinkImportSheet: View {
             ?? pasteboard.data(forType: .tiff)
             ?? pasteboard.data(forType: NSPasteboard.PasteboardType("public.jpeg"))
             ?? NSImage(pasteboard: pasteboard)?.tiffRepresentation {
-            Task {
+            qrTask?.cancel()
+            qrTask = Task {
                 let payloads = await Task.detached(priority: .userInitiated) {
                     ShareLinkQRCodeReader.payloads(inData: data)
                 }.value
+                guard !Task.isCancelled else { return }
                 append(payloads)
             }
+            return
         }
+        qrMessage = AppLocalization.string("Clipboard does not contain text or a QR code image.")
+        qrMessageIsError = true
     }
 
     private func scanScreen() {
+        guard !isImporting, !isScanningScreen else { return }
         isScanningScreen = true
-        Task {
+        qrNeedsScreenPermission = false
+        qrTask?.cancel()
+        qrTask = Task {
             defer { isScanningScreen = false }
             do {
-                append(try await ShareLinkScreenScanner.payloads())
+                let payloads = try await ShareLinkScreenScanner.payloads()
+                guard !Task.isCancelled else { return }
+                append(payloads)
             } catch {
+                guard !Task.isCancelled else { return }
                 qrMessage = AppLocalization.string("Allow AetherRoute under System Settings › Privacy & Security › Screen & System Audio Recording to scan the screen.")
+                qrMessageIsError = true
+                qrNeedsScreenPermission = true
             }
         }
     }
 
+    private func openScreenRecordingSettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_ScreenCapture",
+            "x-apple.systempreferences:"
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) {
+                return
+            }
+        }
+        qrMessage = AppLocalization.string("Could not open System Settings.")
+        qrMessageIsError = true
+    }
+
     private func readDroppedImage(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
+        guard !isImporting, let provider = providers.first else { return false }
+        qrNeedsScreenPermission = false
         // An image file dragged from Finder arrives as a file URL.
         if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                guard let url else { return }
-                let payloads = ShareLinkQRCodeReader.payloads(inImageAt: url)
-                Task { @MainActor in append(payloads) }
+            _ = provider.loadObject(ofClass: URL.self) { url, error in
+                if let url, error == nil {
+                    let payloads = ShareLinkQRCodeReader.payloads(inImageAt: url)
+                    Task { @MainActor in append(payloads) }
+                } else {
+                    Task { @MainActor in
+                        qrMessage = error?.localizedDescription
+                            ?? AppLocalization.string("No QR code was found in the image.")
+                        qrMessageIsError = true
+                    }
+                }
             }
             return true
         }
         if provider.canLoadObject(ofClass: NSImage.self) {
-            _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
-                guard let image = object as? NSImage else { return }
-                let payloads = ShareLinkQRCodeReader.payloads(in: image)
-                Task { @MainActor in append(payloads) }
+            _ = provider.loadObject(ofClass: NSImage.self) { object, error in
+                if let image = object as? NSImage, error == nil {
+                    let payloads = ShareLinkQRCodeReader.payloads(in: image)
+                    Task { @MainActor in append(payloads) }
+                } else {
+                    Task { @MainActor in
+                        qrMessage = error?.localizedDescription
+                            ?? AppLocalization.string("No QR code was found in the image.")
+                        qrMessageIsError = true
+                    }
+                }
             }
             return true
         }
@@ -271,12 +391,15 @@ struct ShareLinkImportSheet: View {
     }
 
     private func append(_ payloads: [String]) {
+        qrNeedsScreenPermission = false
         guard !payloads.isEmpty else {
             qrMessage = AppLocalization.string("No QR code was found in the image.")
+            qrMessageIsError = true
             return
         }
         let joined = payloads.joined(separator: "\n")
         text = text.isEmpty ? joined : text + "\n" + joined
         qrMessage = AppLocalization.format("Read %lld QR codes.", Int64(payloads.count))
+        qrMessageIsError = false
     }
 }

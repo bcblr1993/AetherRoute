@@ -17,6 +17,42 @@ struct ConnectionTableItem: Identifiable {
     let id: ID
     let connection: ConnectionTelemetry
 
+    /// Resolves the best matching live connection row even if concurrent flows
+    /// share `(transport, destination, destinationPort, startedAtUnixMilliseconds)`
+    /// and a peer's closure shifted sequential `occurrence` indices.
+    static func disambiguatedMatch(
+        for target: ConnectionTableItem,
+        in candidates: [ConnectionTableItem]
+    ) -> ConnectionTableItem? {
+        let sameFlowTuple: (ConnectionTableItem) -> Bool = { candidate in
+            candidate.id.transport == target.id.transport
+                && candidate.id.destination == target.id.destination
+                && candidate.id.destinationPort == target.id.destinationPort
+                && candidate.id.startedAtUnixMilliseconds == target.id.startedAtUnixMilliseconds
+        }
+        let matching = candidates.filter(sameFlowTuple)
+        guard !matching.isEmpty else { return nil }
+        if let exact = matching.first(where: {
+            $0.id == target.id
+                && $0.connection.rule == target.connection.rule
+                && $0.connection.rulePayload == target.connection.rulePayload
+                && $0.connection.sourceAppIdentifier == target.connection.sourceAppIdentifier
+        }) {
+            return exact
+        }
+        if let semantic = matching.first(where: {
+            $0.connection.rule == target.connection.rule
+                && $0.connection.rulePayload == target.connection.rulePayload
+                && $0.connection.proxyChain == target.connection.proxyChain
+                && $0.connection.sourceAppIdentifier == target.connection.sourceAppIdentifier
+                && $0.connection.uploadTotal >= target.connection.uploadTotal
+                && $0.connection.downloadTotal >= target.connection.downloadTotal
+        }) {
+            return semantic
+        }
+        return matching.first(where: { $0.id == target.id }) ?? matching.first
+    }
+
     static func identify(_ connections: [ConnectionTelemetry]) -> [Self] {
         guard !connections.isEmpty else { return [] }
         var occurrences: [ID: Int] = [:]
@@ -233,7 +269,35 @@ struct ConnectionLiveRateTracker: Sendable {
     private static let minimumElapsedSeconds: TimeInterval = 0.2
     private static let maximumElapsedSeconds: TimeInterval = 180.0
 
-    private var previousTotals: [ConnectionTableItem.ID: (upload: UInt64, download: UInt64)] = [:]
+    private struct TrackedTotal {
+        let disambiguator: FlowDisambiguator
+        let upload: UInt64
+        let download: UInt64
+    }
+
+    private struct FlowDisambiguator: Equatable, Hashable {
+        let transport: UInt8
+        let destination: String
+        let destinationPort: UInt16
+        let startedAtUnixMilliseconds: UInt64
+        let rule: String
+        let rulePayload: String
+        let proxyChain: String
+        let sourceAppIdentifier: String
+
+        init(_ connection: ConnectionTelemetry) {
+            self.transport = connection.transport.rawValue
+            self.destination = connection.destination
+            self.destinationPort = connection.destinationPort
+            self.startedAtUnixMilliseconds = connection.startedAtUnixMilliseconds
+            self.rule = connection.rule
+            self.rulePayload = connection.rulePayload
+            self.proxyChain = connection.proxyChain
+            self.sourceAppIdentifier = connection.sourceAppIdentifier
+        }
+    }
+
+    private var previousTotals: [ConnectionTableItem.ID: TrackedTotal] = [:]
     private var previousSampleAt: Date?
     private var lastRates: [ConnectionTableItem.ID: ConnectionTransferRates] = [:]
 
@@ -247,10 +311,14 @@ struct ConnectionLiveRateTracker: Sendable {
         items: [ConnectionTableItem],
         at now: Date = .now
     ) -> [ConnectionTableItem.ID: ConnectionTransferRates] {
-        var nextTotals: [ConnectionTableItem.ID: (upload: UInt64, download: UInt64)] = [:]
+        var nextTotals: [ConnectionTableItem.ID: TrackedTotal] = [:]
         nextTotals.reserveCapacity(items.count)
         for item in items {
-            nextTotals[item.id] = (item.connection.uploadTotal, item.connection.downloadTotal)
+            nextTotals[item.id] = TrackedTotal(
+                disambiguator: FlowDisambiguator(item.connection),
+                upload: item.connection.uploadTotal,
+                download: item.connection.downloadTotal
+            )
         }
 
         guard let prevAt = previousSampleAt else {
@@ -279,19 +347,42 @@ struct ConnectionLiveRateTracker: Sendable {
 
         var rates: [ConnectionTableItem.ID: ConnectionTransferRates] = [:]
         rates.reserveCapacity(items.count)
+        var consumedPreviousIDs = Set<ConnectionTableItem.ID>()
+        consumedPreviousIDs.reserveCapacity(items.count)
+
         for item in items {
-            guard let prev = previousTotals[item.id],
-                  item.connection.uploadTotal >= prev.upload,
-                  item.connection.downloadTotal >= prev.download
-            else { continue }
-            let upDelta = item.connection.uploadTotal - prev.upload
-            let downDelta = item.connection.downloadTotal - prev.download
-            let upRate = UInt64((Double(upDelta) / elapsed).rounded())
-            let downRate = UInt64((Double(downDelta) / elapsed).rounded())
-            rates[item.id] = ConnectionTransferRates(
-                uploadBytesPerSecond: upRate,
-                downloadBytesPerSecond: downRate
-            )
+            let currentDisambiguator = FlowDisambiguator(item.connection)
+            if let prev = previousTotals[item.id],
+               !consumedPreviousIDs.contains(item.id),
+               prev.disambiguator == currentDisambiguator,
+               item.connection.uploadTotal >= prev.upload,
+               item.connection.downloadTotal >= prev.download {
+                consumedPreviousIDs.insert(item.id)
+                let upDelta = item.connection.uploadTotal - prev.upload
+                let downDelta = item.connection.downloadTotal - prev.download
+                rates[item.id] = ConnectionTransferRates(
+                    uploadBytesPerSecond: UInt64((Double(upDelta) / elapsed).rounded()),
+                    downloadBytesPerSecond: UInt64((Double(downDelta) / elapsed).rounded())
+                )
+            }
+        }
+
+        for item in items where rates[item.id] == nil {
+            let currentDisambiguator = FlowDisambiguator(item.connection)
+            if let fallback = previousTotals.first(where: { prevID, prev in
+                !consumedPreviousIDs.contains(prevID)
+                    && prev.disambiguator == currentDisambiguator
+                    && item.connection.uploadTotal >= prev.upload
+                    && item.connection.downloadTotal >= prev.download
+            }) {
+                consumedPreviousIDs.insert(fallback.key)
+                let upDelta = item.connection.uploadTotal - fallback.value.upload
+                let downDelta = item.connection.downloadTotal - fallback.value.download
+                rates[item.id] = ConnectionTransferRates(
+                    uploadBytesPerSecond: UInt64((Double(upDelta) / elapsed).rounded()),
+                    downloadBytesPerSecond: UInt64((Double(downDelta) / elapsed).rounded())
+                )
+            }
         }
 
         previousTotals = nextTotals

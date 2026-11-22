@@ -78,8 +78,10 @@ extension TunnelManager {
            now.timeIntervalSince(last) < Self.latencyOnOpenInterval {
             return
         }
-        latencyOnOpenTestedAt[groupName] = now
         await testProxyLatency(group: groupName)
+        if !Task.isCancelled && state == .connected {
+            latencyOnOpenTestedAt[groupName] = .now
+        }
     }
 
     static let latencyOnOpenInterval: TimeInterval = 60

@@ -47,56 +47,30 @@ struct CommandPaletteView: View {
     let dismiss: () -> Void
 
     @State private var query = ""
-    @State private var selection = 0
-    @State private var lastKeyboardNavigationAt = Date.distantPast
-    @FocusState private var isSearchFocused: Bool
+    @State private var didExecuteAction = false
 
     var body: some View {
         let results = filteredItems
         CommandPaletteContentView(
             results: results,
             query: $query,
-            selection: $selection,
-            lastKeyboardNavigationAt: $lastKeyboardNavigationAt,
-            isSearchFocused: $isSearchFocused,
             reduceTransparency: reduceTransparency,
-            runSelected: { run(results) },
-            runItem: { index in
-                selection = index
-                run(results)
+            runItem: { item in
+                run(item)
             },
             dismiss: dismiss
         )
         .onAppear {
-            isSearchFocused = true
-            clampAndSkipDisabledSelection(in: results)
-        }
-        .onChange(of: query) { _, _ in
-            selection = firstEnabledIndex(in: filteredItems)
-        }
-        .onChange(of: results.count) { _, _ in
-            clampAndSkipDisabledSelection(in: results)
+            didExecuteAction = false
+            if tunnel.effectiveRoutingMode == .global {
+                tunnel.seedGlobalSelectionIfNeeded()
+            }
         }
     }
 
-    private func firstEnabledIndex(in results: [CommandPaletteItem]) -> Int {
-        results.firstIndex(where: \.isEnabled) ?? 0
-    }
-
-    private func clampAndSkipDisabledSelection(in results: [CommandPaletteItem]) {
-        guard !results.isEmpty else {
-            selection = 0
-            return
-        }
-        if !results.indices.contains(selection) || !results[selection].isEnabled {
-            selection = firstEnabledIndex(in: results)
-        }
-    }
-
-    private func run(_ results: [CommandPaletteItem]) {
-        guard results.indices.contains(selection) else { return }
-        let item = results[selection]
-        guard item.isEnabled else { return }
+    private func run(_ item: CommandPaletteItem) {
+        guard !didExecuteAction, item.isEnabled else { return }
+        didExecuteAction = true
         dismiss()
         item.perform()
     }
@@ -134,6 +108,7 @@ struct CommandPaletteView: View {
                 title: AppLocalization.string("Reconnect"),
                 subtitle: "",
                 symbol: "arrow.clockwise",
+                isEnabled: !tunnel.isTransitioning && !tunnel.isSwitchingNetworkEngine,
                 perform: { Task { await tunnel.reconnect() } }
             ))
         }
@@ -144,7 +119,7 @@ struct CommandPaletteView: View {
                 title: routingTitle(mode),
                 subtitle: AppLocalization.string("Routing mode"),
                 symbol: mode.symbol,
-                isCurrent: tunnel.routingMode == mode,
+                isCurrent: tunnel.effectiveRoutingMode == mode,
                 isEnabled: tunnel.canChangeRoutingMode,
                 perform: { Task { await tunnel.setRoutingMode(mode) } }
             ))
@@ -164,20 +139,30 @@ struct CommandPaletteView: View {
         }
 #endif
         if let group = primaryGroup {
+            let selected = tunnel.proxySelections[group.name]?.selectedMember
+            let members = ProxyPageNodeOrder.uniqueMembersPreservingOrder(
+                tunnel.proxySelections[group.name]?.members ?? group.members
+            ).filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
             items.append(CommandPaletteItem(
                 id: "action.latency",
                 kind: .action,
                 title: AppLocalization.string("Test latency"),
                 subtitle: proxyGroupDisplayName(group.name),
                 symbol: "bolt",
-                isEnabled: !tunnel.latencyStore.proxyLatencyRequests.contains(group.name),
+                isEnabled: !members.isEmpty && !tunnel.latencyStore.proxyLatencyRequests.contains(group.name),
                 perform: { Task { await tunnel.testProxyLatency(group: group.name) } }
             ))
-            let selected = tunnel.proxySelections[group.name]?.selectedMember
-            let members = ProxyPageNodeOrder.uniqueMembersPreservingOrder(
-                tunnel.proxySelections[group.name]?.members ?? group.members
-            ).filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
+            let isGroupSelectable = group.strategy.caseInsensitiveCompare("select") == .orderedSame
+            let isGroupLocked = tunnel.proxySelectionMode(for: group.name) == .fastest
+                || tunnel.proxySelectionRequests.contains(group.name)
+                || tunnel.isTransitioning
+                || tunnel.isSwitchingNetworkEngine
+            let selectableByName = Dictionary(
+                (tunnel.activeProfileSummary?.proxies ?? []).map { ($0.name, $0.recognition.isSelectable) },
+                uniquingKeysWith: { first, _ in first }
+            )
             for member in members {
+                let isNodeSelectable = selectableByName[member] ?? true
                 items.append(CommandPaletteItem(
                     id: "node.\(group.name).\(member)",
                     kind: .node,
@@ -185,10 +170,18 @@ struct CommandPaletteView: View {
                     subtitle: proxyGroupDisplayName(group.name),
                     symbol: "point.3.connected.trianglepath.dotted",
                     isCurrent: member == selected,
-                    // A group picking the fastest node ignores picks; in
-                    // failover mode a pick sets the preferred node.
-                    isEnabled: tunnel.proxySelectionMode(for: group.name) != .fastest,
-                    perform: { Task { await tunnel.selectProxy(group: group.name, member: member) } }
+                    // A group picking the fastest node or non-select group
+                    // ignores manual picks, as do unsupported or busy rows.
+                    isEnabled: isGroupSelectable && !isGroupLocked && isNodeSelectable,
+                    perform: {
+                        Task {
+                            if group.name == "GLOBAL" {
+                                await tunnel.selectGlobalOutlet(member)
+                            } else {
+                                await tunnel.selectProxy(group: group.name, member: member)
+                            }
+                        }
+                    }
                 ))
             }
         }
@@ -214,11 +207,15 @@ struct CommandPaletteView: View {
     }
 
     private var primaryGroup: ProxyGroupConfigurationSummary? {
-        if tunnel.routingMode == .global, let global = tunnel.globalProxyGroup {
-            return global
+        switch tunnel.effectiveRoutingMode {
+        case .direct:
+            return nil
+        case .global:
+            return tunnel.globalProxyGroup
+        case .rule:
+            guard let summary = tunnel.activeProfileSummary else { return nil }
+            return primaryProxyGroup(in: summary, tunnel: tunnel)
         }
-        guard let summary = tunnel.activeProfileSummary else { return nil }
-        return primaryProxyGroup(in: summary, tunnel: tunnel)
     }
 
     private func routingTitle(_ mode: RoutingMode) -> String {
@@ -272,17 +269,44 @@ private struct CommandPaletteRow: View {
 }
 
 private struct CommandPaletteContentView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let results: [CommandPaletteItem]
     @Binding var query: String
-    @Binding var selection: Int
-    @Binding var lastKeyboardNavigationAt: Date
-    var isSearchFocused: FocusState<Bool>.Binding
     let reduceTransparency: Bool
-    let runSelected: () -> Void
-    let runItem: (Int) -> Void
+    let runItem: (CommandPaletteItem) -> Void
     let dismiss: () -> Void
 
+    @State private var selection: Int? = nil
+    @State private var lastKeyboardNavigationAt = Date.distantPast
+    @FocusState private var isSearchFocused: Bool
+
     private static let hoverSuppressionWindow: TimeInterval = 0.15
+
+    private func firstEnabledIndex(in results: [CommandPaletteItem]) -> Int? {
+        results.firstIndex(where: \.isEnabled)
+    }
+
+    private func clampAndSkipDisabledSelection(in results: [CommandPaletteItem]) {
+        guard !results.isEmpty else {
+            selection = nil
+            return
+        }
+        if let current = selection, results.indices.contains(current), results[current].isEnabled {
+            return
+        }
+        selection = firstEnabledIndex(in: results)
+    }
+
+    private func runSelected() {
+        guard let selection, results.indices.contains(selection) else { return }
+        let item = results[selection]
+        guard item.isEnabled else { return }
+        runItem(item)
+    }
+
+    private var resultsSignature: [String] {
+        results.map { "\($0.id):\($0.isEnabled)" }
+    }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: AetherVisual.panelRadius, style: .continuous)
@@ -295,8 +319,9 @@ private struct CommandPaletteContentView: View {
                 TextField(AppLocalization.string("Search actions, pages and nodes"), text: $query)
                     .textFieldStyle(.plain)
                     .font(.title3)
-                    .focused(isSearchFocused)
+                    .focused($isSearchFocused)
                     .onSubmit(runSelected)
+                    .onExitCommand(perform: dismiss)
                     .accessibilityIdentifier("command-palette-field")
             }
             .padding(AetherVisual.s4)
@@ -319,9 +344,13 @@ private struct CommandPaletteContentView: View {
                                         .padding(.top, sectionGap(before: index))
                                 }
                                 Button {
-                                    runItem(index)
+                                    selection = index
+                                    runItem(item)
                                 } label: {
-                                    CommandPaletteRow(item: item, isSelected: index == selection)
+                                    CommandPaletteRow(
+                                        item: item,
+                                        isSelected: selection == index && item.isEnabled
+                                    )
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(!item.isEnabled)
@@ -341,8 +370,8 @@ private struct CommandPaletteContentView: View {
                     }
                     .frame(maxHeight: 320)
                     .onChange(of: selection) { _, newValue in
-                        guard results.indices.contains(newValue) else { return }
-                        withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                        guard let newValue, results.indices.contains(newValue) else { return }
+                        withAnimation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion)) {
                             proxy.scrollTo(results[newValue].id)
                         }
                     }
@@ -374,12 +403,27 @@ private struct CommandPaletteContentView: View {
         .overlay {
             shape.strokeBorder(AetherVisual.panelStroke, lineWidth: 1)
         }
+        .focusSection()
+        .onAppear {
+            isSearchFocused = true
+            clampAndSkipDisabledSelection(in: results)
+        }
+        .onChange(of: query) { _, _ in
+            selection = firstEnabledIndex(in: results)
+        }
+        .onChange(of: resultsSignature) { _, _ in
+            clampAndSkipDisabledSelection(in: results)
+        }
         .onKeyPress(.downArrow) {
             moveSelection(step: 1)
             return .handled
         }
         .onKeyPress(.upArrow) {
             moveSelection(step: -1)
+            return .handled
+        }
+        .onKeyPress(.return) {
+            runSelected()
             return .handled
         }
         .onKeyPress(.escape) {
@@ -391,9 +435,12 @@ private struct CommandPaletteContentView: View {
     }
 
     private func moveSelection(step: Int) {
-        guard !results.isEmpty else { return }
+        guard !results.isEmpty else {
+            selection = nil
+            return
+        }
         lastKeyboardNavigationAt = Date()
-        var candidate = selection + step
+        var candidate = (selection ?? (step > 0 ? -1 : results.count)) + step
         while results.indices.contains(candidate) {
             if results[candidate].isEnabled {
                 selection = candidate

@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct AboutAetherRouteView: View {
+    @EnvironmentObject private var tunnel: TunnelManager
     @State private var isLicensesPresented = false
+    @State private var isUninstallPresented = false
 
     private let releaseChannel = bundleText(
         for: "AetherRouteReleaseChannel",
@@ -49,7 +51,7 @@ struct AboutAetherRouteView: View {
 
             // Pages that exist on aethernative.com, opened in the browser.
             Section {
-                linkRow(AppLocalization.string("AetherRoute Website"), systemImage: "safari", url: AetherLinks.product, identifier: "about-link-website")
+                linkRow(AppLocalization.string("AetherRoute Website"), systemImage: "globe", url: AetherLinks.product, identifier: "about-link-website")
                 linkRow(AppLocalization.string("What's New in This Version"), systemImage: "sparkles", url: AetherLinks.releaseNotes(version: marketingVersion), identifier: "about-link-release-notes")
                 linkRow(AppLocalization.string("Release History"), systemImage: "clock.arrow.circlepath", url: AetherLinks.releases, identifier: "about-link-releases")
                 linkRow(AppLocalization.string("Privacy Policy"), systemImage: "hand.raised", url: AetherLinks.privacy, identifier: "about-link-privacy")
@@ -61,7 +63,9 @@ struct AboutAetherRouteView: View {
 #if AETHERROUTE_INDEPENDENT
             // System extensions outlive a deleted app; the App Store build's
             // app extensions are removed with it.
-            AppUninstallSection()
+            AppUninstallSection {
+                isUninstallPresented = true
+            }
 #endif
 
             Section {
@@ -75,6 +79,28 @@ struct AboutAetherRouteView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("About AetherRoute"))
         .accessibilityIdentifier("about-page-content")
+        .sheet(isPresented: $isLicensesPresented) {
+            VStack(spacing: 0) {
+                ThirdPartyLicensesView()
+                Divider()
+                HStack {
+                    Spacer()
+                    Button(AppLocalization.string("Done")) { isLicensesPresented = false }
+                        .aetherButton(prominent: true)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("licenses-done")
+                }
+                .padding(AetherVisual.s3)
+            }
+            .onExitCommand { isLicensesPresented = false }
+            .aetherLargeSheetFrame(minWidth: AetherVisual.splitSheetMinWidth)
+        }
+#if AETHERROUTE_INDEPENDENT
+        .sheet(isPresented: $isUninstallPresented) {
+            AppUninstallSheet()
+                .environmentObject(tunnel)
+        }
+#endif
     }
 
     /// Centered, like the system's own About windows: each fact once.
@@ -128,21 +154,6 @@ struct AboutAetherRouteView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("about-open-licenses")
-        .sheet(isPresented: $isLicensesPresented) {
-            VStack(spacing: 0) {
-                ThirdPartyLicensesView()
-                Divider()
-                HStack {
-                    Spacer()
-                    Button(AppLocalization.string("Done")) { isLicensesPresented = false }
-                        .aetherButton(prominent: true)
-                        .keyboardShortcut(.defaultAction)
-                        .accessibilityIdentifier("licenses-done")
-                }
-                .padding(AetherVisual.s3)
-            }
-            .aetherLargeSheetFrame(minWidth: AetherVisual.splitSheetMinWidth)
-        }
     }
 
     private func linkRow(_ title: String, systemImage: String, url: URL, identifier: String) -> some View {
@@ -168,8 +179,8 @@ struct AboutAetherRouteView: View {
                 .font(.callout)
                 .foregroundStyle(AetherVisual.secondaryText)
             HStack(spacing: AetherVisual.s3) {
-                Label(AppLocalization.string("Apple silicon"), systemImage: "apple.logo")
-                Label(AppLocalization.string("Native macOS"), systemImage: "swift")
+                Label(AppLocalization.string("Apple silicon"), systemImage: "cpu")
+                Label(AppLocalization.string("Native macOS"), systemImage: "macwindow")
             }
             .font(.caption)
             .foregroundStyle(AetherVisual.secondaryText)

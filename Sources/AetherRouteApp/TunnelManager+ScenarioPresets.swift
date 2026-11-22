@@ -44,17 +44,19 @@ extension TunnelManager {
         _ isEnabled: Bool,
         for id: ScenarioRulePresetID
     ) async -> Bool {
-        var states = scenarioRulePresetStates
-        if let index = states.firstIndex(where: { $0.id == id }) {
-            guard states[index].isEnabled != isEnabled else { return true }
-            states[index].isEnabled = isEnabled
-        } else {
-            states.append(ScenarioRulePresetState(id: id, isEnabled: isEnabled))
+        await serializeScenarioPresetOperation {
+            var states = self.scenarioRulePresetStates
+            if let index = states.firstIndex(where: { $0.id == id }) {
+                guard states[index].isEnabled != isEnabled else { return true }
+                states[index].isEnabled = isEnabled
+            } else {
+                states.append(ScenarioRulePresetState(id: id, isEnabled: isEnabled))
+            }
+            return await self.persistAndApplyScenarioRulePresets(
+                ScenarioRulePresetState.normalized(states),
+                shouldReloadLive: true
+            )
         }
-        return await persistAndApplyScenarioRulePresets(
-            ScenarioRulePresetState.normalized(states),
-            shouldReloadLive: true
-        )
     }
 
     @discardableResult
@@ -62,20 +64,36 @@ extension TunnelManager {
         _ target: ScenarioRulePresetTarget,
         for id: ScenarioRulePresetID
     ) async -> Bool {
-        var states = scenarioRulePresetStates
-        let wasEnabled: Bool
-        if let index = states.firstIndex(where: { $0.id == id }) {
-            guard states[index].target != target else { return true }
-            states[index].target = target
-            wasEnabled = states[index].isEnabled
-        } else {
-            states.append(ScenarioRulePresetState(id: id, isEnabled: false, target: target))
-            wasEnabled = false
+        await serializeScenarioPresetOperation {
+            var states = self.scenarioRulePresetStates
+            let wasEnabled: Bool
+            if let index = states.firstIndex(where: { $0.id == id }) {
+                guard states[index].target != target else { return true }
+                states[index].target = target
+                wasEnabled = states[index].isEnabled
+            } else {
+                states.append(ScenarioRulePresetState(id: id, isEnabled: false, target: target))
+                wasEnabled = false
+            }
+            return await self.persistAndApplyScenarioRulePresets(
+                ScenarioRulePresetState.normalized(states),
+                shouldReloadLive: wasEnabled
+            )
         }
-        return await persistAndApplyScenarioRulePresets(
-            ScenarioRulePresetState.normalized(states),
-            shouldReloadLive: wasEnabled
-        )
+    }
+
+    private func serializeScenarioPresetOperation(
+        _ operation: @escaping @MainActor () async -> Bool
+    ) async -> Bool {
+        let previous = scenarioPresetQueueTask
+        var result = false
+        let task = Task { @MainActor in
+            _ = await previous?.value
+            result = await operation()
+        }
+        scenarioPresetQueueTask = task
+        await task.value
+        return result
     }
 
     private func persistAndApplyScenarioRulePresets(

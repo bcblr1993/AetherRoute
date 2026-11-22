@@ -24,13 +24,13 @@ extension TunnelManager {
             defer { refreshingRuleProviderIDs.remove(provider.id) }
             do {
                 let count = try await ruleProviderEngine.forceRefresh(id: provider.id)
-                ruleProviderMessage = String.localizedStringWithFormat(
-                    AppLocalization.string("Rule provider added (%lld rules loaded)"),
+                ruleProviderMessage = AppLocalization.format(
+                    "Rule provider added (%lld rules loaded)",
                     Int64(count)
                 )
                 ruleProviderMessageIsError = false
             } catch {
-                ruleProviderMessage = error.localizedDescription
+                ruleProviderMessage = localizedRuleProviderError(error)
                 ruleProviderMessageIsError = true
             }
             await reloadCustomRuleProvidersFromEngine()
@@ -39,7 +39,7 @@ extension TunnelManager {
             Task { _ = try? await ProfileCloudSyncManager.shared.sync() }
             return true
         } catch {
-            ruleProviderMessage = error.localizedDescription
+            ruleProviderMessage = localizedRuleProviderError(error)
             ruleProviderMessageIsError = true
             return false
         }
@@ -58,7 +58,7 @@ extension TunnelManager {
                     ruleProviderMessage = AppLocalization.string("Rule provider updated")
                     ruleProviderMessageIsError = false
                 } catch {
-                    ruleProviderMessage = error.localizedDescription
+                    ruleProviderMessage = localizedRuleProviderError(error)
                     ruleProviderMessageIsError = true
                 }
             } else {
@@ -71,13 +71,18 @@ extension TunnelManager {
             Task { _ = try? await ProfileCloudSyncManager.shared.sync() }
             return true
         } catch {
-            ruleProviderMessage = error.localizedDescription
+            ruleProviderMessage = localizedRuleProviderError(error)
             ruleProviderMessageIsError = true
             return false
         }
     }
 
     func toggleCustomRuleProvider(id: UUID) async {
+        guard !isTransitioning else {
+            ruleProviderMessage = AppLocalization.string("Wait for the current rule or connection change to finish.")
+            ruleProviderMessageIsError = true
+            return
+        }
         _ = await ruleProviderEngine.toggleProvider(id: id)
         ruleProviderMessage = nil
         ruleProviderMessageIsError = false
@@ -88,6 +93,11 @@ extension TunnelManager {
     }
 
     func deleteCustomRuleProvider(id: UUID) async {
+        guard !isTransitioning else {
+            ruleProviderMessage = AppLocalization.string("Wait for the current rule or connection change to finish.")
+            ruleProviderMessageIsError = true
+            return
+        }
         await ruleProviderEngine.removeProvider(id: id)
         ruleProviderMessage = AppLocalization.string("Rule provider removed")
         ruleProviderMessageIsError = false
@@ -103,8 +113,8 @@ extension TunnelManager {
         defer { refreshingRuleProviderIDs.remove(id) }
         do {
             let count = try await ruleProviderEngine.forceRefresh(id: id)
-            ruleProviderMessage = String.localizedStringWithFormat(
-                AppLocalization.string("Rule provider updated (%lld rules)"),
+            ruleProviderMessage = AppLocalization.format(
+                "Rule provider updated (%lld rules)",
                 Int64(count)
             )
             ruleProviderMessageIsError = false
@@ -116,7 +126,7 @@ extension TunnelManager {
         } catch RuleProviderError.providerNotFound {
             // Provider was deleted while the refresh request was in flight.
         } catch {
-            ruleProviderMessage = error.localizedDescription
+            ruleProviderMessage = localizedRuleProviderError(error)
             ruleProviderMessageIsError = true
         }
     }
@@ -142,14 +152,34 @@ extension TunnelManager {
         refreshActiveProfileSummary()
         await reloadCustomRulesLive()
         if let lastError, updatedCount == 0 {
-            ruleProviderMessage = lastError.localizedDescription
+            ruleProviderMessage = localizedRuleProviderError(lastError)
             ruleProviderMessageIsError = true
         } else {
-            ruleProviderMessage = String.localizedStringWithFormat(
-                AppLocalization.string("Updated %lld rule providers"),
+            ruleProviderMessage = AppLocalization.format(
+                "Updated %lld rule providers",
                 Int64(updatedCount)
             )
             ruleProviderMessageIsError = false
+        }
+    }
+
+    func localizedRuleProviderError(_ error: Error) -> String {
+        guard let providerError = error as? RuleProviderError else {
+            return error.localizedDescription
+        }
+        switch providerError {
+        case .invalidURL:
+            return AppLocalization.string("The rule provider URL is invalid.")
+        case .insecureScheme:
+            return AppLocalization.string("Rule providers must use HTTPS.")
+        case let .downloadFailed(reason):
+            return AppLocalization.format("Rule provider download failed: %@", reason)
+        case let .oversizedPayload(bytes):
+            return AppLocalization.format("The rule provider response is too large (%lld bytes).", Int64(bytes))
+        case .parsingFailed:
+            return AppLocalization.string("The rule provider response could not be parsed.")
+        case .providerNotFound:
+            return AppLocalization.string("The selected rule provider could not be found.")
         }
     }
 }

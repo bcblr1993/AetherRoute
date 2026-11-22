@@ -11,6 +11,8 @@ struct TrafficStatisticsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var range: StatisticsRange = .today
     @State private var isClearConfirmationPresented = false
+    @State private var showsAllApps = false
+    @State private var showsAllNodes = false
 
     enum StatisticsRange: Hashable, CaseIterable {
         case today
@@ -93,12 +95,14 @@ struct TrafficStatisticsSheet: View {
                     breakdown(
                         title: AppLocalization.string("By app"),
                         entries: appEntries(summary),
-                        total: summary.total.total
+                        total: summary.total.total,
+                        showsAll: $showsAllApps
                     )
                     breakdown(
                         title: AppLocalization.string("By node"),
                         entries: nodeEntries(summary),
-                        total: summary.total.total
+                        total: summary.total.total,
+                        showsAll: $showsAllNodes
                     )
                     Text(AppLocalization.string("Totals come from the network engine. The split by app and node is estimated from the connection list, so the parts can add up to less than the total."))
                         .font(.caption)
@@ -123,6 +127,13 @@ struct TrafficStatisticsSheet: View {
                     Button(AppLocalization.string("Clear"), role: .destructive) {
                         tunnel.clearTrafficStatistics()
                     }
+                    Button(AppLocalization.string("Cancel"), role: .cancel) {}
+                } message: {
+                    Text(
+                        AppLocalization.string(
+                            "This clears all saved daily traffic records on this Mac, not just the selected period."
+                        )
+                    )
                 }
                 Spacer()
                 Button(AppLocalization.string("Done")) { dismiss() }
@@ -135,6 +146,11 @@ struct TrafficStatisticsSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
         .onAppear { tunnel.loadTrafficLedgerIfNeeded() }
+        .onExitCommand {
+            if !isClearConfirmationPresented {
+                dismiss()
+            }
+        }
         // Without .contain, SwiftUI pushes the container identifier down onto
         // every child and overwrites theirs (traffic-statistics-clear, …).
         .accessibilityElement(children: .contain)
@@ -176,7 +192,13 @@ struct TrafficStatisticsSheet: View {
     }
 
     @ViewBuilder
-    private func breakdown(title: String, entries: [Entry], total: UInt64) -> some View {
+    private func breakdown(
+        title: String,
+        entries: [Entry],
+        total: UInt64,
+        showsAll: Binding<Bool>
+    ) -> some View {
+        let visibleEntries = showsAll.wrappedValue ? entries : Array(entries.prefix(Self.listedEntries))
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(title: title, count: entries.isEmpty ? nil : entries.count)
             VStack(spacing: 0) {
@@ -187,15 +209,35 @@ struct TrafficStatisticsSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(AetherVisual.cardPadding)
                 } else {
-                    ForEach(entries.prefix(Self.listedEntries)) { entry in
+                    ForEach(visibleEntries) { entry in
                         StatisticsRow(name: entry.name, volume: entry.volume, total: total)
-                        if entry.id != entries.prefix(Self.listedEntries).last?.id {
+                        if entry.id != visibleEntries.last?.id {
                             Divider().padding(.leading, AetherVisual.s4)
                         }
                     }
                 }
             }
             .aetherPanel()
+            if entries.count > Self.listedEntries {
+                HStack(spacing: AetherVisual.s2) {
+                    if !showsAll.wrappedValue {
+                        TruncationNotice(visibleCount: Self.listedEntries, totalCount: entries.count)
+                    }
+                    Spacer(minLength: AetherVisual.s2)
+                    Button {
+                        showsAll.wrappedValue.toggle()
+                    } label: {
+                        Text(
+                            showsAll.wrappedValue
+                                ? AppLocalization.string("Show less")
+                                : AppLocalization.format("Show all (%lld)", Int64(entries.count))
+                        )
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                }
+                .padding(.horizontal, AetherVisual.sectionHeaderInset)
+            }
         }
     }
 }
@@ -208,12 +250,12 @@ private struct StatisticsRow: View {
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
             VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                Text(name)
+                Text(verbatim: name)
                     .font(.body)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .help(name)
+                    .help(Text(verbatim: name))
                 Capsule()
                     .fill(AetherVisual.neutralFill)
                     .overlay(alignment: .leading) {

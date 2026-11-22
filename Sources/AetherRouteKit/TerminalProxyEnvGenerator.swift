@@ -161,7 +161,7 @@ public struct TerminalProxyEnvGenerator: Sendable {
 extension LocalProxySettings {
     public func shellEnvironmentCommand(dialect: TerminalShellDialect) throws -> String {
         let settings = try validated()
-        guard settings.isEnabled || settings.allowLAN else {
+        guard settings.isEnabled || settings.allowLAN || settings.setAsSystemProxy else {
             throw LocalProxySettingsError.disabled
         }
         return TerminalProxyEnvGenerator.shellCommand(
@@ -190,7 +190,7 @@ extension LocalProxySettings {
 
     public func pacScript(host: String = "127.0.0.1") throws -> String {
         let settings = try validated()
-        guard settings.isEnabled || settings.allowLAN else {
+        guard settings.isEnabled || settings.allowLAN || settings.setAsSystemProxy else {
             throw LocalProxySettingsError.disabled
         }
         return TerminalProxyEnvGenerator.pacScript(

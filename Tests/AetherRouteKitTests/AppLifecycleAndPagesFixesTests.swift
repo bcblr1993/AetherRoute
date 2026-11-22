@@ -197,7 +197,7 @@ final class AppLifecycleAndPagesFixesTests: XCTestCase {
             "SessionBar.outlet must not pick an arbitrary dictionary value ignoring routingMode"
         )
         XCTAssertTrue(
-            appMain.contains("effectiveMenuRoutingMode") || appMain.contains("routingMode == .direct"),
+            appMain.contains("effectiveRoutingMode") || appMain.contains("effectiveMenuRoutingMode") || appMain.contains("routingMode == .direct"),
             "MenuBarContent must distinguish .direct (direct outbound) and .global (global exit selector) modes"
         )
     }

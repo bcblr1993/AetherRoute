@@ -1,2 +1,3 @@
+"NSLocalNetworkUsageDescription" = "AetherRoute accesses the local network only when you route traffic to a proxy, DNS server, or destination on your local network.";
 "NSSystemExtensionUsageDescription" = "AetherRoute installs signed network extensions to provide transparent proxy and TUN routing.";
 

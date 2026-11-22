@@ -354,8 +354,8 @@ extension TunnelManager {
                     kind: kind
                 )
             }.value
-            routingResourceMessage = String.localizedStringWithFormat(
-                AppLocalization.string("%@ was imported and verified."),
+            routingResourceMessage = AppLocalization.format(
+                "%@ was imported and verified.",
                 kind.fileName
             )
             routingResourceMessageIsError = false

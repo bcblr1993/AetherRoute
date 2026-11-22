@@ -233,6 +233,127 @@ public struct CustomRule: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+public enum CustomRuleValidationIssue: Equatable, Sendable {
+    case emptyCriteria
+    case applicationRuleInvalid
+    case domainLength
+    case domainForbiddenCharacters
+    case domainInvalidFormat
+    case domainLabelLength
+    case domainLabelHyphenBoundary
+    case domainLabelInvalidCharacters
+    case keywordForbiddenCharacters
+    case ipv4CIDRMissingPrefix
+    case ipv4CIDRInvalidPrefix
+    case ipv4InvalidAddress(String)
+    case ipv4CIDRHostBitsNonZero(String, Int)
+    case ipv6CIDRMissingPrefix
+    case ipv6CIDRInvalidPrefix
+    case ipv6InvalidAddress(String)
+    case geoIPInvalid
+    case geoSiteLength
+    case geoSiteInvalidStart
+    case geoSiteInvalidCharacters
+    case dstPortInvalid
+    case domainWildcardLength
+    case domainWildcardForbiddenCharacters
+    case domainWildcardInvalidCharacters
+    case domainRegexLength
+    case domainRegexNewline
+    case domainRegexInvalidSyntax(String)
+    case ipASNInvalid
+    case networkInvalid
+    case processNameLength
+    case processNameForbiddenCharacters
+    case processPathFormat
+    case processPathForbiddenCharacters
+    case processPathMissingExecutable
+    case compositeANDFormat
+    case compositeANDUnbalancedParentheses
+
+    public var localizedDescription: String {
+        let locale = AppLocalizationLocaleBridge.currentLocale
+        switch self {
+        case .emptyCriteria:
+            return String(localized: "Criteria cannot be empty", locale: locale)
+        case .applicationRuleInvalid:
+            return String(localized: "Application rules require a valid signing identifier or .app bundle path", locale: locale)
+        case .domainLength:
+            return String(localized: "Domain length must be between 1 and 253 characters", locale: locale)
+        case .domainForbiddenCharacters:
+            return String(localized: "Domain cannot contain spaces, slashes, or colons", locale: locale)
+        case .domainInvalidFormat:
+            return String(localized: "Invalid domain format", locale: locale)
+        case .domainLabelLength:
+            return String(localized: "Each domain label must be 1 to 63 characters long", locale: locale)
+        case .domainLabelHyphenBoundary:
+            return String(localized: "Domain labels cannot begin or end with '-'", locale: locale)
+        case .domainLabelInvalidCharacters:
+            return String(localized: "Domain labels may only contain ASCII letters, digits, and '-'", locale: locale)
+        case .keywordForbiddenCharacters:
+            return String(localized: "Keyword cannot contain spaces, slashes, or commas", locale: locale)
+        case .ipv4CIDRMissingPrefix:
+            return String(localized: "IPv4 CIDR must include a slash prefix, e.g. 100.64.0.0/10", locale: locale)
+        case .ipv4CIDRInvalidPrefix:
+            return String(localized: "IPv4 CIDR prefix must be between 1 and 32", locale: locale)
+        case let .ipv4InvalidAddress(ip):
+            let format = String(localized: "Invalid IPv4 address: %@", locale: locale)
+            return String(format: format, locale: locale, ip)
+        case let .ipv4CIDRHostBitsNonZero(canonical, prefix):
+            let format = String(localized: "CIDR host bits must be zero; use %@/%lld", locale: locale)
+            return String(format: format, locale: locale, canonical, Int64(prefix))
+        case .ipv6CIDRMissingPrefix:
+            return String(localized: "IPv6 CIDR must include a slash prefix, e.g. fd7a:115c:a1e0::/48", locale: locale)
+        case .ipv6CIDRInvalidPrefix:
+            return String(localized: "IPv6 CIDR prefix must be between 1 and 128", locale: locale)
+        case let .ipv6InvalidAddress(ip):
+            let format = String(localized: "Invalid IPv6 address: %@", locale: locale)
+            return String(format: format, locale: locale, ip)
+        case .geoIPInvalid:
+            return String(localized: "GEOIP must be a 2-letter country code, e.g. CN, US, HK", locale: locale)
+        case .geoSiteLength:
+            return String(localized: "GEOSITE category length must be 1 to 64 characters, e.g. cn, apple, openai", locale: locale)
+        case .geoSiteInvalidStart:
+            return String(localized: "GEOSITE category must start with an ASCII letter or digit", locale: locale)
+        case .geoSiteInvalidCharacters:
+            return String(localized: "GEOSITE category may only contain ASCII letters, digits, '-', '_', '!', '@', and '.'", locale: locale)
+        case .dstPortInvalid:
+            return String(localized: "DST-PORT must be a port number between 1 and 65535, e.g. 443 or 80", locale: locale)
+        case .domainWildcardLength:
+            return String(localized: "DOMAIN-WILDCARD length must be between 1 and 253 characters", locale: locale)
+        case .domainWildcardForbiddenCharacters:
+            return String(localized: "DOMAIN-WILDCARD cannot contain spaces, slashes, colons, or commas", locale: locale)
+        case .domainWildcardInvalidCharacters:
+            return String(localized: "DOMAIN-WILDCARD may only contain ASCII domain characters and '*', '?', '+' wildcards", locale: locale)
+        case .domainRegexLength:
+            return String(localized: "DOMAIN-REGEX length must be between 1 and 512 characters", locale: locale)
+        case .domainRegexNewline:
+            return String(localized: "DOMAIN-REGEX cannot contain newlines", locale: locale)
+        case let .domainRegexInvalidSyntax(detail):
+            let format = String(localized: "Invalid DOMAIN-REGEX syntax: %@", locale: locale)
+            return String(format: format, locale: locale, detail)
+        case .ipASNInvalid:
+            return String(localized: "IP-ASN must be a non-zero ASN such as 13335 or AS13335", locale: locale)
+        case .networkInvalid:
+            return String(localized: "NETWORK supports only TCP or UDP", locale: locale)
+        case .processNameLength:
+            return String(localized: "PROCESS-NAME length must be between 1 and 256 bytes", locale: locale)
+        case .processNameForbiddenCharacters:
+            return String(localized: "PROCESS-NAME cannot contain '/', commas, or newlines", locale: locale)
+        case .processPathFormat:
+            return String(localized: "PROCESS-PATH must be an absolute path starting with '/', e.g. /usr/bin/curl", locale: locale)
+        case .processPathForbiddenCharacters:
+            return String(localized: "PROCESS-PATH cannot contain commas, NUL characters, or newlines", locale: locale)
+        case .processPathMissingExecutable:
+            return String(localized: "PROCESS-PATH must include an executable filename", locale: locale)
+        case .compositeANDFormat:
+            return String(localized: "AND composite rules must follow ((NETWORK,UDP),(DST-PORT,443))", locale: locale)
+        case .compositeANDUnbalancedParentheses:
+            return String(localized: "AND composite rule has unbalanced parentheses", locale: locale)
+        }
+    }
+}
+
 public enum CustomRuleParseError: LocalizedError, Equatable {
     case insufficientComponents
     case unsupportedKind(String)
@@ -240,13 +361,24 @@ public enum CustomRuleParseError: LocalizedError, Equatable {
     case validationFailed(String)
 
     public var errorDescription: String? {
+        let locale = AppLocalizationLocaleBridge.currentLocale
         switch self {
         case .insufficientComponents:
-            return "Rule requires at least 3 parts (e.g. DOMAIN-SUFFIX,example.com,DIRECT)"
+            return String(
+                localized: "Rule requires at least 3 parts (e.g. DOMAIN-SUFFIX,example.com,DIRECT)",
+                locale: locale
+            )
         case let .unsupportedKind(kind):
-            return "Unsupported rule kind: \(kind). Supported: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, DOMAIN-WILDCARD, DOMAIN-REGEX, IP-CIDR, IP-CIDR6, GEOIP, GEOSITE, IP-ASN, DST-PORT, NETWORK, PROCESS-NAME, PROCESS-PATH, AND"
+            let format = String(
+                localized: "Unsupported rule kind: %@. Supported: DOMAIN, DOMAIN-SUFFIX, DOMAIN-KEYWORD, DOMAIN-WILDCARD, DOMAIN-REGEX, IP-CIDR, IP-CIDR6, GEOIP, GEOSITE, IP-ASN, DST-PORT, NETWORK, PROCESS-NAME, PROCESS-PATH, AND",
+                locale: locale
+            )
+            return String(format: format, locale: locale, kind)
         case .emptyValue:
-            return "Rule criteria / destination cannot be empty"
+            return String(
+                localized: "Rule criteria / destination cannot be empty",
+                locale: locale
+            )
         case let .validationFailed(reason):
             return reason
         }
@@ -271,52 +403,67 @@ public enum RuleValidationResult: Equatable {
 public enum CustomRuleValidator {
 
     public static func validate(kind: CustomRuleKind, value: String, target: CustomRuleTarget) -> RuleValidationResult {
-        let trimmedVal = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedVal.isEmpty else {
-            return .invalid(reason: "匹配条件不能为空")
+        if let issue = validateIssue(kind: kind, value: value, target: target) {
+            return .invalid(reason: issue.localizedDescription)
         }
-
-        switch kind {
-        case .domain, .domainSuffix:
-            return validateDomain(trimmedVal)
-        case .domainKeyword:
-            return validateKeyword(trimmedVal)
-        case .domainWildcard:
-            return validateDomainWildcard(trimmedVal)
-        case .domainRegex:
-            return validateDomainRegex(trimmedVal)
-        case .ipCIDR:
-            return validateIPv4CIDR(trimmedVal)
-        case .ipCIDR6:
-            return validateIPv6CIDR(trimmedVal)
-        case .geoIP:
-            return validateGeoIP(trimmedVal)
-        case .geoSite:
-            return validateGeoSite(trimmedVal)
-        case .ipASN:
-            return validateIPASN(trimmedVal)
-        case .dstPort:
-            return validateDstPort(trimmedVal)
-        case .network:
-            return validateNetwork(trimmedVal)
-        case .processName:
-            return validateProcessName(trimmedVal)
-        case .processPath:
-            return validateProcessPath(trimmedVal)
-        case .and:
-            return validateCompositeAND(trimmedVal)
-        case .application:
-            return ApplicationRuleMatch(payload: trimmedVal) == nil
-                ? .invalid(reason: "应用规则需要合法的签名标识或 .app 路径")
-                : .valid
-        }
+        return .valid
     }
 
     public static func validate(_ rule: CustomRule) -> RuleValidationResult {
         validate(kind: rule.kind, value: rule.value, target: rule.target)
     }
 
-    private static func validateDomain(_ input: String) -> RuleValidationResult {
+    public static func validateIssue(
+        kind: CustomRuleKind,
+        value: String,
+        target: CustomRuleTarget
+    ) -> CustomRuleValidationIssue? {
+        let trimmedVal = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedVal.isEmpty else {
+            return .emptyCriteria
+        }
+
+        switch kind {
+        case .domain, .domainSuffix:
+            return validateDomainIssue(trimmedVal)
+        case .domainKeyword:
+            return validateKeywordIssue(trimmedVal)
+        case .domainWildcard:
+            return validateDomainWildcardIssue(trimmedVal)
+        case .domainRegex:
+            return validateDomainRegexIssue(trimmedVal)
+        case .ipCIDR:
+            return validateIPv4CIDRIssue(trimmedVal)
+        case .ipCIDR6:
+            return validateIPv6CIDRIssue(trimmedVal)
+        case .geoIP:
+            return validateGeoIPIssue(trimmedVal)
+        case .geoSite:
+            return validateGeoSiteIssue(trimmedVal)
+        case .ipASN:
+            return validateIPASNIssue(trimmedVal)
+        case .dstPort:
+            return validateDstPortIssue(trimmedVal)
+        case .network:
+            return validateNetworkIssue(trimmedVal)
+        case .processName:
+            return validateProcessNameIssue(trimmedVal)
+        case .processPath:
+            return validateProcessPathIssue(trimmedVal)
+        case .and:
+            return validateCompositeANDIssue(trimmedVal)
+        case .application:
+            return ApplicationRuleMatch(payload: trimmedVal) == nil
+                ? .applicationRuleInvalid
+                : nil
+        }
+    }
+
+    public static func validateIssue(_ rule: CustomRule) -> CustomRuleValidationIssue? {
+        validateIssue(kind: rule.kind, value: rule.value, target: rule.target)
+    }
+
+    private static func validateDomainIssue(_ input: String) -> CustomRuleValidationIssue? {
         var domain = input.lowercased()
         if domain.hasPrefix("*.") {
             domain = String(domain.dropFirst(2))
@@ -329,53 +476,53 @@ public enum CustomRuleValidator {
         }
 
         guard !domain.isEmpty, domain.count <= 253 else {
-            return .invalid(reason: "域名长度必须在 1 到 253 个字符之间")
+            return .domainLength
         }
         if domain.contains("/") || domain.contains(":") || domain.contains(" ") {
-            return .invalid(reason: "域名不能包含空格、斜杠或冒号")
+            return .domainForbiddenCharacters
         }
 
         let labels = domain.split(separator: ".", omittingEmptySubsequences: false)
         guard !labels.isEmpty else {
-            return .invalid(reason: "域名格式不合法")
+            return .domainInvalidFormat
         }
 
         for label in labels {
             guard !label.isEmpty, label.count <= 63 else {
-                return .invalid(reason: "域名标签长度必须在 1 到 63 个字符之间")
+                return .domainLabelLength
             }
             guard !label.hasPrefix("-") && !label.hasSuffix("-") else {
-                return .invalid(reason: "域名标签不能以连字符 '-' 开头或结尾")
+                return .domainLabelHyphenBoundary
             }
             for char in label {
                 guard char.isASCII && (char.isLetter || char.isNumber || char == "-") else {
-                    return .invalid(reason: "域名仅允许英文字母、数字和连字符 '-'")
+                    return .domainLabelInvalidCharacters
                 }
             }
         }
-        return .valid
+        return nil
     }
 
-    private static func validateKeyword(_ input: String) -> RuleValidationResult {
+    private static func validateKeywordIssue(_ input: String) -> CustomRuleValidationIssue? {
         if input.contains("/") || input.contains(" ") || input.contains(",") {
-            return .invalid(reason: "关键字不能包含空格、斜杠或逗号")
+            return .keywordForbiddenCharacters
         }
-        return .valid
+        return nil
     }
 
-    private static func validateIPv4CIDR(_ input: String) -> RuleValidationResult {
+    private static func validateIPv4CIDRIssue(_ input: String) -> CustomRuleValidationIssue? {
         let parts = input.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2 else {
-            return .invalid(reason: "IPv4 CIDR 必须包含斜杠前缀，例如 100.64.0.0/10")
+            return .ipv4CIDRMissingPrefix
         }
         guard let prefix = Int(parts[1]), (1...32).contains(prefix) else {
-            return .invalid(reason: "IPv4 CIDR 前缀必须为 1 到 32 之间的整数 (不支持 /0 全网劫持)")
+            return .ipv4CIDRInvalidPrefix
         }
 
         var addr = in_addr()
         let ipString = String(parts[0])
         guard ipString.withCString({ inet_pton(AF_INET, $0, &addr) }) == 1 else {
-            return .invalid(reason: "无效的 IPv4 地址: \(ipString)")
+            return .ipv4InvalidAddress(ipString)
         }
 
         let hostOrderIP = UInt32(bigEndian: addr.s_addr)
@@ -385,101 +532,100 @@ public enum CustomRuleValidator {
             var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
             let canonicalStr = inet_ntop(AF_INET, &canonicalIP, &buffer, socklen_t(INET_ADDRSTRLEN))
                 .map { String(cString: $0) } ?? ipString
-            return .invalid(reason: "CIDR 主机位必须为 0，建议使用规范网络前缀: \(canonicalStr)/\(prefix)")
+            return .ipv4CIDRHostBitsNonZero(canonicalStr, prefix)
         }
-        return .valid
+        return nil
     }
 
-    private static func validateIPv6CIDR(_ input: String) -> RuleValidationResult {
+    private static func validateIPv6CIDRIssue(_ input: String) -> CustomRuleValidationIssue? {
         let parts = input.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2 else {
-            return .invalid(reason: "IPv6 CIDR 必须包含斜杠前缀，例如 fd7a:115c:a1e0::/48")
+            return .ipv6CIDRMissingPrefix
         }
         guard let prefix = Int(parts[1]), (1...128).contains(prefix) else {
-            return .invalid(reason: "IPv6 CIDR 前缀必须为 1 到 128 之间的整数 (不支持 /0 全网劫持)")
+            return .ipv6CIDRInvalidPrefix
         }
 
         var addr = in6_addr()
         let ipString = String(parts[0])
         guard ipString.withCString({ inet_pton(AF_INET6, $0, &addr) }) == 1 else {
-            return .invalid(reason: "无效的 IPv6 地址: \(ipString)")
+            return .ipv6InvalidAddress(ipString)
         }
-        return .valid
+        return nil
     }
 
-
-    private static func validateGeoIP(_ input: String) -> RuleValidationResult {
+    private static func validateGeoIPIssue(_ input: String) -> CustomRuleValidationIssue? {
         let code = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard code.count == 2, code.allSatisfy({ $0.isASCII && $0.isLetter }) else {
-            return .invalid(reason: "GEOIP 必须是 2 位国家代码，例如 CN, US, HK")
+            return .geoIPInvalid
         }
-        return .valid
+        return nil
     }
 
-    private static func validateGeoSite(_ input: String) -> RuleValidationResult {
+    private static func validateGeoSiteIssue(_ input: String) -> CustomRuleValidationIssue? {
         let category = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !category.isEmpty, category.count <= 64 else {
-            return .invalid(reason: "GEOSITE 分类名长度必须在 1 到 64 个字符之间，例如 cn, apple, openai")
+            return .geoSiteLength
         }
         guard let first = category.first, first.isASCII && (first.isLetter || first.isNumber) else {
-            return .invalid(reason: "GEOSITE 分类名必须以英文字母或数字开头")
+            return .geoSiteInvalidStart
         }
         let allowedPunctuation: Set<Character> = ["-", "_", "!", "@", "."]
         let isValidChars = category.allSatisfy { char in
             char.isASCII && (char.isLetter || char.isNumber || allowedPunctuation.contains(char))
         }
         guard isValidChars else {
-            return .invalid(reason: "GEOSITE 分类名仅允许英文字母、数字及 '-', '_', '!', '@', '.'")
+            return .geoSiteInvalidCharacters
         }
-        return .valid
+        return nil
     }
 
-    private static func validateDstPort(_ input: String) -> RuleValidationResult {
+    private static func validateDstPortIssue(_ input: String) -> CustomRuleValidationIssue? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.allSatisfy({ $0.isASCII && $0.isNumber }),
               let port = Int(trimmed),
               (1...65_535).contains(port),
               String(port) == trimmed
         else {
-            return .invalid(reason: "DST-PORT 必须是 1 到 65535 之间的有效端口号，例如 443 或 80")
+            return .dstPortInvalid
         }
-        return .valid
+        return nil
     }
 
-    private static func validateDomainWildcard(_ input: String) -> RuleValidationResult {
+    private static func validateDomainWildcardIssue(_ input: String) -> CustomRuleValidationIssue? {
         let pattern = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pattern.isEmpty, pattern.count <= 253 else {
-            return .invalid(reason: "DOMAIN-WILDCARD 长度必须在 1 到 253 个字符之间")
+            return .domainWildcardLength
         }
         if pattern.contains("/") || pattern.contains(":") || pattern.contains(",")
             || pattern.contains(where: \.isWhitespace) {
-            return .invalid(reason: "DOMAIN-WILDCARD 不能包含空格、斜杠、冒号或逗号")
+            return .domainWildcardForbiddenCharacters
         }
         let allowed: Set<Character> = ["*", "?", "+", ".", "-", "_"]
         guard pattern.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || allowed.contains($0)) }),
               pattern.contains(where: { $0.isLetter || $0.isNumber || $0 == "*" || $0 == "?" }) else {
-            return .invalid(reason: "DOMAIN-WILDCARD 仅允许 ASCII 域名字符与通配符 '*', '?', '+'")
+            return .domainWildcardInvalidCharacters
         }
-        return .valid
+        return nil
     }
 
-    private static func validateDomainRegex(_ input: String) -> RuleValidationResult {
+    private static func validateDomainRegexIssue(_ input: String) -> CustomRuleValidationIssue? {
         let pattern = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pattern.isEmpty, pattern.count <= 512 else {
-            return .invalid(reason: "DOMAIN-REGEX 长度必须在 1 到 512 个字符之间")
+            return .domainRegexLength
         }
         guard !pattern.contains(where: \.isNewline) else {
-            return .invalid(reason: "DOMAIN-REGEX 不能包含换行符")
+            return .domainRegexNewline
         }
         do {
             _ = try NSRegularExpression(pattern: pattern)
-            return .valid
+            return nil
         } catch {
-            return .invalid(reason: "DOMAIN-REGEX 正则表达式语法无效: \(error.localizedDescription)")
+            return .domainRegexInvalidSyntax(error.localizedDescription)
         }
     }
 
-    private static func validateIPASN(_ input: String) -> RuleValidationResult {
+    private static func validateIPASNIssue(_ input: String) -> CustomRuleValidationIssue? {
         var raw = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.uppercased().hasPrefix("AS") {
             raw = String(raw.dropFirst(2))
@@ -488,52 +634,52 @@ public enum CustomRuleValidator {
               raw.allSatisfy({ $0.isASCII && $0.isNumber }),
               let asn = UInt32(raw),
               asn > 0 else {
-            return .invalid(reason: "IP-ASN 必须是有效的非零 ASN 编号，例如 13335 或 AS13335")
+            return .ipASNInvalid
         }
-        return .valid
+        return nil
     }
 
-    private static func validateNetwork(_ input: String) -> RuleValidationResult {
+    private static func validateNetworkIssue(_ input: String) -> CustomRuleValidationIssue? {
         let upper = input.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard upper == "TCP" || upper == "UDP" else {
-            return .invalid(reason: "NETWORK 仅支持 TCP 或 UDP")
+            return .networkInvalid
         }
-        return .valid
+        return nil
     }
 
-    private static func validateProcessName(_ input: String) -> RuleValidationResult {
+    private static func validateProcessNameIssue(_ input: String) -> CustomRuleValidationIssue? {
         let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.utf8.count <= 256 else {
-            return .invalid(reason: "PROCESS-NAME 长度必须在 1 到 256 字节之间")
+            return .processNameLength
         }
         if name.contains("/") || name.contains(",") || name.contains("\0")
             || name.contains(where: \.isNewline) {
-            return .invalid(reason: "PROCESS-NAME 不能包含路径分隔符 '/'、逗号或换行符")
+            return .processNameForbiddenCharacters
         }
-        return .valid
+        return nil
     }
 
-    private static func validateProcessPath(_ input: String) -> RuleValidationResult {
+    private static func validateProcessPathIssue(_ input: String) -> CustomRuleValidationIssue? {
         let path = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard path.hasPrefix("/"), path.count > 1, path.utf8.count <= 1_024 else {
-            return .invalid(reason: "PROCESS-PATH 必须是以 '/' 开头的绝对可执行文件路径，例如 /usr/bin/curl")
+            return .processPathFormat
         }
         if path.contains(",") || path.contains("\0") || path.contains(where: \.isNewline) {
-            return .invalid(reason: "PROCESS-PATH 不能包含逗号、空字符或换行符")
+            return .processPathForbiddenCharacters
         }
         let components = path.split(separator: "/", omittingEmptySubsequences: true)
         guard !components.isEmpty else {
-            return .invalid(reason: "PROCESS-PATH 必须包含可执行文件名")
+            return .processPathMissingExecutable
         }
-        return .valid
+        return nil
     }
 
-    private static func validateCompositeAND(_ input: String) -> RuleValidationResult {
+    private static func validateCompositeANDIssue(_ input: String) -> CustomRuleValidationIssue? {
         let expr = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard expr.hasPrefix("("), expr.hasSuffix(")"),
               expr.contains(","),
               !expr.contains(where: \.isNewline) else {
-            return .invalid(reason: "AND 组合规则格式必须类似 ((NETWORK,UDP),(DST-PORT,443))")
+            return .compositeANDFormat
         }
         var depth = 0
         for ch in expr {
@@ -541,14 +687,14 @@ public enum CustomRuleValidator {
             else if ch == ")" {
                 depth -= 1
                 if depth < 0 {
-                    return .invalid(reason: "AND 组合规则括号不匹配")
+                    return .compositeANDUnbalancedParentheses
                 }
             }
         }
         guard depth == 0 else {
-            return .invalid(reason: "AND 组合规则括号不匹配")
+            return .compositeANDUnbalancedParentheses
         }
-        return .valid
+        return nil
     }
 }
 
@@ -619,7 +765,7 @@ public struct ApplicationRuleMatch: Equatable, Sendable {
 
     /// Evaluates whether a connection's process metadata matches this application rule,
     /// supporting signing identifier prefix matching, firmlink / AppTranslocation `.app`
-    /// bundle paths, and NE-sandbox process basename fallback when `proc_pidpath` is unavailable.
+    /// bundle paths, and NE-sandbox process basename matching when `proc_pidpath` is unavailable.
     public func matches(
         signingIdentifier: String? = nil,
         executablePath: String? = nil,

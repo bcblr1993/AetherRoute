@@ -11,10 +11,14 @@ protocol SystemExtensionActivating: AnyObject {
     ) async throws
 
     func upgradeEnabledIfOutdated(identifier: String) async
+    func cancelPendingActivation()
+    func recheckPendingApprovalNow() async
 }
 
 extension SystemExtensionActivating {
     func upgradeEnabledIfOutdated(identifier: String) async {}
+    func cancelPendingActivation() {}
+    func recheckPendingApprovalNow() async {}
 }
 
 @MainActor
@@ -222,6 +226,14 @@ final class SystemExtensionActivationCoordinator: NSObject,
             installActiveRecheckObserverIfNeeded()
             pendingActivation?.onApprovalRequired()
         }
+    }
+
+    func cancelPendingActivation() {
+        finish(.failure(CancellationError()), recordActivated: false)
+    }
+
+    func recheckPendingApprovalNow() async {
+        await recheckAfterAppBecameActive()
     }
 
     private func installActiveRecheckObserverIfNeeded() {

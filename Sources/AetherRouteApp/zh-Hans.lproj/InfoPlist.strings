@@ -1,2 +1,3 @@
+"NSLocalNetworkUsageDescription" = "AetherRoute 仅在您将流量路由到本地网络中的代理、DNS 服务器或目标时访问本地网络。";
 "NSSystemExtensionUsageDescription" = "AetherRoute 需要安装已签名的网络扩展，以提供透明代理和 TUN 路由。";
 

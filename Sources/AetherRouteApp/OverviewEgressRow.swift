@@ -15,6 +15,7 @@ struct OverviewEgressRow: View {
 }
 
 private struct OverviewEgressRowContent: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var tunnel: TunnelManager
     @ObservedObject var egressStore: EgressProbeStore
     @State private var isExpanded = false
@@ -42,8 +43,25 @@ private struct OverviewEgressRowContent: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-egress-row")
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isExpanded)
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: egressStore.isProbing)
+        .aetherAnimation(AetherVisual.gentleSpring, value: isExpanded)
+        .aetherAnimation(AetherVisual.gentleSpring, value: egressStore.isProbing)
+        .onChange(of: isExpanded) { _, expanded in
+            if !expanded {
+                revealsFullIP = false
+            }
+        }
+        .onChange(of: tunnel.isConnected) { _, connected in
+            if !connected {
+                revealsFullIP = false
+                isExpanded = false
+            }
+        }
+        .onChange(of: tunnel.currentEgressProbeNodeName) { _, _ in
+            revealsFullIP = false
+            if egressStore.isProbing {
+                tunnel.cancelEgressAvailabilityProbe()
+            }
+        }
     }
 
     @ViewBuilder
@@ -53,19 +71,10 @@ private struct OverviewEgressRowContent: View {
                 .font(.subheadline)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityIdentifier("overview-egress-disconnected")
-        } else if egressStore.isProbing {
-            HStack(spacing: AetherVisual.s2) {
-                ProgressView()
-                    .controlSize(.small)
-                Text(AppLocalization.string("Checking…"))
-                    .font(.subheadline)
-                    .foregroundStyle(AetherVisual.secondaryText)
-            }
-            .accessibilityIdentifier("overview-egress-probing")
         } else if let report {
             HStack(spacing: AetherVisual.s2) {
                 Button {
-                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
+                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring, reduceMotion: reduceMotion)) {
                         isExpanded.toggle()
                     }
                 } label: {
@@ -89,15 +98,35 @@ private struct OverviewEgressRowContent: View {
                 )
                 .accessibilityIdentifier("overview-egress-expand-toggle")
 
-                Button {
-                    runCheck()
-                } label: {
-                    Text(AppLocalization.string("Recheck"))
+                if egressStore.isProbing {
+                    HStack(spacing: AetherVisual.s2) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(AppLocalization.string("Checking…"))
+                            .font(.subheadline)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                    }
+                    .accessibilityIdentifier("overview-egress-probing")
+                } else {
+                    Button {
+                        runCheck()
+                    } label: {
+                        Text(AppLocalization.string("Recheck"))
+                    }
+                    .aetherButton()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("overview-egress-check-button")
                 }
-                .aetherButton()
-                .controlSize(.small)
-                .accessibilityIdentifier("overview-egress-check-button")
             }
+        } else if egressStore.isProbing {
+            HStack(spacing: AetherVisual.s2) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(AppLocalization.string("Checking…"))
+                    .font(.subheadline)
+                    .foregroundStyle(AetherVisual.secondaryText)
+            }
+            .accessibilityIdentifier("overview-egress-probing")
         } else {
             HStack(spacing: AetherVisual.s3) {
                 Text(AppLocalization.string("On-demand check"))
@@ -124,11 +153,26 @@ private struct OverviewEgressRowContent: View {
 
     private func summaryPill(for report: EgressProbeReport) -> some View {
         HStack(spacing: AetherVisual.s2) {
-            if let identity = report.identity,
-               let regionText = identity.countryCode ?? identity.countryName {
-                AetherRegionCode(name: regionText, reservesSlot: false)
-                if identity.countryCode == nil {
-                    Text(verbatim: regionText)
+            if let identity = report.identity {
+                let normalizedCode = identity.countryCode?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .uppercased()
+                if let region = (normalizedCode ?? identity.countryName).flatMap(AetherRegionFlag.region(for:)) {
+                    AetherRegionCode(name: region.code, reservesSlot: false)
+                } else if let normalizedCode, !normalizedCode.isEmpty {
+                    Text(verbatim: normalizedCode)
+                        .font(.system(.caption2, design: .rounded, weight: .bold))
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .padding(.horizontal, AetherVisual.s1)
+                        .padding(.vertical, AetherVisual.sMicro)
+                        .frame(minWidth: AetherVisual.rowTileSize)
+                        .background(
+                            AetherVisual.neutralFill,
+                            in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous)
+                        )
+                        .accessibilityHidden(true)
+                } else if let countryName = identity.countryName, !countryName.isEmpty {
+                    Text(verbatim: countryName)
                         .font(.subheadline)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -152,6 +196,17 @@ private struct OverviewEgressRowContent: View {
 
     private func expandedDrawer(for report: EgressProbeReport) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            if egressStore.isProbing {
+                HStack(spacing: AetherVisual.s2) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(AppLocalization.string("Updating egress details…"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+                .accessibilityIdentifier("overview-egress-refreshing-banner")
+            }
+
             // Adaptive inset identity cards: IP (with Hide/Show), ASN/Type, Purity
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 155), spacing: AetherVisual.s2)],
@@ -162,17 +217,20 @@ private struct OverviewEgressRowContent: View {
                 asnInsetCard(identity: report.identity)
                 purityInsetCard(identity: report.identity)
             }
+            .opacity(egressStore.isProbing ? 0.65 : 1)
 
             // Adaptive compact grids: AI & Streaming
             serviceGridSection(
                 title: AppLocalization.string("AI Services"),
                 results: report.aiServices
             )
+            .opacity(egressStore.isProbing ? 0.65 : 1)
 
             serviceGridSection(
                 title: AppLocalization.string("Streaming"),
                 results: report.streamingServices
             )
+            .opacity(egressStore.isProbing ? 0.65 : 1)
 
             if report.isAIRestricted {
                 aiRestrictedCallout(identity: report.identity)
@@ -230,13 +288,15 @@ private struct OverviewEgressRowContent: View {
                 }
             }
 
-            Text(verbatim: identity.map { revealsFullIP ? $0.ip : $0.maskedIP } ?? "—")
+            let displayedIP = identity.map { revealsFullIP ? $0.ip : $0.maskedIP } ?? "—"
+            Text(verbatim: displayedIP)
                 .font(.callout.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
+                .help(Text(verbatim: displayedIP))
 
             let locationText: String = {
                 guard let identity else {
@@ -252,6 +312,7 @@ private struct OverviewEgressRowContent: View {
                 .foregroundStyle(AetherVisual.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .help(Text(verbatim: locationText))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(AetherVisual.s3)
@@ -277,17 +338,22 @@ private struct OverviewEgressRowContent: View {
                 }
             }
 
-            Text(verbatim: identity?.asn ?? "—")
+            let asnText = identity?.asn ?? "—"
+            Text(verbatim: asnText)
                 .font(.callout.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .textSelection(.enabled)
+                .help(Text(verbatim: asnText))
 
-            Text(verbatim: identity?.organization ?? AppLocalization.string("Unknown network"))
+            let orgText = identity?.organization ?? AppLocalization.string("Unknown network")
+            Text(verbatim: orgText)
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .help(Text(verbatim: orgText))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(AetherVisual.s3)
@@ -304,6 +370,7 @@ private struct OverviewEgressRowContent: View {
     private func purityInsetCard(identity: EgressIdentity?) -> some View {
         let purity = identity?.purity
         let tint = purityTint(purity?.level)
+        let summaryText = puritySummary(for: purity?.level)
         return VStack(alignment: .leading, spacing: AetherVisual.s1) {
             HStack(spacing: AetherVisual.s1) {
                 Text(AppLocalization.string("IP Purity"))
@@ -329,11 +396,12 @@ private struct OverviewEgressRowContent: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            Text(puritySummary(for: purity?.level))
+            Text(summaryText)
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .help(summaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(AetherVisual.s3)
@@ -510,7 +578,7 @@ private struct OverviewEgressRowContent: View {
                 return localizedDetail(detail)
             }
             if let ms = item.latencyMilliseconds {
-                return "\(ms) ms"
+                return AppLocalization.format("%lld ms", Int64(ms))
             }
             return AppLocalization.string("Available")
         case .limited(let detail):
@@ -551,8 +619,8 @@ private struct OverviewEgressRowContent: View {
 
     private func aiRestrictedDetail(identity: EgressIdentity?) -> String {
         if let code = identity?.countryCode, EgressProbeReport.aiRestrictedCountryCodes.contains(code) {
-            return String(
-                format: AppLocalization.string("Exit region (%@) is commonly restricted by AI providers. Route AI traffic to a US/JP/SG node in Rules."),
+            return AppLocalization.format(
+                "Exit region (%@) is commonly restricted by AI providers. Route AI traffic to a US/JP/SG node in Rules.",
                 code
             )
         }

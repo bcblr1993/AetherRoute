@@ -357,6 +357,14 @@ struct AppUpdateDownloadProgress: Equatable, Sendable {
     }
 }
 
+enum AppUpdateFailedAction: Equatable, Sendable {
+    case check
+    case download
+    case extraction
+    case install
+    case general
+}
+
 enum AppUpdateSessionPhase: Equatable, Sendable {
     case idle
     case checking
@@ -366,12 +374,13 @@ enum AppUpdateSessionPhase: Equatable, Sendable {
     case readyToInstall
     case installing
     case upToDate(currentVersion: String)
-    case error(message: String)
+    case error(message: String, failedAction: AppUpdateFailedAction = .check)
 }
 
 @MainActor
 final class AppUpdateSessionModel: ObservableObject {
     @Published private(set) var phase: AppUpdateSessionPhase = .idle
+    @Published private(set) var canRetryTermination: Bool = false
     @Published var automaticallyDownloadsUpdates: Bool = false
     let currentVersion: String
 
@@ -379,6 +388,7 @@ final class AppUpdateSessionModel: ObservableObject {
     private var lastKnownBuild: String?
     private var lastKnownContentLength: UInt64 = 0
     private var downloadStartTime: Date?
+    private var activeAction: AppUpdateFailedAction = .check
 
     private var cancelAction: (() -> Void)?
     private var choiceReply: ((SPUUserUpdateChoice) -> Void)?
@@ -414,6 +424,8 @@ final class AppUpdateSessionModel: ObservableObject {
 
     func beginChecking(cancel: @escaping () -> Void) {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .check
         cancelAction = cancel
         phase = .checking
     }
@@ -428,6 +440,8 @@ final class AppUpdateSessionModel: ObservableObject {
         reply: @escaping (SPUUserUpdateChoice) -> Void
     ) {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .general
         lastKnownVersion = version
         lastKnownBuild = build
         lastKnownContentLength = contentLength
@@ -452,6 +466,8 @@ final class AppUpdateSessionModel: ObservableObject {
 
     func beginDownload(cancel: @escaping () -> Void) {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .download
         cancelAction = cancel
         downloadStartTime = Date()
         phase = .downloading(
@@ -484,6 +500,8 @@ final class AppUpdateSessionModel: ObservableObject {
 
     func beginExtraction() {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .extraction
         phase = .extracting(0)
     }
 
@@ -493,26 +511,41 @@ final class AppUpdateSessionModel: ObservableObject {
 
     func presentReadyToInstall(reply: @escaping (SPUUserUpdateChoice) -> Void) {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .install
         choiceReply = reply
         phase = .readyToInstall
     }
 
-    func beginInstalling(retryTermination: @escaping () -> Void) {
+    func beginInstalling(
+        applicationTerminated: Bool = false,
+        retryTermination: @escaping () -> Void
+    ) {
         clearPendingHandlers()
-        retryTerminationAction = retryTermination
+        activeAction = .install
+        canRetryTermination = !applicationTerminated
+        retryTerminationAction = applicationTerminated ? nil : retryTermination
         phase = .installing
     }
 
     func presentUpToDate(acknowledgement: @escaping () -> Void) {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .general
         acknowledgementReply = acknowledgement
         phase = .upToDate(currentVersion: currentVersion)
     }
 
-    func presentError(message: String, acknowledgement: @escaping () -> Void) {
+    func presentError(
+        message: String,
+        failedAction: AppUpdateFailedAction? = nil,
+        acknowledgement: @escaping () -> Void
+    ) {
         clearPendingHandlers()
+        canRetryTermination = false
+        let resolvedAction = failedAction ?? activeAction
         acknowledgementReply = acknowledgement
-        phase = .error(message: message)
+        phase = .error(message: message, failedAction: resolvedAction)
     }
 
     func setAutomaticDownloads(_ enabled: Bool) {
@@ -528,6 +561,7 @@ final class AppUpdateSessionModel: ObservableObject {
                     NSWorkspace.shared.open(url)
                 }
                 sendChoice(.dismiss)
+                reset()
                 onDismissWindow?()
             } else {
                 sendChoice(.install)
@@ -538,6 +572,7 @@ final class AppUpdateSessionModel: ObservableObject {
             onDismissWindow?()
         case .upToDate, .error:
             sendAcknowledgement()
+            reset()
             onDismissWindow?()
         case .installing:
             retryTerminationAction?()
@@ -550,14 +585,17 @@ final class AppUpdateSessionModel: ObservableObject {
         switch phase {
         case .available, .readyToInstall:
             sendChoice(.dismiss)
+            reset()
             onDismissWindow?()
         case .checking, .downloading:
             let cancel = cancelAction
             cancelAction = nil
             cancel?()
+            reset()
             onDismissWindow?()
         case .upToDate, .error:
             sendAcknowledgement()
+            reset()
             onDismissWindow?()
         case .extracting, .installing, .idle:
             onDismissWindow?()
@@ -567,6 +605,7 @@ final class AppUpdateSessionModel: ObservableObject {
     func triggerSkipAction() {
         guard case .available = phase else { return }
         sendChoice(.skip)
+        reset()
         onDismissWindow?()
     }
 
@@ -574,12 +613,15 @@ final class AppUpdateSessionModel: ObservableObject {
         switch phase {
         case .available, .readyToInstall:
             sendChoice(.dismiss)
+            reset()
         case .upToDate, .error:
             sendAcknowledgement()
+            reset()
         case .checking:
             let cancel = cancelAction
             cancelAction = nil
             cancel?()
+            reset()
         case .downloading, .extracting, .installing, .idle:
             break
         }
@@ -587,6 +629,8 @@ final class AppUpdateSessionModel: ObservableObject {
 
     func reset() {
         clearPendingHandlers()
+        canRetryTermination = false
+        activeAction = .check
         phase = .idle
     }
 
@@ -660,6 +704,22 @@ enum AppUpdateWindowLayoutGeometry {
 
 // MARK: - SwiftUI Native Update View
 
+private struct UpdateReadableTextStyle: ShapeStyle {
+    let light: Double
+    let dark: Double
+
+    static let secondary = UpdateReadableTextStyle(light: 0.28, dark: 0.80)
+    static let tertiary = UpdateReadableTextStyle(light: 0.36, dark: 0.72)
+
+    func resolve(in environment: EnvironmentValues) -> Color {
+        let increased = environment.colorSchemeContrast == .increased
+        if environment.colorScheme == .dark {
+            return Color(white: min(1.0, dark + (increased ? 0.12 : 0.0)))
+        }
+        return Color(white: max(0.0, light - (increased ? 0.14 : 0.0)))
+    }
+}
+
 private struct AppUpdateWindowView: View {
     @ObservedObject var model: AppUpdateSessionModel
     var locale: Locale = AppLocalization.currentLocale
@@ -680,6 +740,13 @@ private struct AppUpdateWindowView: View {
         .frame(width: AppUpdateWindowLayoutGeometry.windowWidth)
         .background(windowBackground)
         .environment(\.locale, locale)
+        .onExitCommand {
+            if case .upToDate = model.phase {
+                model.triggerSecondaryAction()
+            } else if case .error = model.phase {
+                model.triggerSecondaryAction()
+            }
+        }
     }
 
     private var windowBackground: some View {
@@ -711,7 +778,7 @@ private struct AppUpdateWindowView: View {
                             .foregroundStyle(AetherReadableTint(color: .green))
                         Text(AppLocalization.string("Apple Notarized · Ed25519 Verified"))
                             .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(UpdateReadableTextStyle.secondary)
                     }
                 }
             }
@@ -765,7 +832,7 @@ private struct AppUpdateWindowView: View {
                 if !model.currentVersion.isEmpty {
                     Text(verbatim: model.currentVersion)
                         .font(.caption.monospaced().weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(UpdateReadableTextStyle.secondary)
                         .padding(.horizontal, AetherVisual.sCompact)
                         .padding(.vertical, AetherVisual.sMicro)
                         .background(
@@ -774,7 +841,7 @@ private struct AppUpdateWindowView: View {
                         )
                     Image(systemName: "arrow.right")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(UpdateReadableTextStyle.tertiary)
                 }
 
                 Text(verbatim: targetVersion)
@@ -790,24 +857,19 @@ private struct AppUpdateWindowView: View {
                 if let build = model.targetBuild, !build.isEmpty {
                     Text(AppLocalization.format("· Build %@", build))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(UpdateReadableTextStyle.secondary)
                 }
 
                 if model.targetContentLength > 0 {
                     Text(verbatim: "· \(formattedByteCount(model.targetContentLength))")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(UpdateReadableTextStyle.secondary)
                 }
             }
         } else if !model.currentVersion.isEmpty {
-            Text(
-                String(
-                    format: AppLocalization.string("Current version %@"),
-                    model.currentVersion
-                )
-            )
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+            Text(AppLocalization.format("Current version %@", model.currentVersion))
+                .font(.footnote)
+                .foregroundStyle(UpdateReadableTextStyle.secondary)
         }
     }
 
@@ -821,7 +883,7 @@ private struct AppUpdateWindowView: View {
                         .controlSize(.small)
                     Text(AppLocalization.string("Checking for the latest AetherRoute release…"))
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(UpdateReadableTextStyle.secondary)
                     Spacer()
                 }
             }
@@ -870,16 +932,18 @@ private struct AppUpdateWindowView: View {
 
                 HStack {
                     Toggle(
-                        AppLocalization.string("Automatically download and install future updates"),
                         isOn: Binding(
                             get: { model.automaticallyDownloadsUpdates },
                             set: { model.setAutomaticDownloads($0) }
                         )
-                    )
+                    ) {
+                        Text(AppLocalization.string("Automatically download and install future updates"))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     .toggleStyle(.switch)
                     .controlSize(.mini)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(UpdateReadableTextStyle.secondary)
 
                     Spacer()
 
@@ -894,6 +958,7 @@ private struct AppUpdateWindowView: View {
                             }
                             .font(.footnote.weight(.medium))
                             .foregroundStyle(AetherReadableTint(color: .blue))
+                            .fixedSize()
                         }
                         .buttonStyle(.plain)
                     }
@@ -911,14 +976,14 @@ private struct AppUpdateWindowView: View {
                             Spacer()
                             if let fraction = progress.fraction {
                                 Text(
-                                    verbatim: "\(formattedByteCount(progress.receivedBytes)) / \(formattedByteCount(progress.expectedBytes)) · \(Int(fraction * 100))%"
+                                    verbatim: "\(formattedByteCount(progress.receivedBytes)) / \(formattedByteCount(progress.expectedBytes)) · \(formattedPercent(fraction))"
                                 )
                                 .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(UpdateReadableTextStyle.secondary)
                             } else {
                                 Text(verbatim: formattedByteCount(progress.receivedBytes))
                                     .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(UpdateReadableTextStyle.secondary)
                             }
                         }
 
@@ -933,21 +998,26 @@ private struct AppUpdateWindowView: View {
 
                         HStack {
                             if progress.bytesPerSecond > 0 {
-                                Text(verbatim: "\(formattedByteCount(UInt64(progress.bytesPerSecond)))/s")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                Text(
+                                    AppLocalization.format(
+                                        "%@/s",
+                                        formattedByteCount(UInt64(progress.bytesPerSecond))
+                                    )
+                                )
+                                .font(.caption)
+                                .foregroundStyle(UpdateReadableTextStyle.secondary)
                             }
                             Spacer()
                             Text(AppLocalization.string("Ed25519 signature will be verified automatically"))
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(UpdateReadableTextStyle.secondary)
                         }
                     }
                 }
 
                 Text(AppLocalization.string("Your active connection stays uninterrupted during download."))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(UpdateReadableTextStyle.secondary)
                     .padding(.horizontal, AetherVisual.sMicro)
             }
 
@@ -958,9 +1028,9 @@ private struct AppUpdateWindowView: View {
                         Text(AppLocalization.string("Verifying signature & preparing update…"))
                             .font(.callout.weight(.medium))
                         Spacer()
-                        Text(verbatim: "\(Int(progress * 100))%")
+                        Text(verbatim: formattedPercent(progress))
                             .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(UpdateReadableTextStyle.secondary)
                     }
                     ProgressView(value: progress)
                         .progressViewStyle(.linear)
@@ -979,7 +1049,7 @@ private struct AppUpdateWindowView: View {
                             .font(.callout.weight(.semibold))
                         Text(AppLocalization.string("SHA-256 and Sparkle Ed25519 signature checks passed. Click Restart & Update to apply in seconds."))
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(UpdateReadableTextStyle.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -992,7 +1062,7 @@ private struct AppUpdateWindowView: View {
                         .controlSize(.small)
                     Text(AppLocalization.string("Installing update and relaunching AetherRoute…"))
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(UpdateReadableTextStyle.secondary)
                     Spacer()
                 }
             }
@@ -1006,31 +1076,26 @@ private struct AppUpdateWindowView: View {
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
                         Text(AppLocalization.string("You're Up to Date"))
                             .font(.callout.weight(.semibold))
-                        Text(
-                            String(
-                                format: AppLocalization.string("AetherRoute %@ is currently the newest version available."),
-                                current
-                            )
-                        )
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        Text(AppLocalization.format("AetherRoute %@ is currently the newest version available.", current))
+                            .font(.footnote)
+                            .foregroundStyle(UpdateReadableTextStyle.secondary)
                     }
                     Spacer()
                 }
             }
 
-        case .error(let message):
+        case .error(let message, let failedAction):
             statusCard {
                 HStack(alignment: .top, spacing: AetherVisual.s3) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.title2)
                         .foregroundStyle(AetherReadableTint(color: .orange))
                     VStack(alignment: .leading, spacing: AetherVisual.s1) {
-                        Text(AppLocalization.string("Update Check Failed"))
+                        Text(errorTitle(for: failedAction))
                             .font(.callout.weight(.semibold))
                         Text(message)
                             .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(UpdateReadableTextStyle.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
@@ -1083,17 +1148,19 @@ private struct AppUpdateWindowView: View {
             }
             var bodyAttr = AttributedString("\(AppLocalization.string(": "))\(item.body)")
             bodyAttr.font = .footnote
-            bodyAttr.foregroundColor = .secondary
+            bodyAttr.foregroundColor = Color(nsColor: .secondaryLabelColor)
             leadAttr.append(bodyAttr)
             return Text(leadAttr)
         }
-        return Text(item.body).foregroundColor(.secondary)
+        return Text(item.body).foregroundStyle(UpdateReadableTextStyle.secondary)
     }
 
     private var showsFooterBar: Bool {
         switch model.phase {
-        case .extracting, .installing, .idle:
+        case .extracting, .idle:
             return false
+        case .installing:
+            return model.canRetryTermination
         case .checking, .available, .downloading, .readyToInstall, .upToDate, .error:
             return true
         }
@@ -1107,7 +1174,7 @@ private struct AppUpdateWindowView: View {
                 }
                 .buttonStyle(.plain)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(UpdateReadableTextStyle.secondary)
             }
 
             Spacer()
@@ -1146,8 +1213,17 @@ private struct AppUpdateWindowView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
-            case .extracting, .installing:
+            case .extracting:
                 EmptyView()
+
+            case .installing:
+                if model.canRetryTermination {
+                    Button(AppLocalization.string("Retry Relaunch")) {
+                        model.triggerPrimaryAction()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                }
 
             case .readyToInstall:
                 Button(AppLocalization.string("Later")) {
@@ -1162,6 +1238,16 @@ private struct AppUpdateWindowView: View {
                 .keyboardShortcut(.defaultAction)
 
             case .upToDate, .error:
+                Button {
+                    model.triggerSecondaryAction()
+                } label: {
+                    EmptyView()
+                }
+                .keyboardShortcut(.cancelAction)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+
                 Button(AppLocalization.string("Done")) {
                     model.triggerPrimaryAction()
                 }
@@ -1207,34 +1293,55 @@ private struct AppUpdateWindowView: View {
         case .checking, .idle:
             return AppLocalization.string("Checking for Updates")
         case .available(let info):
-            return String(
-                format: AppLocalization.string("AetherRoute %@ is Available"),
-                info.version
-            )
+            return AppLocalization.format("AetherRoute %@ is Available", info.version)
         case .downloading:
             if let version = model.targetVersion {
-                return String(
-                    format: AppLocalization.string("Downloading AetherRoute %@"),
-                    version
-                )
+                return AppLocalization.format("Downloading AetherRoute %@", version)
             }
             return AppLocalization.string("Downloading Update")
         case .extracting:
             return AppLocalization.string("Preparing Update")
         case .readyToInstall:
             if let version = model.targetVersion {
-                return String(
-                    format: AppLocalization.string("AetherRoute %@ is Ready"),
-                    version
-                )
+                return AppLocalization.format("AetherRoute %@ is Ready", version)
             }
             return AppLocalization.string("Update Ready to Install")
         case .installing:
             return AppLocalization.string("Installing Update")
         case .upToDate:
             return AppLocalization.string("AetherRoute is Up to Date")
-        case .error:
+        case .error(_, let failedAction):
+            return errorHeroTitle(for: failedAction)
+        }
+    }
+
+    private func errorHeroTitle(for failedAction: AppUpdateFailedAction) -> String {
+        switch failedAction {
+        case .check:
             return AppLocalization.string("Unable to Check for Updates")
+        case .download:
+            return AppLocalization.string("Download Failed")
+        case .extraction:
+            return AppLocalization.string("Verification Failed")
+        case .install:
+            return AppLocalization.string("Update Installation Failed")
+        case .general:
+            return AppLocalization.string("Update Failed")
+        }
+    }
+
+    private func errorTitle(for failedAction: AppUpdateFailedAction) -> String {
+        switch failedAction {
+        case .check:
+            return AppLocalization.string("Update Check Failed")
+        case .download:
+            return AppLocalization.string("Download Failed")
+        case .extraction:
+            return AppLocalization.string("Verification Failed")
+        case .install:
+            return AppLocalization.string("Update Installation Failed")
+        case .general:
+            return AppLocalization.string("Update Failed")
         }
     }
 
@@ -1243,7 +1350,7 @@ private struct AppUpdateWindowView: View {
         case .feature: return AnyShapeStyle(AetherReadableTint(color: .blue))
         case .fix: return AnyShapeStyle(AetherReadableTint(color: .green))
         case .improve: return AnyShapeStyle(AetherReadableTint(color: .orange))
-        case .other: return AnyShapeStyle(Color.secondary)
+        case .other: return AnyShapeStyle(UpdateReadableTextStyle.secondary)
         }
     }
 
@@ -1270,7 +1377,12 @@ private struct AppUpdateWindowView: View {
     }
 
     private func formattedByteCount(_ bytes: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))), countStyle: .file)
+        Int64(min(bytes, UInt64(Int64.max)))
+            .formatted(.byteCount(style: .file).locale(locale))
+    }
+
+    private func formattedPercent(_ value: Double) -> String {
+        value.formatted(.percent.precision(.fractionLength(0)).locale(locale))
     }
 }
 
@@ -1285,6 +1397,8 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
     private var window: NSWindow?
     private var hostingController: NSHostingController<AppUpdateWindowView>?
     private var pendingResizeScheduled = false
+    private var renderedLocaleIdentifier: String = AppLocalization.currentLocale.identifier
+    nonisolated(unsafe) private var defaultsObserver: (any NSObjectProtocol)?
 
     var onSetAutomaticDownloads: ((Bool) -> Void)? {
         didSet {
@@ -1298,7 +1412,7 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
     }
 
     var hasVisibleWindow: Bool {
-        window?.isVisible == true
+        window?.isVisible == true && model.phase != .idle
     }
 
     init(
@@ -1311,10 +1425,27 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         self.model.onDismissWindow = { [weak self] in
             self?.closeWindow()
         }
+        self.defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.refreshLocaleIfNeeded()
+            }
+        }
+    }
+
+    deinit {
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+        }
     }
 
     func focusWindowIfPresent() {
-        guard let window else { return }
+        guard model.phase != .idle, let window else { return }
+        refreshRootViewLocale()
+        scheduleWindowResize()
         NSApplication.shared.activate(ignoringOtherApps: true)
         if window.isMiniaturized {
             window.deminiaturize(nil)
@@ -1322,15 +1453,36 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
+    private func refreshLocaleIfNeeded() {
+        let nextIdentifier = AppLocalization.currentLocale.identifier
+        guard nextIdentifier != renderedLocaleIdentifier,
+              window != nil,
+              model.phase != .idle
+        else { return }
+        refreshRootViewLocale()
+        scheduleWindowResize()
+    }
+
+    private func refreshRootViewLocale() {
+        let locale = AppLocalization.currentLocale
+        renderedLocaleIdentifier = locale.identifier
+        hostingController?.rootView = AppUpdateWindowView(
+            model: model,
+            locale: locale
+        )
+    }
+
     private func ensureWindowCreated() -> NSWindow {
         if let window {
             return window
         }
 
+        let locale = AppLocalization.currentLocale
+        renderedLocaleIdentifier = locale.identifier
         let host = NSHostingController(
             rootView: AppUpdateWindowView(
                 model: model,
-                locale: AppLocalization.currentLocale
+                locale: locale
             )
         )
         // Disable AppKit preferredContentSize constraint feedback: fractional SwiftUI
@@ -1361,10 +1513,7 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         let isNew = (window == nil)
         let panel = ensureWindowCreated()
         if !isNew {
-            hostingController?.rootView = AppUpdateWindowView(
-                model: model,
-                locale: AppLocalization.currentLocale
-            )
+            refreshRootViewLocale()
             scheduleWindowResize()
         }
         if panel.isMiniaturized {
@@ -1554,7 +1703,10 @@ final class AppUpdateUserDriver: NSObject, SPUUserDriver, NSWindowDelegate {
         withApplicationTerminated applicationTerminated: Bool,
         retryTerminatingApplication: @escaping () -> Void
     ) {
-        model.beginInstalling(retryTermination: retryTerminatingApplication)
+        model.beginInstalling(
+            applicationTerminated: applicationTerminated,
+            retryTermination: retryTerminatingApplication
+        )
         if !applicationTerminated {
             presentWindow()
         }

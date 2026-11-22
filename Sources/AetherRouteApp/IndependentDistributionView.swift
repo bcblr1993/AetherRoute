@@ -8,6 +8,8 @@ struct IndependentDistributionView: View {
         IndependentDistributionController
     @ObservedObject private var sparkle = SparkleUpdaterController.shared
     @State private var licenseKey = ""
+    @State private var isConfirmingDeactivation = false
+    @State private var hasStoredReceipt = false
     /// Embedded in About, which already names the product and version: the
     /// free edition then shows only software updates.
     var isEmbedded = false
@@ -40,7 +42,25 @@ struct IndependentDistributionView: View {
                 }
             }
         }
-        .task { distribution.loadLocalReceipt() }
+        .task {
+            distribution.loadLocalReceipt()
+            await refreshStoredReceiptPresence()
+        }
+        .onChange(of: distribution.licenseState) { _, _ in
+            Task { await refreshStoredReceiptPresence() }
+        }
+        .confirmationDialog(
+            AppLocalization.string("Deactivate this Mac?"),
+            isPresented: $isConfirmingDeactivation,
+            titleVisibility: .visible
+        ) {
+            Button(AppLocalization.string("Deactivate"), role: .destructive) {
+                Task { await distribution.deactivate() }
+            }
+            Button(AppLocalization.string("Cancel"), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string("This releases this Mac's activation seat and removes the local license receipt. You will need to enter your license key again to connect."))
+        }
         // No identifier here: embedded, this view is several form sections,
         // and one identifier was copied onto every row they contain.
 #endif
@@ -68,7 +88,7 @@ struct IndependentDistributionView: View {
                 Button(AppLocalization.string("Check Now")) {
                     sparkle.checkForUpdates()
                 }
-                .disabled(!sparkle.canCheckForUpdates)
+                .disabled(!sparkle.canCheckOrFocusUpdateSession)
                 .accessibilityIdentifier("check-for-updates-button")
             }
             Toggle(AppLocalization.string("Automatically check for updates"), isOn: Binding(
@@ -135,7 +155,7 @@ struct IndependentDistributionView: View {
                             Task { await distribution.refreshLicense() }
                         }
                         Button(AppLocalization.string("Deactivate This Mac"), role: .destructive) {
-                            Task { await distribution.deactivate() }
+                            isConfirmingDeactivation = true
                         }
                     } label: {
                         Image(systemName: "ellipsis.circle")
@@ -156,6 +176,7 @@ struct IndependentDistributionView: View {
                 HStack(spacing: AetherVisual.s3) {
                     SecureField(AppLocalization.string("License key"), text: $licenseKey)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(distribution.isActivating)
                         .accessibilityIdentifier("license-key-field")
                         .onSubmit { activate() }
                     Button {
@@ -202,7 +223,7 @@ struct IndependentDistributionView: View {
                     Text(AppLocalization.string("Check Now"))
                 }
                 .aetherButton()
-                .disabled(!sparkle.canCheckForUpdates)
+                .disabled(!sparkle.canCheckOrFocusUpdateSession)
                 .accessibilityIdentifier("check-for-updates-button")
             }
 
@@ -223,8 +244,8 @@ struct IndependentDistributionView: View {
     private var currentVersionDescription: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        return String.localizedStringWithFormat(
-            AppLocalization.string("Version %@ (Build %@)"),
+        return AppLocalization.format(
+            "Version %@ (Build %@)",
             version,
             build
         )
@@ -233,10 +254,11 @@ struct IndependentDistributionView: View {
     private var lastCheckDescription: String {
         if let lastDate = sparkle.lastUpdateCheckDate {
             let formatter = RelativeDateTimeFormatter()
+            formatter.locale = AppLocalization.currentLocale
             formatter.unitsStyle = .full
             let relative = formatter.localizedString(for: lastDate, relativeTo: Date())
-            return String.localizedStringWithFormat(
-                AppLocalization.string("Last checked %@. Updates are signed with Ed25519."),
+            return AppLocalization.format(
+                "Last checked %@. Updates are signed with Ed25519.",
                 relative
             )
         } else {
@@ -273,7 +295,8 @@ struct IndependentDistributionView: View {
     }
 
     private func activate() {
-        let submittedKey = licenseKey
+        let submittedKey = licenseKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !distribution.isActivating, !submittedKey.isEmpty else { return }
         licenseKey = ""
         Task {
             let succeeded = await distribution.activate(
@@ -282,14 +305,23 @@ struct IndependentDistributionView: View {
             if !succeeded {
                 licenseKey = ""
             }
+            await refreshStoredReceiptPresence()
         }
     }
 
     private var hasStoredLicense: Bool {
         switch distribution.licenseState {
         case .active, .restricted: true
+        case .failure: hasStoredReceipt
         default: false
         }
+    }
+
+    private func refreshStoredReceiptPresence() async {
+        let present = await Task.detached(priority: .utility) {
+            (try? DataProtectionDistributionCredentialStore().loadReceipt()) != nil
+        }.value
+        hasStoredReceipt = present
     }
 
     private var licenseSymbol: String {
@@ -321,9 +353,9 @@ struct IndependentDistributionView: View {
         case .active:
             AppLocalization.string("License active")
         case let .restricted(entitlement):
-                String.localizedStringWithFormat(
-                    AppLocalization.string("License %@"),
-                    localizedLicenseState(entitlement.state)
+            AppLocalization.format(
+                "License %@",
+                localizedLicenseState(entitlement.state)
             )
         case .failure:
             AppLocalization.string("License unavailable")
@@ -338,8 +370,8 @@ struct IndependentDistributionView: View {
             AppLocalization.string("Enter a license key to activate this Mac. The key is cleared from memory after the request.")
         case let .active(entitlement):
             entitlement.expiresAt.map {
-                String.localizedStringWithFormat(
-                    AppLocalization.string("Valid until %@"),
+                AppLocalization.format(
+                    "Valid until %@",
                     AppLocalization.date(
                         $0,
                         date: .abbreviated,
@@ -348,9 +380,9 @@ struct IndependentDistributionView: View {
                 )
             } ?? AppLocalization.string("No expiration date")
         case let .restricted(entitlement):
-                String.localizedStringWithFormat(
-                    AppLocalization.string("The signed receipt reports %@. Contact support before moving this license."),
-                    localizedLicenseState(entitlement.state)
+            AppLocalization.format(
+                "The signed receipt reports %@. Contact support before moving this license.",
+                localizedLicenseState(entitlement.state)
             )
         case let .failure(message):
             message

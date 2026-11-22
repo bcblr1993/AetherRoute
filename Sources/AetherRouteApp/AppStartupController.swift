@@ -15,6 +15,7 @@ final class AppStartupController: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let isUIReviewMode: Bool
+    nonisolated(unsafe) private var appBecomeActiveObserver: (any NSObjectProtocol)?
 
     init(environment: [String: String] = ProcessInfo.processInfo.environment) {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
@@ -23,6 +24,22 @@ final class AppStartupController: ObservableObject {
         self.isUIReviewMode = false
 #endif
         refreshStatus()
+        guard !isUIReviewMode else { return }
+        appBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshStatus()
+            }
+        }
+    }
+
+    deinit {
+        if let appBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(appBecomeActiveObserver)
+        }
     }
 
     func refreshStatus() {

@@ -165,7 +165,7 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["dns.google"].exists)
         destination.rightClick()
         app.menuItems["Connection details"].click()
-        XCTAssertTrue(app.staticTexts["Snapshot captured when opened. Values do not refresh here."].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Live connection telemetry and route decision path."].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Balanced → Singapore Edge"].exists)
         app.buttons["Done"].click()
         pause.click()
@@ -365,7 +365,7 @@ final class AetherRouteUITests: XCTestCase {
         let more = app.descendants(matching: .any)["connections-more-menu"]
         XCTAssertTrue(more.waitForExistence(timeout: 2))
         more.click()
-        XCTAssertTrue(app.menuItems["Close All"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.menuItems["Close All Connections"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.menuItems["Disconnect"].exists)
         app.typeKey(.escape, modifierFlags: [])
     }
@@ -1389,7 +1389,7 @@ final class AetherRouteUITests: XCTestCase {
 
         let name = app.textFields["manual-node-name"]
         let server = app.textFields["manual-node-server"]
-        let uuid = app.textFields["manual-node-uuid"]
+        let uuid = app.secureTextFields["manual-node-uuid"]
         XCTAssertTrue(name.waitForExistence(timeout: 2))
         name.click()
         name.typeText("Reality UI")
@@ -1672,7 +1672,7 @@ final class AetherRouteUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Direct mode"].exists)
         XCTAssertTrue(
             app.staticTexts[
-                "Failure and unexpected disconnect alerts are on"
+                "Notification alerts are active"
             ].exists
         )
         let switchAlerts = app.descendants(matching: .any)["proxy-switch-notifications-toggle"]

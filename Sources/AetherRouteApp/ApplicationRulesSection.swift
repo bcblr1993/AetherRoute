@@ -14,6 +14,10 @@ struct ApplicationRulesSection: View {
         tunnel.customRules.filter { $0.kind == .application }
     }
 
+    private var isBusy: Bool {
+        tunnel.isTransitioning || tunnel.isUpdatingCustomRules
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(
@@ -22,6 +26,21 @@ struct ApplicationRulesSection: View {
                 help: .applicationRules
             ) {
                 addMenu
+            }
+
+            if let message = tunnel.customRuleMessage {
+                Group {
+                    if tunnel.customRuleMessageIsError {
+                        AetherInlineMessage(text: message, kind: .failure, isCompact: true)
+                    } else {
+                        Label(message, systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(AetherReadableTint(color: .green))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s1)
+                .transition(.opacity)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -46,7 +65,7 @@ struct ApplicationRulesSection: View {
                 } else {
                     VStack(spacing: AetherVisual.sCompact) {
                         ForEach(rules) { rule in
-                            ApplicationRuleRow(rule: rule, targets: targets)
+                            ApplicationRuleRow(rule: rule, targets: targets, isBusy: isBusy)
                                 .transition(AetherVisual.insertion)
                         }
                     }
@@ -54,14 +73,15 @@ struct ApplicationRulesSection: View {
                 }
             }
             .aetherPanel()
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: rules.map(\.id))
+            .aetherAnimation(AetherVisual.gentleSpring, value: rules.map(\.id))
+            .aetherAnimation(AetherVisual.quickFade, value: tunnel.customRuleMessage)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("application-rules-section")
         .sheet(isPresented: $showProcessPicker) {
             RunningCLIProcessPickerSheet(
                 targets: targets,
-                onPick: { kind, value, name, target in
+                onPick: { kind, value, _, target in
                     Task {
                         _ = await tunnel.setDestinationRule(
                             kind: kind,
@@ -77,7 +97,7 @@ struct ApplicationRulesSection: View {
 
     private var targets: [CustomRuleTarget] {
         let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
-        return [.direct] + groups.prefix(8).map { .proxy($0) } + [.reject]
+        return [.direct] + groups.map { .proxy($0) } + [.reject]
     }
 
     /// Apps seen in the current connections that have no rule yet.
@@ -133,7 +153,26 @@ struct ApplicationRulesSection: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+        .disabled(isBusy)
         .accessibilityIdentifier("add-application-rule")
+    }
+
+    private func presentOpenPanel(_ panel: NSOpenPanel, completion: @escaping @MainActor (URL) -> Void) {
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window) { response in
+                guard response == .OK, let url = panel.url else { return }
+                Task { @MainActor in
+                    completion(url)
+                }
+            }
+        } else {
+            panel.begin { response in
+                guard response == .OK, let url = panel.url else { return }
+                Task { @MainActor in
+                    completion(url)
+                }
+            }
+        }
     }
 
     private func chooseApp() {
@@ -143,23 +182,24 @@ struct ApplicationRulesSection: View {
         panel.canChooseDirectories = false
         panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
         panel.prompt = AppLocalization.string("Add")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let bundle = Bundle(url: url)
-        let name = FileManager.default.displayName(atPath: url.path)
-        let displayName = name.hasSuffix(".app") ? String(name.dropLast(4)) : name
-        let executableBasename = bundle?.executableURL?.lastPathComponent
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        add(
-            identifier: bundle?.bundleIdentifier,
-            path: url.path,
-            name: displayName,
-            executableBasename: executableBasename
-        )
+        presentOpenPanel(panel) { url in
+            let bundle = Bundle(url: url)
+            let name = FileManager.default.displayName(atPath: url.path)
+            let displayName = name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+            let executableBasename = bundle?.executableURL?.lastPathComponent
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            add(
+                identifier: bundle?.bundleIdentifier,
+                path: url.path,
+                name: displayName,
+                executableBasename: executableBasename
+            )
+        }
     }
 
     private func chooseBinaryExecutable() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.unixExecutable, .item]
+        panel.allowedContentTypes = [.unixExecutable]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         let homebrewBin = URL(fileURLWithPath: "/opt/homebrew/bin", isDirectory: true)
@@ -170,37 +210,50 @@ struct ApplicationRulesSection: View {
             panel.directoryURL = localBin
         }
         panel.prompt = AppLocalization.string("Add")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let path = url.path
-        let basename = url.lastPathComponent
-        let validation = CustomRuleValidator.validate(
-            kind: .processPath,
-            value: path,
-            target: .direct
-        )
-        guard validation.isValid else { return }
-        Task {
-            _ = await tunnel.addCustomRule(
-                CustomRule(
+        presentOpenPanel(panel) { url in
+            let path = url.path
+            guard !url.hasDirectoryPath,
+                  url.pathExtension.lowercased() != "app",
+                  FileManager.default.isExecutableFile(atPath: path) else {
+                tunnel.customRuleMessage = AppLocalization.string("Choose a valid executable binary.")
+                tunnel.customRuleMessageIsError = true
+                return
+            }
+            let basename = url.lastPathComponent
+            let validation = CustomRuleValidator.validate(
+                kind: .processPath,
+                value: path,
+                target: .direct
+            )
+            guard validation.isValid else {
+                tunnel.customRuleMessage = validation.reason
+                    ?? AppLocalization.string("Rule validation failed")
+                tunnel.customRuleMessageIsError = true
+                return
+            }
+            Task {
+                guard await tunnel.setDestinationRule(
                     kind: .processPath,
                     value: path,
+                    noResolve: false,
+                    target: .direct
+                ) else {
+                    return
+                }
+                // Fallback PROCESS-NAME basename ensures reliable matching when NE sandbox
+                // `proc_pidpath` fails to resolve the full path.
+                let nameRule = CustomRule(
+                    kind: .processName,
+                    value: basename,
                     target: .direct,
-                    comment: basename
+                    comment: AppLocalization.format("%@ (process name)", basename)
                 )
-            )
-            // Fallback PROCESS-NAME basename ensures reliable matching when NE sandbox
-            // `proc_pidpath` fails to resolve the full path.
-            let nameRule = CustomRule(
-                kind: .processName,
-                value: basename,
-                target: .direct,
-                comment: "\(basename) (basename fallback)"
-            )
-            let alreadyExists = tunnel.customRules.contains {
-                $0.kind == .processName && $0.value == basename
-            }
-            if !alreadyExists, CustomRuleValidator.validate(nameRule).isValid {
-                _ = await tunnel.addCustomRule(nameRule)
+                let alreadyExists = tunnel.customRules.contains {
+                    $0.kind == .processName && $0.value == basename
+                }
+                if !alreadyExists, CustomRuleValidator.validate(nameRule).isValid {
+                    _ = await tunnel.addCustomRule(nameRule)
+                }
             }
         }
     }
@@ -209,12 +262,13 @@ struct ApplicationRulesSection: View {
     /// row's menu changes it.
     private func add(identifier: String?, path: String?, name: String, executableBasename: String? = nil) {
         Task {
-            await tunnel.setApplicationRule(
+            let saved = await tunnel.setApplicationRule(
                 bundleIdentifier: identifier,
                 bundlePath: path,
                 displayName: name,
                 target: .direct
             )
+            guard saved else { return }
             // Unsigned `.app` bundles cannot rely on `signing_identifier` inside NE;
             // retain a companion `PROCESS-NAME` basename fallback when `proc_pidpath` is blocked.
             if (identifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -226,7 +280,7 @@ struct ApplicationRulesSection: View {
                         kind: .processName,
                         value: basename,
                         target: .direct,
-                        comment: "\(name) (basename fallback)"
+                        comment: AppLocalization.format("%@ (process name)", name)
                     )
                     let exists = tunnel.customRules.contains {
                         $0.kind == .processName && $0.value == basename
@@ -244,24 +298,51 @@ private struct ApplicationRuleRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
     let rule: CustomRule
     let targets: [CustomRuleTarget]
+    let isBusy: Bool
 
     private var match: ApplicationRuleMatch? { rule.applicationMatch }
+
+    private var companionFallbackRule: CustomRule? {
+        guard (match?.bundleIdentifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        let localizedComment = AppLocalization.format("%@ (process name)", name)
+        let legacyComment = "\(name) (basename fallback)"
+        let pathExe = match?.bundlePath.flatMap { Bundle(path: $0)?.executableURL?.lastPathComponent }
+        let candidates = Set([pathExe, name].compactMap { $0 }.filter { !$0.isEmpty })
+        return tunnel.customRules.first { candidate in
+            guard candidate.kind == .processName, candidates.contains(candidate.value) else {
+                return false
+            }
+            return candidate.comment == localizedComment || candidate.comment == legacyComment
+        }
+    }
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
             Toggle(isOn: Binding(
                 get: { rule.isEnabled },
-                set: { _ in Task { await tunnel.toggleCustomRule(id: rule.id) } }
+                set: { _ in
+                    Task {
+                        let wasEnabled = rule.isEnabled
+                        guard await tunnel.toggleCustomRule(id: rule.id) else { return }
+                        if let fallback = companionFallbackRule, fallback.isEnabled == wasEnabled {
+                            _ = await tunnel.toggleCustomRule(id: fallback.id)
+                        }
+                    }
+                }
             )) { EmptyView() }
             .toggleStyle(.switch)
             .controlSize(.small)
             .labelsHidden()
+            .disabled(isBusy)
             .accessibilityLabel(Text(name))
 
             Image(nsImage: icon)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: AetherVisual.appIconSize, height: AetherVisual.appIconSize)
+                .opacity(rule.isEnabled ? 1.0 : 0.65)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
@@ -274,49 +355,90 @@ private struct ApplicationRuleRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            .opacity(rule.isEnabled ? 1.0 : 0.65)
             .help(Text(verbatim: [match?.bundleIdentifier, match?.bundlePath]
                 .compactMap { $0 }.joined(separator: "\n")))
 
             Spacer(minLength: AetherVisual.s2)
 
-            Picker(AppLocalization.string("Outlet"), selection: Binding(
-                get: { rule.target },
-                set: { target in
-                    Task {
-                        await tunnel.setApplicationRule(
-                            bundleIdentifier: match?.bundleIdentifier,
-                            bundlePath: match?.bundlePath,
-                            displayName: name,
-                            target: target
-                        )
+            Menu {
+                ForEach(pickerTargets, id: \.rawString) { target in
+                    Button {
+                        guard target != rule.target else { return }
+                        Task {
+                            let saved = await tunnel.setApplicationRule(
+                                bundleIdentifier: match?.bundleIdentifier,
+                                bundlePath: match?.bundlePath,
+                                displayName: name,
+                                target: target
+                            )
+                            guard saved, let fallback = companionFallbackRule else { return }
+                            let updatedFallback = CustomRule(
+                                id: fallback.id,
+                                kind: fallback.kind,
+                                value: fallback.value,
+                                target: target,
+                                noResolve: fallback.noResolve,
+                                isEnabled: fallback.isEnabled,
+                                comment: fallback.comment
+                            )
+                            _ = await tunnel.updateCustomRule(updatedFallback)
+                        }
+                    } label: {
+                        if rule.target == target {
+                            Label(title(target), systemImage: "checkmark")
+                        } else {
+                            Text(title(target))
+                        }
                     }
                 }
-            )) {
-                ForEach(pickerTargets, id: \.rawString) { target in
-                    Text(title(target)).tag(target)
-                }
+            } label: {
+                Text(title(rule.target))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .labelsHidden()
+            .menuIndicator(.visible)
+            .aetherButton()
+            .controlSize(.small)
             .fixedSize()
+            .disabled(isBusy)
+            .accessibilityLabel(AppLocalization.string("Outlet"))
+            .accessibilityValue(Text(title(rule.target)))
 
             Button {
-                Task { await tunnel.deleteCustomRule(id: rule.id) }
+                Task {
+                    let fallbackID = companionFallbackRule?.id
+                    guard await tunnel.deleteCustomRule(id: rule.id) else { return }
+                    if let fallbackID {
+                        _ = await tunnel.deleteCustomRule(id: fallbackID)
+                    }
+                }
             } label: {
                 AetherRowIconLabel(symbol: "trash", tint: .red)
             }
             .buttonStyle(.aetherPressable)
+            .disabled(isBusy)
             .help(AppLocalization.string("Delete rule"))
             .accessibilityLabel(AppLocalization.string("Delete rule"))
         }
         .padding(.horizontal, AetherVisual.sRow)
         .padding(.vertical, AetherVisual.sCompact)
-        .opacity(rule.isEnabled ? 1.0 : 0.6)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("application-rule-row")
     }
 
     private var name: String {
-        rule.comment.flatMap { $0.isEmpty ? nil : $0 }
+        if let bundleID = match?.bundleIdentifier {
+            switch bundleID {
+            case "com.apple.WebKit.Networking":
+                return AppLocalization.string("Safari (web)")
+            case "com.apple.nsurlsessiond":
+                return AppLocalization.string("System background downloads")
+            default:
+                break
+            }
+        }
+        return rule.comment.flatMap { $0.isEmpty ? nil : $0 }
             ?? match?.bundlePath.map { ($0 as NSString).lastPathComponent }
             ?? match?.bundleIdentifier
             ?? ""
@@ -330,7 +452,7 @@ private struct ApplicationRuleRow: View {
     private func title(_ target: CustomRuleTarget) -> String {
         switch target {
         case .direct: AppLocalization.string("Direct")
-        case .reject: AppLocalization.string("Block")
+        case .reject: AppLocalization.string("Reject")
         case let .proxy(group): group
         }
     }
@@ -403,6 +525,7 @@ private struct RunningCLIProcessPickerSheet: View {
     @State private var searchQuery = ""
     @State private var matchByFullPath = false
     @State private var selectedTarget: CustomRuleTarget = .direct
+    @State private var validationError: String?
 
     private var filteredProcesses: [RunningCLIProcessItem] {
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -448,6 +571,10 @@ private struct RunningCLIProcessPickerSheet: View {
                 .fixedSize()
             }
 
+            if let validationError {
+                AetherInlineMessage(text: validationError, kind: .failure, isCompact: true)
+            }
+
             if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -482,6 +609,17 @@ private struct RunningCLIProcessPickerSheet: View {
                         Button(AppLocalization.string("Add")) {
                             let kind: CustomRuleKind = matchByFullPath ? .processPath : .processName
                             let value = matchByFullPath ? item.executablePath : item.processName
+                            let validation = CustomRuleValidator.validate(
+                                kind: kind,
+                                value: value,
+                                target: selectedTarget
+                            )
+                            guard validation.isValid else {
+                                validationError = validation.reason
+                                    ?? AppLocalization.string("Rule validation failed")
+                                return
+                            }
+                            validationError = nil
                             onPick(kind, value, item.processName, selectedTarget)
                             dismiss()
                         }
@@ -510,6 +648,15 @@ private struct RunningCLIProcessPickerSheet: View {
         }
         .padding(AetherVisual.dialogPadding)
         .aetherLargeSheetFrame()
+        .onChange(of: matchByFullPath) { _, _ in
+            validationError = nil
+        }
+        .onChange(of: selectedTarget) { _, _ in
+            validationError = nil
+        }
+        .onChange(of: searchQuery) { _, _ in
+            validationError = nil
+        }
         .task {
             reload()
         }
@@ -531,7 +678,7 @@ private struct RunningCLIProcessPickerSheet: View {
     private func targetLabel(_ target: CustomRuleTarget) -> String {
         switch target {
         case .direct: AppLocalization.string("Direct")
-        case .reject: AppLocalization.string("Block")
+        case .reject: AppLocalization.string("Reject")
         case let .proxy(name): name
         }
     }

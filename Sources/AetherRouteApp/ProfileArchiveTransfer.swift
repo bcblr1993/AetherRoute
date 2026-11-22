@@ -58,16 +58,43 @@ enum ProfileArchivePasswordMode: Equatable {
         case .import: AppLocalization.string("Import Archive")
         }
     }
+
+    var defaultFailureMessage: String {
+        switch self {
+        case .export:
+            AppLocalization.string("Could not create the encrypted archive. Check your profiles and try again.")
+        case .import:
+            AppLocalization.string("Could not unlock the profile archive. Check the password and try again.")
+        }
+    }
 }
 
 struct ProfileArchivePasswordSheet: View {
+    private enum FocusField: Hashable {
+        case password
+        case confirmation
+    }
+
     @Environment(\.dismiss) private var dismiss
     let mode: ProfileArchivePasswordMode
+    let failureMessage: (() -> String?)?
     let perform: (String) async -> Bool
 
     @State private var password = ""
     @State private var confirmation = ""
     @State private var isWorking = false
+    @State private var errorMessage: String?
+    @FocusState private var focusedField: FocusField?
+
+    init(
+        mode: ProfileArchivePasswordMode,
+        failureMessage: (() -> String?)? = nil,
+        perform: @escaping (String) async -> Bool
+    ) {
+        self.mode = mode
+        self.failureMessage = failureMessage
+        self.perform = perform
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s5) {
@@ -81,17 +108,42 @@ struct ProfileArchivePasswordSheet: View {
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
                 SecureField(AppLocalization.string("Archive password"), text: $password)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .password)
+                    .disabled(isWorking)
+                    .onSubmit {
+                        if mode == .export {
+                            focusedField = .confirmation
+                        } else if canSubmit && !isWorking {
+                            submit()
+                        }
+                    }
                     .accessibilityIdentifier("archive-password-field")
                 if mode == .export {
                     SecureField(AppLocalization.string("Confirm password"), text: $confirmation)
                         .textFieldStyle(.roundedBorder)
+                        .focused($focusedField, equals: .confirmation)
+                        .disabled(isWorking)
+                        .onSubmit {
+                            if canSubmit && !isWorking {
+                                submit()
+                            }
+                        }
                         .accessibilityIdentifier(
                             "archive-password-confirmation-field"
                         )
+                    if passwordsMismatch {
+                        Label(
+                            AppLocalization.string("Passwords do not match"),
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(AetherReadableTint(color: .orange))
+                        .accessibilityIdentifier("archive-password-mismatch")
+                    }
                 }
                 Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("Use at least %lld characters. AetherRoute cannot recover this password."),
+                    AppLocalization.format(
+                        "Use at least %lld characters. AetherRoute cannot recover this password.",
                         Int64(
                             PortableProfileArchiveCodec
                                 .minimumPasswordCharacters
@@ -100,6 +152,11 @@ struct ProfileArchivePasswordSheet: View {
                 )
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
+
+                if let errorMessage {
+                    AetherInlineMessage(text: errorMessage)
+                        .accessibilityIdentifier("archive-password-error")
+                }
             }
 
             HStack {
@@ -110,14 +167,7 @@ struct ProfileArchivePasswordSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(isWorking)
                 Button {
-                    isWorking = true
-                    Task {
-                        if await perform(password) {
-                            dismiss()
-                        } else {
-                            isWorking = false
-                        }
-                    }
+                    submit()
                 } label: {
                     AetherProgressButtonLabel(
                         mode.actionTitle,
@@ -132,6 +182,33 @@ struct ProfileArchivePasswordSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .interactiveDismissDisabled(isWorking)
+        .onAppear {
+            focusedField = .password
+        }
+        .onChange(of: password) { _, _ in
+            errorMessage = nil
+        }
+        .onChange(of: confirmation) { _, _ in
+            errorMessage = nil
+        }
+    }
+
+    private func submit() {
+        guard canSubmit, !isWorking else { return }
+        errorMessage = nil
+        isWorking = true
+        Task {
+            if await perform(password) {
+                dismiss()
+            } else {
+                isWorking = false
+                errorMessage = failureMessage?() ?? mode.defaultFailureMessage
+            }
+        }
+    }
+
+    private var passwordsMismatch: Bool {
+        mode == .export && !confirmation.isEmpty && password != confirmation
     }
 
     private var canSubmit: Bool {

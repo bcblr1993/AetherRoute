@@ -242,11 +242,25 @@ public enum CustomRuleStoreError: LocalizedError, Equatable {
     case ruleNotFound(UUID)
 
     public var errorDescription: String? {
+        let locale = AppLocalizationLocaleBridge.currentLocale
         switch self {
         case let .tooManyRules(count):
-            return "Custom rules would total \(count), above the limit of \(CustomRuleCollection.maximumRules). Remove some rules or import fewer."
+            let format = String(
+                localized: "Custom rules would total %lld, above the limit of %lld. Remove some rules or import fewer.",
+                locale: locale
+            )
+            return String(
+                format: format,
+                locale: locale,
+                Int64(count),
+                Int64(CustomRuleCollection.maximumRules)
+            )
         case let .ruleNotFound(id):
-            return "Custom rule with ID \(id) not found"
+            let format = String(
+                localized: "Custom rule with ID %@ not found",
+                locale: locale
+            )
+            return String(format: format, locale: locale, id.uuidString)
         }
     }
 }

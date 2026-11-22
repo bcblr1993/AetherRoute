@@ -319,9 +319,9 @@ final class IndependentDistributionController: ObservableObject {
             case .invalidUpdateDestination:
                 return AppLocalization.string("Choose a valid DMG destination.")
             case let .updateArtifactTooLarge(bytes):
-                return String.localizedStringWithFormat(
-                    AppLocalization.string("The downloaded update is too large (%lld bytes)."),
-                    bytes
+                return Self.localizedFormat(
+                    "The downloaded update is too large (%lld bytes).",
+                    Int64(clamping: bytes)
                 )
             case .updateArtifactHashMismatch:
                 return AppLocalization.string("The downloaded update failed its integrity check.")
@@ -336,18 +336,18 @@ final class IndependentDistributionController: ObservableObject {
             case .redirectRejected:
                 return AppLocalization.string("The distribution service attempted an unexpected redirect.")
             case let .responseTooLarge(bytes):
-                return String.localizedStringWithFormat(
-                    AppLocalization.string("The distribution response is too large (%lld bytes)."),
+                return Self.localizedFormat(
+                    "The distribution response is too large (%lld bytes).",
                     Int64(bytes)
                 )
             case let .httpStatus(status):
-                return String.localizedStringWithFormat(
-                    AppLocalization.string("The distribution service returned HTTP %lld."),
+                return Self.localizedFormat(
+                    "The distribution service returned HTTP %lld.",
                     Int64(status)
                 )
             case let .keychain(status):
-                return String.localizedStringWithFormat(
-                    AppLocalization.string("License data could not be accessed in Keychain (Security status %lld)."),
+                return Self.localizedFormat(
+                    "License data could not be accessed in Keychain (Security status %lld).",
                     Int64(status)
                 )
             }
@@ -358,5 +358,16 @@ final class IndependentDistributionController: ObservableObject {
             return description
         }
         return AppLocalization.string("The distribution service is unavailable.")
+    }
+
+    private static func localizedFormat(
+        _ key: String,
+        _ arguments: any CVarArg...
+    ) -> String {
+        String(
+            format: AppLocalization.string(key),
+            locale: AppLocalizationLocaleBridge.currentLocale,
+            arguments: arguments
+        )
     }
 }

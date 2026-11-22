@@ -3,16 +3,6 @@ import AetherRouteKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private var uiReviewRequestsReducedMotion: Bool {
-#if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
-    ProcessInfo.processInfo.environment[
-        "AETHERROUTE_UI_REVIEW_REDUCE_MOTION"
-    ] == "1"
-#else
-    false
-#endif
-}
-
 enum AppSection: String, CaseIterable, Identifiable {
     case overview
     case proxies
@@ -127,6 +117,101 @@ extension NetworkEngineMode {
 }
 
 
+@MainActor
+final class DNSPageDraftState: ObservableObject {
+    @Published var showsAdvancedDNS = false
+    @Published var newHostDomain = ""
+    @Published var newHostIP = ""
+    @Published var hostOverrideErrorMessage: String?
+    @Published var editingHostID: UUID?
+    @Published var editingHostDomain = ""
+    @Published var editingHostIP = ""
+    @Published var lookupQuery = ""
+    @Published var lookupReport: DNSLookupReport?
+    @Published var fakeIPReverseLookup: FakeIPReverseLookupState?
+    @Published var hasAttemptedLookup = false
+    @Published var diagnosticReport: NetworkDiagnosticReport?
+    @Published var simHostInput = ""
+    @Published var simIPInput = ""
+    @Published var simPortInput = "443"
+    @Published var simNetwork: RouteTraceNetwork = .tcp
+    @Published var simProcessPathInput = ""
+    @Published var simTraceResult: RouteTraceResult?
+    @Published var simValidationError: String?
+    @Published var recentQueryFilter: DNSRecentQueryFilter = .all
+
+    func resetForProfileChange() {
+        lookupReport = nil
+        fakeIPReverseLookup = nil
+        hasAttemptedLookup = false
+        diagnosticReport = nil
+        editingHostID = nil
+        editingHostDomain = ""
+        editingHostIP = ""
+        hostOverrideErrorMessage = nil
+        simHostInput = ""
+        simIPInput = ""
+        simPortInput = "443"
+        simProcessPathInput = ""
+        simValidationError = nil
+        simTraceResult = nil
+    }
+}
+
+@MainActor
+final class ConnectionsPageDraftState: ObservableObject {
+    @Published var filter: ConnectionOutletFilter = .all
+    @Published var sort: ConnectionSort = .traffic
+    @Published var searchText = ""
+    @Published var pausedConnections: [ConnectionTelemetry]?
+    @Published var pausedAt: Date?
+    @Published var recentlyClosedFrozenAt: Date?
+    @Published var groupsByApp = false
+    @Published var groupingDimension: ConnectionTrafficDimension?
+    @Published var showsRecentlyClosed = false
+    @Published var appFilter: ConnectionsAppFilter?
+    @Published var dimensionFilter: ConnectionsDimensionFilter?
+    @Published var selectedConnectionID: ConnectionTableItem.ID?
+    @Published var selectedAppKey: ConnectionAppRow.ID?
+    @Published var selectedDimensionKey: ConnectionTrafficEntry.ID?
+
+    func resetForDisconnect() {
+        pausedConnections = nil
+        pausedAt = nil
+        showsRecentlyClosed = false
+        recentlyClosedFrozenAt = nil
+        groupsByApp = false
+        appFilter = nil
+        dimensionFilter = nil
+        groupingDimension = nil
+    }
+}
+
+@MainActor
+final class PageSessionDraftStore {
+    let dns = DNSPageDraftState()
+    let connections = ConnectionsPageDraftState()
+
+    func resetForProfileChange() {
+        dns.resetForProfileChange()
+    }
+
+    func resetForDisconnect() {
+        connections.resetForDisconnect()
+    }
+}
+
+private struct PageSessionDraftStoreKey: EnvironmentKey {
+    static let defaultValue: PageSessionDraftStore? = nil
+}
+
+extension EnvironmentValues {
+    var pageSessionDrafts: PageSessionDraftStore? {
+        get { self[PageSessionDraftStoreKey.self] }
+        set { self[PageSessionDraftStoreKey.self] = newValue }
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @EnvironmentObject private var language: AppLanguageController
@@ -135,9 +220,50 @@ struct ContentView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selectedSection: AppSection? = .overview
     @State private var isCommandPalettePresented = false
+    @State private var pageDrafts = PageSessionDraftStore()
     @AppStorage(SparkleUpdaterController.dismissedUpdateVersionKey)
     private var dismissedUpdateVersion: String = ""
     @ObservedObject private var updater = SparkleUpdaterController.shared
+
+    private enum RootAlert: Identifiable {
+        case controlURL(TunnelManager.PendingControlURLRequest)
+        case subscriptionLinkError(String)
+
+        var id: String {
+            switch self {
+            case .controlURL(let request): "control:\(request.id.uuidString)"
+            case .subscriptionLinkError(let message): "error:\(message)"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .controlURL: AppLocalization.string("Confirm External URL Command")
+            case .subscriptionLinkError: AppLocalization.string("Cannot Open Subscription Link")
+            }
+        }
+    }
+
+    private var activeRootAlert: RootAlert? {
+        if let message = tunnel.externalSubscriptionLinkError {
+            return .subscriptionLinkError(message)
+        }
+        if let request = tunnel.pendingControlURLRequest {
+            return .controlURL(request)
+        }
+        return nil
+    }
+
+    private func dismissActiveRootAlert() {
+        switch activeRootAlert {
+        case .controlURL:
+            tunnel.cancelPendingControlURLAction()
+        case .subscriptionLinkError:
+            tunnel.dismissExternalSubscriptionLinkError()
+        case nil:
+            break
+        }
+    }
 
     var body: some View {
         Group {
@@ -152,6 +278,8 @@ struct ContentView: View {
                     // instead of "collecting samples" for several seconds.
                     .backgroundTelemetryDemand(source: "main-window")
                     .task { await tunnel.prepare() }
+                    .disabled(isCommandPalettePresented)
+                    .accessibilityHidden(isCommandPalettePresented)
                     .transition(.opacity)
             } else {
                 PrivacyDisclosureView(isOnboarding: true)
@@ -166,8 +294,8 @@ struct ContentView: View {
         // The content layer stays opaque, as Apple's guidelines ask: glass
         // belongs to the sidebar, cards and controls floating above it, and
         // secondary text then keeps its contrast whatever the desktop shows.
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.isNetworkSetupRequired)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: tunnel.hasAcceptedPrivacyDisclosure)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: tunnel.isNetworkSetupRequired)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: tunnel.hasAcceptedPrivacyDisclosure)
         .id(language.preference)
         .preferredColorScheme(uiReviewColorScheme)
         .environment(\.dynamicTypeSize, effectiveDynamicTypeSize)
@@ -186,39 +314,31 @@ struct ContentView: View {
                 for: .aetherRouteNavigateToSection
             )
         ) { notification in
-            guard let rawValue = notification.object as? String,
+            guard tunnel.hasAcceptedPrivacyDisclosure,
+                  !tunnel.isNetworkSetupRequired,
+                  let rawValue = notification.object as? String,
                   let section = AppSection(rawValue: rawValue)
             else { return }
+            if isCommandPalettePresented {
+                isCommandPalettePresented = false
+            }
             selectSection(section)
         }
-        .alert(
-            AppLocalization.string("Confirm External URL Command"),
-            isPresented: Binding(
-                get: { tunnel.pendingControlURLRequest != nil },
-                set: { presented in
-                    if !presented {
-                        tunnel.cancelPendingControlURLAction()
+        .sheet(
+            item: Binding(
+                get: { tunnel.pendingExternalSubscription },
+                set: { request in
+                    if request == nil, tunnel.pendingExternalSubscription != nil {
+                        tunnel.cancelExternalSubscriptionImport()
                     }
                 }
-            ),
-            presenting: tunnel.pendingControlURLRequest
-        ) { _ in
-            Button(AppLocalization.string("Allow")) {
-                tunnel.confirmPendingControlURLAction()
-            }
-            Button(AppLocalization.string("Cancel"), role: .cancel) {
-                tunnel.cancelPendingControlURLAction()
-            }
-        } message: { pending in
-            Text(
-                AppLocalization.format(
-                    "An external link (%@) requested changing your connection state without an automation token. Allow this action?",
-                    pending.url.host ?? "aetherroute"
-                )
             )
+        ) { request in
+            ExternalSubscriptionConfirmationSheet(request: request)
+                .environmentObject(tunnel)
         }
         .overlay(alignment: .top) {
-            if isCommandPalettePresented && tunnel.hasAcceptedPrivacyDisclosure {
+            if isCommandPalettePresented && tunnel.hasAcceptedPrivacyDisclosure && !tunnel.isNetworkSetupRequired {
                 ZStack(alignment: .top) {
                     AetherVisual.scrimFill
                         .ignoresSafeArea()
@@ -234,44 +354,53 @@ struct ContentView: View {
                 }
             }
         }
-        .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: isCommandPalettePresented)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: isCommandPalettePresented)
         .onReceive(NotificationCenter.default.publisher(for: .aetherRouteToggleCommandPalette)) { _ in
-            guard tunnel.hasAcceptedPrivacyDisclosure else { return }
+            guard tunnel.hasAcceptedPrivacyDisclosure, !tunnel.isNetworkSetupRequired else { return }
             isCommandPalettePresented.toggle()
         }
-        .sheet(
-            item: Binding(
-                get: { tunnel.pendingExternalSubscription },
-                set: { request in
-                    if request == nil {
-                        tunnel.cancelExternalSubscriptionImport()
+        .onChange(of: tunnel.isNetworkSetupRequired) { _, required in
+            if required {
+                isCommandPalettePresented = false
+            }
+        }
+        .alert(
+            activeRootAlert?.title ?? "",
+            isPresented: Binding(
+                get: { activeRootAlert != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        dismissActiveRootAlert()
                     }
                 }
             ),
-            onDismiss: tunnel.cancelExternalSubscriptionImport
-        ) { request in
-            ExternalSubscriptionConfirmationSheet(request: request)
-                .environmentObject(tunnel)
-        }
-        .alert(
-            AppLocalization.string("Cannot Open Subscription Link"),
-            isPresented: Binding(
-                get: { tunnel.externalSubscriptionLinkError != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        tunnel.dismissExternalSubscriptionLinkError()
-                    }
+            presenting: activeRootAlert
+        ) { alert in
+            switch alert {
+            case .controlURL:
+                Button(AppLocalization.string("Allow")) {
+                    tunnel.confirmPendingControlURLAction()
                 }
-            )
-        ) {
-            Button(AppLocalization.string("OK"), role: .cancel) {
-                tunnel.dismissExternalSubscriptionLinkError()
+                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                    tunnel.cancelPendingControlURLAction()
+                }
+            case .subscriptionLinkError:
+                Button(AppLocalization.string("OK"), role: .cancel) {
+                    tunnel.dismissExternalSubscriptionLinkError()
+                }
             }
-        } message: {
-            Text(
-                tunnel.externalSubscriptionLinkError
-                    ?? AppLocalization.string("This AetherRoute link could not be opened safely.")
-            )
+        } message: { alert in
+            switch alert {
+            case let .controlURL(pending):
+                Text(
+                    AppLocalization.format(
+                        "An external link (%@) requested changing your connection state without an automation token. Allow this action?",
+                        pending.url.host ?? "aetherroute"
+                    )
+                )
+            case let .subscriptionLinkError(message):
+                Text(message)
+            }
         }
         .task {
 #if AETHERROUTE_PERFORMANCE_MEASUREMENT
@@ -290,7 +419,9 @@ struct ContentView: View {
             ].flatMap(AppSection.init(rawValue:)) {
                 selectSection(requestedSection)
             }
-            if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PALETTE"] == "1" {
+            if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_PALETTE"] == "1",
+               tunnel.hasAcceptedPrivacyDisclosure,
+               !tunnel.isNetworkSetupRequired {
                 isCommandPalettePresented = true
             }
             if let link = ProcessInfo.processInfo.environment[
@@ -389,10 +520,6 @@ struct ContentView: View {
 #endif
     }
 
-    private var effectiveReduceMotion: Bool {
-        reduceMotion || uiReviewRequestsReducedMotion
-    }
-
 
     private var effectiveDynamicTypeSize: DynamicTypeSize {
 #if DEBUG || AETHERROUTE_UI_RESPONSIVENESS
@@ -473,7 +600,7 @@ struct ContentView: View {
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                                 .contentTransition(.opacity)
-                                .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.compactStatusTitle)
+                                .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: tunnel.compactStatusTitle)
                         }
                     }
 
@@ -552,6 +679,55 @@ struct ContentView: View {
         // read as a box inside a box.
     }
 
+    private var sidebarVersionLabel: some View {
+#if !AETHERROUTE_APP_STORE
+        let canCheckForUpdates = updater.canCheckOrFocusUpdateSession
+        return Button {
+            updater.checkForUpdates()
+        } label: {
+            HStack(spacing: AetherVisual.s1) {
+                Text(verbatim: currentAppVersion)
+                    .font(.system(.subheadline, design: .monospaced, weight: .medium))
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                if updater.availability.availableVersion != nil {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: AetherVisual.sCompact, height: AetherVisual.sCompact)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canCheckForUpdates)
+        .opacity(canCheckForUpdates ? 1 : 0.6)
+        .padding(.trailing, AetherVisual.s2)
+        .help(
+            updater.availability.availableVersion != nil
+                ? AppLocalization.string("New version available. Click to update.")
+                : AppLocalization.string("Check for Updates")
+        )
+        .accessibilityLabel(
+            updater.availability.availableVersion != nil
+                ? AppLocalization.string("New version available. Click to update.")
+                : currentAppVersion
+        )
+        .accessibilityIdentifier("sidebar-version-button")
+#else
+        Text(verbatim: currentAppVersion)
+            .font(.system(.subheadline, design: .monospaced, weight: .medium))
+            .foregroundStyle(AetherVisual.secondaryText)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.trailing, AetherVisual.s2)
+            .help(AppLocalization.string("Version"))
+            .accessibilityLabel(Text(verbatim: currentAppVersion))
+            .accessibilityIdentifier("sidebar-version-label")
+#endif
+    }
+
     private var sidebarSettingsButton: some View {
         Button {
             openSettings()
@@ -572,34 +748,6 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .onHover { isSettingsHovered = $0 }
         .accessibilityIdentifier("sidebar-settings-button")
-    }
-
-    private var sidebarVersionLabel: some View {
-        Button {
-            updater.checkForUpdates()
-        } label: {
-            HStack(spacing: AetherVisual.s1) {
-                Text(verbatim: currentAppVersion)
-                    .font(.system(.subheadline, design: .monospaced, weight: .medium))
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-
-                if updater.availability.availableVersion != nil {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: AetherVisual.sCompact, height: AetherVisual.sCompact)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .padding(.trailing, AetherVisual.s2)
-        .accessibilityLabel(
-            updater.availability.availableVersion != nil
-                ? AppLocalization.string("New version available. Click to update.")
-                : currentAppVersion
-        )
     }
 
     @ViewBuilder
@@ -644,6 +792,7 @@ struct ContentView: View {
 
     private var detail: some View {
         let section = selectedSection ?? .overview
+        let pageTransition = AnyTransition.asymmetric(insertion: .opacity, removal: .identity)
         return VStack(spacing: 0) {
             if let availableVersion = updater.availability.availableVersion,
                availableVersion != dismissedUpdateVersion {
@@ -666,34 +815,39 @@ struct ContentView: View {
                         OverviewView {
                             selectSection(.profiles)
                         }
+                        .transition(pageTransition)
                     case .proxies:
                         ProxiesView()
+                            .transition(pageTransition)
                     case .connections:
                         ConnectionsView(telemetry: tunnel.telemetryViewModel)
+                            .transition(pageTransition)
                     case .profiles:
                         ProfilesView()
+                            .transition(pageTransition)
                     case .rules:
                         RulesView()
+                            .transition(pageTransition)
                     case .dns:
                         DNSView()
+                            .transition(pageTransition)
                     }
                 }
+                .environment(\.pageSessionDrafts, pageDrafts)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // Each page is a new identity. It fades in on opacity alone: the
-                // 1.5.0 fade-up also moved the page, which laid it out again on
-                // every animation frame and doubled the slowest switches
-                // (Connections p95 377 ms with it, 171 ms without; 1.5.1).
-                // Opacity is composited, so the page is laid out once.
-                .id(section)
-                .transition(.asymmetric(insertion: .opacity, removal: .identity))
-                .animation(
-                    effectiveReduceMotion ? nil : AetherVisual.pageFade,
-                    value: section
-                )
+                .animation(AetherVisual.animation(AetherVisual.pageFade, reduceMotion: reduceMotion), value: section)
             }
         }
-        .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: updater.availability.availableVersion)
-        .animation(effectiveReduceMotion ? nil : AetherVisual.panelSpring, value: dismissedUpdateVersion)
+        .onChange(of: tunnel.activeProfileID) { _, _ in
+            pageDrafts.resetForProfileChange()
+        }
+        .onChange(of: tunnel.isConnected) { _, connected in
+            if !connected {
+                pageDrafts.resetForDisconnect()
+            }
+        }
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: updater.availability.availableVersion)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: dismissedUpdateVersion)
         .navigationTitle(section.title)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(section.subtitle)
@@ -804,6 +958,7 @@ enum ReviewPerformanceTour {
 /// "Cancel"), so VoiceOver reads the verb and automation finds it as before.
 struct ConnectionSwitch: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var identifier = "primary-connection-button"
     var isCompact = false
 
@@ -841,8 +996,8 @@ struct ConnectionSwitch: View {
         .buttonStyle(.aetherPressable)
         .disabled(!tunnel.canPerformPrimaryAction)
         .opacity(tunnel.canPerformPrimaryAction ? 1 : 0.45)
-        .animation(AetherVisual.animation(AetherVisual.switchToggle), value: tunnel.isEnabled)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isWorking)
+        .animation(AetherVisual.animation(AetherVisual.switchToggle, reduceMotion: reduceMotion), value: tunnel.isEnabled)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isWorking)
         .accessibilityLabel(tunnel.primaryActionTitle)
         .accessibilityIdentifier(identifier)
         .accessibilityHint(primaryActionHint)
@@ -887,12 +1042,20 @@ extension NetworkSetupView {
     }
 }
 
+private enum OverviewSheet: String, Identifiable {
+    case subscriptionEditor
+    case cloudSync
+    case networkSetup
+    case trafficStatistics
+
+    var id: String { rawValue }
+}
+
 private struct OverviewView: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let openProfiles: () -> Void
-    @State private var isSubscriptionEditorPresented = false
-    @State private var isCloudSyncSheetPresented = false
-    @State private var isEngineSetupPresented = false
+    @State private var activeSheet: OverviewSheet?
     @State private var subscriptionURL = ""
     @State private var overviewWindowDemand: TunnelManager.TelemetryDemand = .none
 
@@ -907,14 +1070,18 @@ private struct OverviewView: View {
                     onboardingCard
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                ConnectionHero(openProfiles: openProfiles)
+                ConnectionHero(
+                    openProfiles: openProfiles,
+                    openNetworkSetup: { activeSheet = .networkSetup }
+                )
                 if showsTraffic {
                     TrafficCard(
                         isConnected: tunnel.isConnected,
                         isRealtime: overviewWindowDemand == .realtime,
                         isBackground: overviewWindowDemand == .background,
                         subscriptionUsage: tunnel.effectiveActiveSubscriptionUsage,
-                        telemetry: tunnel.telemetryViewModel
+                        telemetry: tunnel.telemetryViewModel,
+                        openStatistics: { activeSheet = .trafficStatistics }
                     )
                     .transition(.opacity)
                 }
@@ -923,16 +1090,27 @@ private struct OverviewView: View {
                 }
             }
             .aetherPageContent(.wide)
-            .animation(AetherVisual.animation(AetherVisual.panelSpring), value: needsOnboarding)
-            .animation(AetherVisual.animation(AetherVisual.panelSpring), value: showsTraffic)
+            .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: needsOnboarding)
+            .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: showsTraffic)
         }
-        .sheet(isPresented: $isSubscriptionEditorPresented) {
-            SubscriptionEditorSheet(urlText: $subscriptionURL)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .subscriptionEditor:
+                SubscriptionEditorSheet(urlText: $subscriptionURL)
+                    .environmentObject(tunnel)
+            case .cloudSync:
+                ProfileCloudSyncSheet()
+                    .environmentObject(tunnel)
+            case .networkSetup:
+                NetworkSetupView(tunnel: tunnel, isOnboarding: false) {
+                    activeSheet = nil
+                }
                 .environmentObject(tunnel)
-        }
-        .sheet(isPresented: $isCloudSyncSheetPresented) {
-            ProfileCloudSyncSheet()
-                .environmentObject(tunnel)
+                .aetherLargeSheetFrame()
+            case .trafficStatistics:
+                TrafficStatisticsSheet(statistics: tunnel.trafficStatistics)
+                    .environmentObject(tunnel)
+            }
         }
         .telemetryDemand(source: "overview") { demand in
             if overviewWindowDemand != demand {
@@ -962,14 +1140,14 @@ private struct OverviewView: View {
             onAddSubscription: {
                 tunnel.clearProfileMessage()
                 subscriptionURL = ""
-                isSubscriptionEditorPresented = true
+                activeSheet = .subscriptionEditor
             },
             onImportProfile: {
                 openProfiles()
             },
             onCloudSync: {
                 tunnel.clearProfileMessage()
-                isCloudSyncSheetPresented = true
+                activeSheet = .cloudSync
             }
         )
     }
@@ -983,7 +1161,7 @@ private struct OverviewView: View {
                 OverviewRowDivider()
                 OverviewModeRows(
                     networkEngineMode: tunnel.networkEngineMode,
-                    routingMode: tunnel.routingMode,
+                    routingMode: tunnel.effectiveRoutingMode,
                     canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
                     canChangeRoutingMode: tunnel.canChangeRoutingMode,
                     selectNetworkEngine: { mode in
@@ -993,6 +1171,14 @@ private struct OverviewView: View {
                         Task { await tunnel.setRoutingMode(mode) }
                     }
                 )
+                if let message = tunnel.routingModeMessage, tunnel.routingModeMessageIsError {
+                    OverviewRowDivider()
+                    AetherInlineMessage(text: message, kind: .failure, isCompact: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, AetherVisual.s3)
+                        .padding(.vertical, AetherVisual.s2)
+                        .accessibilityIdentifier("overview-routing-mode-message")
+                }
                 if let message = tunnel.networkEngineMessage, tunnel.networkEngineMessageIsError {
                     OverviewRowDivider()
                     HStack(spacing: AetherVisual.s2) {
@@ -1007,7 +1193,7 @@ private struct OverviewView: View {
                             .accessibilityIdentifier("overview-network-engine-message")
                         if tunnel.networkEngineBlockedNeedsSetup {
                             Button {
-                                isEngineSetupPresented = true
+                                activeSheet = .networkSetup
                             } label: {
                                 Text(
                                     AppLocalization.string("Open Network Setup…")
@@ -1029,13 +1215,6 @@ private struct OverviewView: View {
             .aetherPanel()
         }
         .transition(.opacity)
-        .sheet(isPresented: $isEngineSetupPresented) {
-            NetworkSetupView(tunnel: tunnel, isOnboarding: false) {
-                isEngineSetupPresented = false
-            }
-            .environmentObject(tunnel)
-            .aetherLargeSheetFrame()
-        }
     }
 }
 
@@ -1050,9 +1229,7 @@ private struct ActiveOutlet: Equatable {
 
     @MainActor
     init?(tunnel: TunnelManager) {
-        let mode = tunnel.isConnected
-            ? (tunnel.sessionRoutingMode ?? tunnel.routingMode)
-            : tunnel.routingMode
+        let mode = tunnel.effectiveRoutingMode
         switch mode {
         case .direct:
             let directTitle = AppLocalization.string("Direct outbound (no proxy)")
@@ -1094,10 +1271,9 @@ private struct ActiveOutlet: Equatable {
 /// the hero. Retrying is the hero's own switch, so this section only adds
 /// what the switch cannot: the reason, and a way to the profiles.
 private struct RecoverySection: View {
-    @EnvironmentObject private var tunnel: TunnelManager
     let plan: ConnectionRecoveryPlan
     let openProfiles: () -> Void
-    @State private var isNetworkSetupPresented = false
+    let openNetworkSetup: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: AetherVisual.s3) {
@@ -1114,7 +1290,7 @@ private struct RecoverySection: View {
             // removed) is fixed with the same page as first-run setup.
             if plan.context == .configuration {
                 Button {
-                    isNetworkSetupPresented = true
+                    openNetworkSetup()
                 } label: {
                     Label(AppLocalization.string("Set Up Permissions Again"), systemImage: "lock.shield")
                 }
@@ -1135,13 +1311,6 @@ private struct RecoverySection: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connection-recovery-card")
-        .sheet(isPresented: $isNetworkSetupPresented) {
-            NetworkSetupView(isOnboarding: false) {
-                isNetworkSetupPresented = false
-            }
-            .environmentObject(tunnel)
-            .aetherLargeSheetFrame()
-        }
     }
 
     private var recoveryDetail: String {
@@ -1165,6 +1334,8 @@ private struct ConnectionHero: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let openProfiles: () -> Void
+    let openNetworkSetup: () -> Void
+    @State private var isRecheckingApproval = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
@@ -1206,8 +1377,12 @@ private struct ConnectionHero: View {
             }
             if let plan = tunnel.recoveryPlan {
                 Divider()
-                RecoverySection(plan: plan, openProfiles: openProfiles)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                RecoverySection(
+                    plan: plan,
+                    openProfiles: openProfiles,
+                    openNetworkSetup: openNetworkSetup
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(AetherVisual.s6)
@@ -1236,10 +1411,7 @@ private struct ConnectionHero: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-hero")
-        .animation(
-            effectiveReduceMotion ? nil : AetherVisual.panelSpring,
-            value: tunnel.state
-        )
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: tunnel.state)
     }
 
     private var phase: ConnectionMedallion.Phase {
@@ -1263,22 +1435,28 @@ private struct ConnectionHero: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: AetherVisual.s3) {
                 Button {
-                    if let settings = NSWorkspace.shared.urlForApplication(
-                        withBundleIdentifier: "com.apple.systempreferences"
-                    ) {
-                        NSWorkspace.shared.open(settings)
-                    }
+                    tunnel.openNetworkExtensionSettings()
                 } label: {
                     Label(AppLocalization.string("Open System Settings"), systemImage: "gearshape")
                 }
                 .aetherButton(prominent: true)
                 .accessibilityIdentifier("extension-approval-open-settings")
                 Button {
-                    Task { await tunnel.recheckSystemExtensionApproval() }
+                    guard !isRecheckingApproval else { return }
+                    isRecheckingApproval = true
+                    Task {
+                        defer { isRecheckingApproval = false }
+                        await tunnel.recheckSystemExtensionApproval()
+                    }
                 } label: {
-                    Label(AppLocalization.string("Check Again"), systemImage: "arrow.clockwise")
+                    AetherProgressButtonLabel(
+                        AppLocalization.string("Check Again"),
+                        systemImage: "arrow.clockwise",
+                        isWorking: isRecheckingApproval || tunnel.isPreparing
+                    )
                 }
                 .aetherButton()
+                .disabled(isRecheckingApproval || tunnel.isPreparing)
                 .accessibilityIdentifier("extension-approval-recheck")
             }
             .controlSize(.large)
@@ -1286,10 +1464,6 @@ private struct ConnectionHero: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("extension-approval-controls")
-    }
-
-    private var effectiveReduceMotion: Bool {
-        reduceMotion || uiReviewRequestsReducedMotion
     }
 
     /// While connected: how long, and through which node. Otherwise the
@@ -1302,20 +1476,20 @@ private struct ConnectionHero: View {
                 let duration = AppLocalization.duration(context.date.timeIntervalSince(since))
                 if let outlet {
                     if outlet.isDirectMode {
-                        let connectedPrefix = String.localizedStringWithFormat(
-                            AppLocalization.string("Connected for %@"),
+                        let connectedPrefix = AppLocalization.format(
+                            "Connected for %@",
                             duration
                         )
                         Text(verbatim: "\(connectedPrefix) · \(outlet.resolvedNode)")
                     } else {
-                        Text(String.localizedStringWithFormat(
-                            AppLocalization.string("Connected for %@ · via %@"),
+                        Text(AppLocalization.format(
+                            "Connected for %@ · via %@",
                             duration,
                             outlet.resolvedNode
                         ))
                     }
                 } else {
-                    Text(String.localizedStringWithFormat(AppLocalization.string("Connected for %@"), duration))
+                    Text(AppLocalization.format("Connected for %@", duration))
                 }
             }
         } else if tunnel.state == .disconnected, tunnel.activeProfile != nil {
@@ -1439,12 +1613,12 @@ struct ConnectionMedallion: View {
                 .font(.system(size: size * 0.44, weight: .semibold))
                 .foregroundStyle(.white)
                 .contentTransition(
-                    (reduceMotion || uiReviewRequestsReducedMotion)
+                    (reduceMotion || AetherVisual.isReduceMotionForced)
                         ? .identity
                         : .symbolEffect(.replace)
                 )
             if phase == .working {
-                TimelineView(.animation(paused: reduceMotion || uiReviewRequestsReducedMotion)) { context in
+                TimelineView(.animation(paused: reduceMotion || AetherVisual.isReduceMotionForced)) { context in
                     Circle()
                         .trim(from: 0, to: 0.28)
                         .stroke(phase.color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -1455,12 +1629,12 @@ struct ConnectionMedallion: View {
             }
         }
         .frame(width: size, height: size)
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: phase)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring, reduceMotion: reduceMotion), value: phase)
         .accessibilityHidden(true)
     }
 
     private func angle(at date: Date) -> Double {
-        guard !(reduceMotion || uiReviewRequestsReducedMotion) else { return -90 }
+        guard !(reduceMotion || AetherVisual.isReduceMotionForced) else { return -90 }
         return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360
     }
 }
@@ -1468,6 +1642,7 @@ struct ConnectionMedallion: View {
 /// A mode's effect beside its heading. It cross-fades when the choice
 /// changes, so the sentence visibly follows the control.
 struct ModeHint: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let text: String
 
     var body: some View {
@@ -1477,7 +1652,7 @@ struct ModeHint: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .contentTransition(.opacity)
-            .animation(AetherVisual.animation(AetherVisual.quickFade), value: text)
+            .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: text)
     }
 }
 
@@ -1656,6 +1831,119 @@ struct OverviewRowDivider: View {
     }
 }
 
+private struct OverviewDrawerProxyLookup {
+    let summaries: [String: ProxyConfigurationSummary]
+    let protocolsByName: [String: String]
+    let transportsByName: [String: String]
+    let dialersByName: [String: String]
+    let unsupportedNames: Set<String>
+    let groupNames: Set<String>
+
+    static let empty = OverviewDrawerProxyLookup(
+        summaries: [:],
+        protocolsByName: [:],
+        transportsByName: [:],
+        dialersByName: [:],
+        unsupportedNames: [],
+        groupNames: []
+    )
+
+    static func build(from summary: ProfileConfigurationSummary?) -> OverviewDrawerProxyLookup {
+        guard let summary else { return .empty }
+        var summaries: [String: ProxyConfigurationSummary] = [:]
+        summaries.reserveCapacity(summary.proxies.count)
+        var protocolsByName: [String: String] = [:]
+        protocolsByName.reserveCapacity(summary.proxies.count)
+        var transportsByName: [String: String] = [:]
+        var dialersByName: [String: String] = [:]
+        var unsupportedNames: Set<String> = []
+        for proxy in summary.proxies {
+            if summaries[proxy.name] == nil {
+                summaries[proxy.name] = proxy
+            }
+            protocolsByName[proxy.name] = proxy.protocolName
+            if let transport = proxy.transportName {
+                transportsByName[proxy.name] = transport
+            }
+            if let dialer = proxy.dialerProxy {
+                dialersByName[proxy.name] = dialer
+            }
+            if !proxy.recognition.isSelectable {
+                unsupportedNames.insert(proxy.name)
+            }
+        }
+        let groupNames = Set(summary.proxyGroups.map(\.name))
+        return OverviewDrawerProxyLookup(
+            summaries: summaries,
+            protocolsByName: protocolsByName,
+            transportsByName: transportsByName,
+            dialersByName: dialersByName,
+            unsupportedNames: unsupportedNames,
+            groupNames: groupNames
+        )
+    }
+}
+
+/// Drawer toolbar: keeps the group switcher leading and utility controls trailing
+/// on one line when both fit, or stacks them cleanly on narrower widths.
+private struct OverviewDrawerToolbarLayout: Layout {
+    private static let gap = AetherVisual.s2
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count >= 2 else {
+            return subviews.first?.sizeThatFits(proposal) ?? .zero
+        }
+        let group = subviews[0].sizeThatFits(.unspecified)
+        let controls = subviews[1].sizeThatFits(.unspecified)
+        guard let width = proposal.width, width >= 1, width.isFinite else {
+            return CGSize(width: 0, height: max(group.height, controls.height))
+        }
+        if group.width + Self.gap + controls.width <= width {
+            return CGSize(width: width, height: max(group.height, controls.height))
+        }
+        let wrappedGroup = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let wrappedControls = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return CGSize(
+            width: width,
+            height: wrappedGroup.height + Self.gap + wrappedControls.height
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count >= 2 else {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: proposal)
+            return
+        }
+        let group = subviews[0].sizeThatFits(.unspecified)
+        let controls = subviews[1].sizeThatFits(.unspecified)
+        if group.width + Self.gap + controls.width <= bounds.width {
+            let groupMaxWidth = max(0, bounds.width - controls.width - Self.gap)
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.midY),
+                anchor: .leading,
+                proposal: ProposedViewSize(width: min(group.width, groupMaxWidth), height: nil)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.midY),
+                anchor: .trailing,
+                proposal: .unspecified
+            )
+        } else {
+            let wrappedGroup = subviews[0].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: nil)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + wrappedGroup.height + Self.gap),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: nil)
+            )
+        }
+    }
+}
+
 // BEGIN OverviewExitDrawerPolicy
 enum OverviewExitDrawerPolicy {
     private static let metadataTokens = [
@@ -1768,15 +2056,25 @@ enum OverviewExitDrawerPolicy {
 /// switched right from Overview without leaving the page.
 private struct OverviewExitRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .body) private var drawerRowHeight: CGFloat = AetherVisual.tableRowHeight
     @State private var isExpanded = false
     @State private var selectedGroupName: String?
     @State private var searchText = ""
     @State private var pendingMember: String?
+    @State private var cachedSummary: ProfileConfigurationSummary?
+    @State private var cachedProxyLookup = OverviewDrawerProxyLookup.empty
+
+    private var activeProfileID: UUID? {
+        tunnel.activeProfileID
+    }
+
+    private var exitRefreshTaskID: String {
+        "\(activeProfileID?.uuidString ?? "none"):\(primaryGroupName ?? ""):\(tunnel.isConnected):\(effectiveRoutingMode.rawValue)"
+    }
 
     private var effectiveRoutingMode: RoutingMode {
-        tunnel.isConnected
-            ? (tunnel.sessionRoutingMode ?? tunnel.routingMode)
-            : tunnel.routingMode
+        tunnel.effectiveRoutingMode
     }
 
     private var allGroups: [ProxyGroupConfigurationSummary] {
@@ -1797,19 +2095,17 @@ private struct OverviewExitRow: View {
         )
     }
 
-    private var proxySummaryByName: [String: ProxyConfigurationSummary] {
-        Dictionary(
-            (tunnel.activeProfileSummary?.proxies ?? []).map { ($0.name, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
+    private var resolvedProxyLookup: OverviewDrawerProxyLookup {
+        if cachedSummary == tunnel.activeProfileSummary,
+           !(tunnel.activeProfileSummary != nil && cachedSummary == nil) {
+            return cachedProxyLookup
+        }
+        return OverviewDrawerProxyLookup.build(from: tunnel.activeProfileSummary)
     }
 
-    private var unsupportedNames: Set<String> {
-        Set(
-            (tunnel.activeProfileSummary?.proxies ?? [])
-                .filter { !$0.recognition.isSelectable }
-                .map(\.name)
-        )
+    private func refreshProxyLookup() {
+        cachedSummary = tunnel.activeProfileSummary
+        cachedProxyLookup = OverviewDrawerProxyLookup.build(from: tunnel.activeProfileSummary)
     }
 
     var body: some View {
@@ -1891,7 +2187,7 @@ private struct OverviewExitRow: View {
         // The selection is read from the extension (or the profile while
         // disconnected); without this the row said "Choose a node" until
         // the Proxies page had been opened once.
-        .task(id: "\(primaryGroupName ?? ""):\(tunnel.isConnected):\(effectiveRoutingMode.rawValue)") {
+        .task(id: exitRefreshTaskID) {
             if effectiveRoutingMode == .global {
                 tunnel.seedGlobalSelectionIfNeeded()
                 await tunnel.refreshProxySelection(group: "GLOBAL")
@@ -1899,8 +2195,20 @@ private struct OverviewExitRow: View {
             guard let primaryGroupName else { return }
             await tunnel.refreshProxySelection(group: primaryGroupName)
         }
+        .onAppear {
+            refreshProxyLookup()
+        }
         .onChange(of: effectiveRoutingMode) { _, _ in
             searchText = ""
+        }
+        .onChange(of: tunnel.activeProfileID) { _, _ in
+            selectedGroupName = nil
+            searchText = ""
+            pendingMember = nil
+            refreshProxyLookup()
+        }
+        .onChange(of: tunnel.activeProfileSummary) { _, _ in
+            refreshProxyLookup()
         }
     }
 
@@ -1909,23 +2217,21 @@ private struct OverviewExitRow: View {
             ? group.members
             : (tunnel.proxySelections[group.name]?.members ?? group.members)
         let cleanMembers = OverviewExitDrawerPolicy.displayMembers(from: rawMembers)
-        let summaries = proxySummaryByName
-        let protocolsByName = summaries.mapValues(\.protocolName)
-        let transportsByName = summaries.compactMapValues(\.transportName)
-        let dialersByName = summaries.compactMapValues(\.dialerProxy)
+        let lookup = resolvedProxyLookup
         let filteredMembers = OverviewExitDrawerPolicy.filterMembers(
             cleanMembers,
             query: searchText,
-            protocolByName: protocolsByName,
-            transportByName: transportsByName,
-            dialerByName: dialersByName
+            protocolByName: lookup.protocolsByName,
+            transportByName: lookup.transportsByName,
+            dialerByName: lookup.dialersByName
         )
-        let groupNames = Set(allGroups.map(\.name))
         let selectedMember = resolvedSelectedMember(for: group)
         let showsFastestNote = OverviewExitDrawerPolicy.shouldSwitchToManualBeforeSelecting(
             groupName: group.name,
             isFastestMode: tunnel.proxySelectionMode(for: group.name) == .fastest
         )
+        let isSelectGroup = group.strategy.lowercased() == "select"
+        let selectionMode = tunnel.proxySelectionMode(for: group.name)
 
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             if effectiveRoutingMode == .direct {
@@ -1961,17 +2267,16 @@ private struct OverviewExitRow: View {
                 )
             }
 
-            HStack(spacing: AetherVisual.s2) {
+            OverviewDrawerToolbarLayout {
                 groupToolbarSwitcher(activeGroup: group)
-                Spacer(minLength: AetherVisual.s1)
-                HStack(spacing: AetherVisual.sCompact) {
+                AetherFlowLayout(spacing: AetherVisual.sCompact) {
                     if OverviewExitDrawerPolicy.shouldShowSearch(memberCount: cleanMembers.count) {
                         AetherSearchField(
                             text: $searchText,
                             prompt: AppLocalization.string("Search nodes"),
                             accessibilityIdentifier: "overview-outlet-search"
                         )
-                        .frame(maxWidth: AetherVisual.searchFieldMinWidth)
+                        .frame(width: AetherVisual.searchFieldMinWidth)
                     }
                     DrawerTestLatencyButton(
                         groupName: group.name,
@@ -2001,13 +2306,32 @@ private struct OverviewExitRow: View {
                 }
             }
 
-            if showsFastestNote {
+            if !isSelectGroup {
+                Text(
+                    AppLocalization.string("Managed automatically by this group's strategy")
+                )
+                .font(.caption2)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .accessibilityIdentifier("overview-outlet-auto-strategy-note")
+            } else if showsFastestNote {
                 Text(
                     AppLocalization.string("Auto-fastest active · click any node to switch to manual")
                 )
                 .font(.caption2)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityIdentifier("overview-outlet-fastest-note")
+            } else if selectionMode == .failover {
+                Text(
+                    AppLocalization.string("Failover active · click any node to set preferred node")
+                )
+                .font(.caption2)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .accessibilityIdentifier("overview-outlet-failover-note")
+            }
+
+            if let message = tunnel.proxySelectionMessages[group.name] {
+                AetherInlineMessage(text: message, kind: .failure, isCompact: true)
+                    .accessibilityIdentifier("overview-outlet-selection-message")
             }
 
             if cleanMembers.isEmpty {
@@ -2024,11 +2348,10 @@ private struct OverviewExitRow: View {
                     .padding(.vertical, AetherVisual.s3)
             } else {
                 let deterministicHeight = min(
-                    CGFloat(filteredMembers.count) * AetherVisual.tableRowHeight
+                    CGFloat(filteredMembers.count) * drawerRowHeight
                         + CGFloat(max(0, filteredMembers.count - 1)) * AetherVisual.sMicro,
                     240
                 )
-                let unavailableSet = unsupportedNames
                 ScrollView {
                     LazyVStack(spacing: AetherVisual.sMicro) {
                         ForEach(filteredMembers, id: \.self) { member in
@@ -2036,12 +2359,12 @@ private struct OverviewExitRow: View {
                                 member: member,
                                 group: group,
                                 isSelected: member == selectedMember,
-                                isUnavailable: unavailableSet.contains(member),
-                                proxySummary: summaries[member],
+                                isUnavailable: lookup.unsupportedNames.contains(member),
+                                proxySummary: lookup.summaries[member],
                                 badgeLabel: OverviewExitDrawerPolicy.protocolBadgeLabel(
                                     for: member,
-                                    protocolsByName: protocolsByName,
-                                    groupNames: groupNames
+                                    protocolsByName: lookup.protocolsByName,
+                                    groupNames: lookup.groupNames
                                 )
                             )
                         }
@@ -2068,7 +2391,7 @@ private struct OverviewExitRow: View {
     @ViewBuilder
     private func groupToolbarSwitcher(activeGroup: ProxyGroupConfigurationSummary) -> some View {
         if effectiveRoutingMode == .global {
-            groupPillLabel("GLOBAL", isSelected: true)
+            groupPillLabel(proxyGroupDisplayName("GLOBAL"), isSelected: true)
                 .accessibilityIdentifier("overview-outlet-group-GLOBAL")
         } else if manualGroups.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -2076,7 +2399,7 @@ private struct OverviewExitRow: View {
                     ForEach(manualGroups) { candidate in
                         let isSelectedGroup = candidate.name == activeGroup.name
                         Button {
-                            withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+                            withAnimation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion)) {
                                 selectedGroupName = candidate.name
                                 searchText = ""
                             }
@@ -2126,9 +2449,12 @@ private struct OverviewExitRow: View {
         badgeLabel: String?
     ) -> some View {
         let isSwitchingThis = pendingMember == member
+        let isAutoStrategy = group.strategy.lowercased() != "select"
         let isSelectionDisabled = pendingMember != nil
             || tunnel.proxySelectionRequests.contains(group.name)
-            || group.strategy.lowercased() != "select"
+            || tunnel.isTransitioning
+            || tunnel.isSwitchingNetworkEngine
+            || isAutoStrategy
             || isUnavailable
 
         return Button {
@@ -2206,6 +2532,7 @@ private struct OverviewExitRow: View {
         }
         .buttonStyle(.aetherPressable)
         .disabled(isSelectionDisabled)
+        .opacity((isAutoStrategy || isUnavailable) ? 0.55 : 1)
         .accessibilityIdentifier("overview-outlet-node-\(member)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -2285,13 +2612,20 @@ private struct OverviewExitRow: View {
 /// Routing mode and network engine. Takes plain values rather than observing
 /// the tunnel, so the native segmented controls only update when a mode
 /// actually changes.
-private struct OverviewModeRows: View {
+private struct OverviewModeRows: View, @MainActor Equatable {
     let networkEngineMode: NetworkEngineMode
     let routingMode: RoutingMode
     let canChangeNetworkEngine: Bool
     let canChangeRoutingMode: Bool
     let selectNetworkEngine: (NetworkEngineMode) -> Void
     let selectRoutingMode: (RoutingMode) -> Void
+
+    @MainActor static func == (lhs: OverviewModeRows, rhs: OverviewModeRows) -> Bool {
+        lhs.networkEngineMode == rhs.networkEngineMode
+            && lhs.routingMode == rhs.routingMode
+            && lhs.canChangeNetworkEngine == rhs.canChangeNetworkEngine
+            && lhs.canChangeRoutingMode == rhs.canChangeRoutingMode
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2375,19 +2709,17 @@ private struct OverviewRouteCheckRow: View {
                     } icon: {
                         Image(systemName: symbol(quality))
                             .foregroundStyle(tintStyle(quality))
-                            .symbolEffect(.pulse, isActive: !reduceMotion && quality == .verifying)
+                            .symbolEffect(
+                                .pulse,
+                                isActive: !(reduceMotion || AetherVisual.isReduceMotionForced) && quality == .verifying
+                            )
                     }
                     .font(.subheadline)
                     .foregroundStyle(AetherVisual.secondaryText)
                     .help(detail(quality))
                     Button(AppLocalization.string("Check")) {
+                        AppWindowManager.shared.requestSettingsTab("diagnostics")
                         openSettings()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            NotificationCenter.default.post(
-                                name: .aetherRouteNavigateToSettings,
-                                object: "diagnostics"
-                            )
-                        }
                     }
                     .aetherButton()
                     .controlSize(.small)
@@ -2402,7 +2734,7 @@ private struct OverviewRouteCheckRow: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-route-quality")
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: quality)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring, reduceMotion: reduceMotion), value: quality)
     }
 
     private func symbol(_ quality: ConnectionQuality?) -> String {
@@ -2435,7 +2767,7 @@ private struct OverviewRouteCheckRow: View {
     private func detail(_ quality: ConnectionQuality?) -> String {
         switch quality {
         case nil, .unknown:
-            AppLocalization.string("Traffic is already routed. Use Diagnose to check the selected exit.")
+            AppLocalization.string("Traffic is already routed. Use Check to test the selected exit.")
         case .verifying:
             AppLocalization.string("The tunnel is connected. AetherRoute is checking the selected route in the background.")
         case .verified:
@@ -2482,11 +2814,22 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
     private func configure(_ control: NSSegmentedControl) {
         let modes = NetworkEngineMode.allCases
         for (index, mode) in modes.enumerated() {
-            control.setLabel(title(mode), forSegment: index)
-            control.setToolTip(mode.localizedTitle, forSegment: index)
+            let label = title(mode)
+            if control.label(forSegment: index) != label {
+                control.setLabel(label, forSegment: index)
+            }
+            let tip = mode.localizedTitle
+            if control.toolTip(forSegment: index) != tip {
+                control.setToolTip(tip, forSegment: index)
+            }
         }
-        control.selectedSegment = modes.firstIndex(of: selection) ?? -1
-        control.isEnabled = isEnabled
+        let targetSegment = modes.firstIndex(of: selection) ?? -1
+        if control.selectedSegment != targetSegment {
+            control.selectedSegment = targetSegment
+        }
+        if control.isEnabled != isEnabled {
+            control.isEnabled = isEnabled
+        }
         if marksSelection {
             control.markSelectedSegment()
         }
@@ -2496,10 +2839,20 @@ struct NetworkEngineSegmentedControl: NSViewRepresentable {
         // In the panel, equal segments sized to "● Transparent" came to about
         // 202 pt and overran its 184-pt slot and the card edge; segments sized
         // in proportion to their labels fill exactly the slot instead.
-        control.segmentDistribution = marksSelection ? .fillProportionally : .fillEqually
-        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        control.setAccessibilityIdentifier("network-engine-picker")
-        control.setAccessibilityLabel(AppLocalization.string("Network engine"))
+        let targetDistribution: NSSegmentedControl.Distribution = marksSelection ? .fillProportionally : .fillEqually
+        if control.segmentDistribution != targetDistribution {
+            control.segmentDistribution = targetDistribution
+        }
+        if control.contentHuggingPriority(for: .horizontal) != .defaultLow {
+            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        if control.accessibilityIdentifier() != "network-engine-picker" {
+            control.setAccessibilityIdentifier("network-engine-picker")
+        }
+        let accessibilityLabel = AppLocalization.string("Network engine")
+        if control.accessibilityLabel() != accessibilityLabel {
+            control.setAccessibilityLabel(accessibilityLabel)
+        }
     }
 
     final class Coordinator: NSObject {
@@ -2550,17 +2903,34 @@ struct RoutingModeSegmentedControl: NSViewRepresentable {
     private func configure(_ control: NSSegmentedControl) {
         let modes = RoutingMode.allCases
         for (index, mode) in modes.enumerated() {
-            control.setLabel(mode.localizedTitle, forSegment: index)
+            let label = mode.localizedTitle
+            if control.label(forSegment: index) != label {
+                control.setLabel(label, forSegment: index)
+            }
         }
-        control.selectedSegment = modes.firstIndex(of: selection) ?? -1
-        control.isEnabled = isEnabled
+        let targetSegment = modes.firstIndex(of: selection) ?? -1
+        if control.selectedSegment != targetSegment {
+            control.selectedSegment = targetSegment
+        }
+        if control.isEnabled != isEnabled {
+            control.isEnabled = isEnabled
+        }
         if marksSelection {
             control.markSelectedSegment()
         }
-        control.segmentDistribution = .fillEqually
-        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        control.setAccessibilityIdentifier("routing-mode-picker")
-        control.setAccessibilityLabel(AppLocalization.string("Routing mode"))
+        if control.segmentDistribution != .fillEqually {
+            control.segmentDistribution = .fillEqually
+        }
+        if control.contentHuggingPriority(for: .horizontal) != .defaultLow {
+            control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+        if control.accessibilityIdentifier() != "routing-mode-picker" {
+            control.setAccessibilityIdentifier("routing-mode-picker")
+        }
+        let accessibilityLabel = AppLocalization.string("Routing mode")
+        if control.accessibilityLabel() != accessibilityLabel {
+            control.setAccessibilityLabel(accessibilityLabel)
+        }
     }
 
     final class Coordinator: NSObject {
@@ -2632,20 +3002,13 @@ private struct ConnectionCountBadge: View {
 
 /// Opens the traffic statistics from the overview's traffic card.
 private struct TrafficStatisticsButton: View {
-    @EnvironmentObject private var tunnel: TunnelManager
-    @State private var isPresented = false
+    let action: () -> Void
 
     var body: some View {
-        Button(AppLocalization.string("Statistics…")) {
-            isPresented = true
-        }
-        .buttonStyle(.link)
-        .font(.caption)
-        .accessibilityIdentifier("overview-traffic-statistics")
-        .sheet(isPresented: $isPresented) {
-            TrafficStatisticsSheet(statistics: tunnel.trafficStatistics)
-                .environmentObject(tunnel)
-        }
+        Button(AppLocalization.string("Statistics…"), action: action)
+            .buttonStyle(.link)
+            .font(.caption)
+            .accessibilityIdentifier("overview-traffic-statistics")
     }
 }
 
@@ -2786,16 +3149,10 @@ private struct LiveMemoryWellValue: View {
                 return AppLocalization.string("Connect to measure")
             }
             let peak = max(model.snapshot.memoryBytes, TrafficHistory.peakCoreMemory(in: samples))
-            return String.localizedStringWithFormat(
-                AppLocalization.string("Peak %@"),
-                formattedBytes(peak)
-            )
+            return AppLocalization.format("Peak %@", formattedBytes(peak))
         case .app:
             let peak = max(model.appMemoryBytes, TrafficHistory.peakAppMemory(in: samples))
-            return String.localizedStringWithFormat(
-                AppLocalization.string("Peak %@"),
-                formattedBytes(peak)
-            )
+            return AppLocalization.format("Peak %@", formattedBytes(peak))
         }
     }
 }
@@ -2845,15 +3202,9 @@ private struct LiveMemoryTotalFooter: View {
     private var summaryText: String {
         if isConnected, model.snapshot.memoryBytes > 0 {
             let total = model.snapshot.memoryBytes + model.appMemoryBytes
-            return String.localizedStringWithFormat(
-                AppLocalization.string("Total %@"),
-                formattedBytes(total)
-            )
+            return AppLocalization.format("Total %@", formattedBytes(total))
         }
-        return String.localizedStringWithFormat(
-            AppLocalization.string("App %@"),
-            formattedBytes(model.appMemoryBytes)
-        )
+        return AppLocalization.format("App %@", formattedBytes(model.appMemoryBytes))
     }
 }
 
@@ -2861,11 +3212,13 @@ private struct LiveMemoryTotalFooter: View {
 /// traffic waveform, with a compact live memory status strip along the bottom.
 private struct TrafficCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isConnected: Bool
     let isRealtime: Bool
     let isBackground: Bool
     var subscriptionUsage: SubscriptionUsage? = nil
     let telemetry: NetworkTelemetryViewModel
+    let openStatistics: () -> Void
 
     private var usesStackedLayout: Bool {
         dynamicTypeSize >= .xxxLarge
@@ -2886,7 +3239,7 @@ private struct TrafficCard: View {
         .aetherPanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("overview-traffic")
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: isConnected)
+        .animation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion), value: isConnected)
     }
 
     private var trafficSection: some View {
@@ -2901,7 +3254,7 @@ private struct TrafficCard: View {
                     .foregroundStyle(AetherVisual.secondaryText)
                 // A leaf of its own: this card redraws with every traffic
                 // sample and must not observe TunnelManager itself.
-                TrafficStatisticsButton()
+                TrafficStatisticsButton(action: openStatistics)
             }
             if usesStackedLayout {
                 VStack(alignment: .leading, spacing: AetherVisual.s3) {
@@ -3023,7 +3376,7 @@ private struct LiveTrafficHistoryGraphFrozen: View {
             HStack {
                 Spacer(minLength: 0)
                 Text(LiveTrafficHistoryGraphActive.peakRate(samples).map {
-                    String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+                    AppLocalization.format("Peak %@", $0)
                 } ?? " ")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(AetherVisual.secondaryText)
@@ -3078,7 +3431,7 @@ private struct LiveTrafficHistoryGraphActive: View {
             HStack {
                 Spacer(minLength: 0)
                 Text(Self.peakRate(model.history.visible(at: windowEnd(at: .now, lastSample: lastSample))).map {
-                    String.localizedStringWithFormat(AppLocalization.string("Peak %@"), $0)
+                    AppLocalization.format("Peak %@", $0)
                 } ?? " ")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(AetherVisual.secondaryText)
@@ -3106,7 +3459,7 @@ private struct LiveTrafficHistoryGraphActive: View {
                             .transition(.opacity)
                     }
                 }
-                .animation(AetherVisual.animation(AetherVisual.quickFade), value: samples.count < 2)
+                .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: samples.count < 2)
             }
             HStack {
                 Text(AppLocalization.string("30 s ago"))
@@ -3126,9 +3479,12 @@ private struct LiveTrafficHistoryGraphActive: View {
     /// arrives; anchoring the window at the last sample keeps the final 30
     /// seconds on screen instead of sliding them off into an empty chart.
     private func windowEnd(at date: Date, lastSample: Date?) -> Date {
-        isRealtime
-            ? date.addingTimeInterval(-Self.entryLag)
-            : (lastSample ?? date)
+        guard isRealtime else { return lastSample ?? date }
+        let lagged = date.addingTimeInterval(-Self.entryLag)
+        if model.history.samples.count >= 2 {
+            return max(lagged, model.history.samples[1].date)
+        }
+        return lagged
     }
 
     fileprivate static func peakRate(_ samples: [TrafficHistory.Sample]) -> String? {
@@ -3146,9 +3502,9 @@ private struct LiveTrafficHistoryGraphActive: View {
                 Text(AppLocalization.string("Refresh: every 10 seconds"))
             } else if let lastSample {
                 Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("Paused while AetherRoute is in the background · updated %@"),
-                        lastSample.formatted(.dateTime.hour().minute().second())
+                    AppLocalization.format(
+                        "Paused while AetherRoute is in the background · updated %@",
+                        lastSample.formatted(.dateTime.hour().minute().second().locale(AppLocalization.currentLocale))
                     )
                 )
             } else {
@@ -3158,8 +3514,8 @@ private struct LiveTrafficHistoryGraphActive: View {
         .font(.caption)
         .foregroundStyle(AetherVisual.secondaryText)
         .contentTransition(.opacity)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isRealtime)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isBackground)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isRealtime)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isBackground)
     }
 }
 
@@ -3225,7 +3581,7 @@ struct UpdateAvailableBannerView: View {
     private var textContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
             HStack(spacing: AetherVisual.s1) {
-                Text(String(format: AppLocalization.string("AetherRoute v%@ is available"), version))
+                Text(AppLocalization.format("AetherRoute v%@ is available", version))
                     .font(.system(.subheadline, design: .default, weight: .semibold))
 
                 Text(AppLocalization.string("New"))
@@ -3259,6 +3615,8 @@ struct UpdateAvailableBannerView: View {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(AetherVisual.secondaryText)
+                    .frame(width: AetherVisual.iconButtonSize, height: AetherVisual.iconButtonSize)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(AppLocalization.string("Dismiss for this version"))

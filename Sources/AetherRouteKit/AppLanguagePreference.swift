@@ -37,3 +37,20 @@ public struct AppLanguagePreferenceStore {
         defaults.set(preference.rawValue, forKey: Self.storageKey)
     }
 }
+
+public enum AppLocalizationLocaleBridge {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var provider: @Sendable () -> Locale = {
+        .autoupdatingCurrent
+    }
+
+    public static var currentLocale: Locale {
+        lock.withLock { provider() }
+    }
+
+    public static func register(_ provider: @escaping @Sendable () -> Locale) {
+        lock.withLock {
+            self.provider = provider
+        }
+    }
+}

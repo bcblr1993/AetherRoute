@@ -99,7 +99,6 @@ extension TunnelManager {
         connectionReadinessAttemptID = attemptID
         isVerifyingProxyReadiness = true
         setConnectionQuality(.verifying)
-        connectionStage = .readinessCheck
         Self.runtimeLogger.info(
             "stage=connectionReadiness begin groups=\(groups.count, privacy: .public)"
         )
@@ -1320,7 +1319,8 @@ extension TunnelManager {
         guard recoveryAttemptID == attemptID,
               case .recovering = state,
               !isApplicationTerminating,
-              userIntendsToConnect else {
+              userIntendsToConnect,
+              automaticReconnectTask == nil else {
             Self.runtimeLogger.info("stage=recoveryWatchdog ignored reason=stale")
             return
         }
@@ -1377,12 +1377,51 @@ extension TunnelManager {
                 )
             )
         }
-        if (error as? ActiveProfileStoreError) == .appGroupUnavailable {
-            return LocalizedConnectionError(
-                message: AppLocalization.string(
+        if let activeError = error as? ActiveProfileStoreError {
+            let message: String
+            switch activeError {
+            case .appGroupUnavailable:
+                message = AppLocalization.string(
                     "AetherRoute could not access its shared storage. Quit and reopen the app, then try again. If the problem continues, export diagnostics."
                 )
-            )
+            case .legacyPlaintextProfileFound:
+                message = AppLocalization.string(
+                    "A legacy plaintext profile was found and must be migrated before connecting."
+                )
+            case .noActiveProfile:
+                message = AppLocalization.string("Import and activate a profile before connecting.")
+            case let .unsupportedFormat(version):
+                message = AppLocalization.format(
+                    "The active profile format version %lld is not supported.",
+                    Int64(clamping: version)
+                )
+            }
+            return LocalizedConnectionError(message: message)
+        }
+        if let providerError = error as? ProxySelectionProviderClientError {
+            let message: String
+            switch providerError {
+            case let .providerFailure(failure):
+                switch failure {
+                case .invalidRequest:
+                    message = AppLocalization.string("The network extension rejected an invalid proxy selection request.")
+                case .unavailable:
+                    message = AppLocalization.string("The live proxy selector is not available.")
+                case .rejected:
+                    message = AppLocalization.string("This proxy group does not support manual selection.")
+                case .responseTooLarge:
+                    message = AppLocalization.string("The proxy group is too large to display safely.")
+                case .internalFailure:
+                    message = AppLocalization.string("The network extension could not read the proxy selector.")
+                }
+            case .selectionNotApplied:
+                message = AppLocalization.string("The network extension did not confirm the selected proxy.")
+            case .routingModeNotApplied:
+                message = AppLocalization.string("The network extension did not confirm the routing mode.")
+            case .unexpectedResponse:
+                message = AppLocalization.string("The network extension returned an unexpected proxy response.")
+            }
+            return LocalizedConnectionError(message: message)
         }
         if let keyError = error as? ProfileKeyStoreError {
             let message: String
@@ -1424,17 +1463,13 @@ extension TunnelManager {
         let message: String
         switch resourceError {
         case let .missing(kind):
-            message = String.localizedStringWithFormat(
-                AppLocalization.string(
-                    "%@ is required by this profile. Add it in Profiles before connecting."
-                ),
+            message = AppLocalization.format(
+                "%@ is required by this profile. Add it in Profiles before connecting.",
                 kind.fileName
             )
         case let .stale(kind, _):
-            message = String.localizedStringWithFormat(
-                AppLocalization.string(
-                    "%@ is more than 30 days old. Update it in Profiles before connecting."
-                ),
+            message = AppLocalization.format(
+                "%@ is more than 30 days old. Update it in Profiles before connecting.",
                 kind.fileName
             )
         case let .checksumMismatch(kind),
@@ -1444,18 +1479,14 @@ extension TunnelManager {
              let .metadataUnreadable(kind),
              let .metadataTooLarge(kind),
              let .metadataMismatch(kind):
-            message = String.localizedStringWithFormat(
-                AppLocalization.string(
-                    "%@ failed validation. Replace it in Profiles before connecting."
-                ),
+            message = AppLocalization.format(
+                "%@ failed validation. Replace it in Profiles before connecting.",
                 kind.fileName
             )
         case let .resourceTooSmall(kind, _),
              let .resourceTooLarge(kind, _):
-            message = String.localizedStringWithFormat(
-                AppLocalization.string(
-                    "%@ has an invalid size. Replace it in Profiles before connecting."
-                ),
+            message = AppLocalization.format(
+                "%@ has an invalid size. Replace it in Profiles before connecting.",
                 kind.fileName
             )
         case .writeFailed:

@@ -12,6 +12,7 @@ struct CustomProxyGroupSheet: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
     let initial: CustomProxyGroup?
+    let onSaved: ((String?) -> Void)?
 
     private enum GroupKindOption: String, CaseIterable, Identifiable {
         case select
@@ -29,7 +30,7 @@ struct CustomProxyGroupSheet: View {
             case .urlTest:
                 AppLocalization.string("Auto Latency (url-test)")
             case .fallback:
-                AppLocalization.string("Fallback")
+                AppLocalization.string("Fallback (failover)")
             case .loadBalance:
                 AppLocalization.string("Load Balance")
             case .smart:
@@ -56,15 +57,23 @@ struct CustomProxyGroupSheet: View {
     @State private var cachedPreview: (members: [String], conflict: Bool)?
     @State private var isSaving = false
     @State private var saveFailed = false
+    @State private var saveErrorMessage: String?
     @State private var requestsCancel = false
     @State private var confirmsDelete = false
     @State private var showsNodePicker = false
 
     /// "" means the group is not listed anywhere.
     private static let noParent = ""
+    private static let presetIntervals = [120, 300, 600, 1_800]
+    private static let presetTolerances = [20, 50, 100, 150]
 
-    init(initial: CustomProxyGroup? = nil, defaultParent: String? = nil) {
+    init(
+        initial: CustomProxyGroup? = nil,
+        defaultParent: String? = nil,
+        onSaved: ((String?) -> Void)? = nil
+    ) {
         self.initial = initial
+        self.onSaved = onSaved
         _draftID = State(initialValue: initial?.id ?? UUID())
         _name = State(initialValue: initial?.name ?? "")
         _regions = State(initialValue: Set(initial?.regions ?? []))
@@ -122,7 +131,7 @@ struct CustomProxyGroupSheet: View {
         CustomProxyGroup(
             id: draftID,
             name: name,
-            regions: Array(regions),
+            regions: regions.sorted(),
             includeKeywords: Self.keywords(includeText),
             excludeKeywords: Self.keywords(excludeText),
             manualNodes: manualNodes,
@@ -130,6 +139,21 @@ struct CustomProxyGroupSheet: View {
             groupKind: resolvedGroupKind,
             parentGroup: parentGroup == Self.noParent ? nil : parentGroup,
             position: position
+        )
+    }
+
+    private static func normalized(_ group: CustomProxyGroup) -> CustomProxyGroup {
+        CustomProxyGroup(
+            id: group.id,
+            name: group.name,
+            regions: group.regions.sorted(),
+            includeKeywords: group.includeKeywords,
+            excludeKeywords: group.excludeKeywords,
+            manualNodes: group.manualNodes,
+            mode: group.mode,
+            groupKind: group.groupKind,
+            parentGroup: group.parentGroup,
+            position: group.position
         )
     }
 
@@ -191,10 +215,13 @@ struct CustomProxyGroupSheet: View {
 
     private var hasChanges: Bool {
         guard let initial else {
-            return !name.isEmpty || !regions.isEmpty || !includeText.isEmpty
-                || !excludeText.isEmpty || !manualNodes.isEmpty
+            return !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !regions.isEmpty
+                || !includeText.isEmpty
+                || !excludeText.isEmpty
+                || !manualNodes.isEmpty
         }
-        return candidate != initial
+        return candidate != Self.normalized(initial)
     }
 
     var body: some View {
@@ -217,8 +244,8 @@ struct CustomProxyGroupSheet: View {
             }
             .frame(minHeight: AetherVisual.sheetFormMinHeight, idealHeight: AetherVisual.sheetFormIdealHeight, maxHeight: AetherVisual.sheetFormMaxHeight)
 
-            if saveFailed, let message = tunnel.profileMessage {
-                AetherInlineMessage(text: message)
+            if saveFailed {
+                AetherInlineMessage(text: resolvedSaveErrorMessage)
             }
 
             footer
@@ -229,15 +256,6 @@ struct CustomProxyGroupSheet: View {
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: preview?.members)
         .disabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
-        .confirmationDialog(
-            String.localizedStringWithFormat(AppLocalization.string("Delete the group %@?"), initial?.name ?? ""),
-            isPresented: $confirmsDelete
-        ) {
-            Button(AppLocalization.string("Delete Group"), role: .destructive) { delete() }
-                .accessibilityIdentifier("custom-group-confirm-delete")
-        } message: {
-            Text(AppLocalization.string("Groups that list it no longer do. The subscription itself is not changed."))
-        }
         // A container's identifier would otherwise replace every child's.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("custom-group-sheet")
@@ -254,6 +272,16 @@ struct CustomProxyGroupSheet: View {
             guard !Task.isCancelled else { return }
             recomputePreviewNow()
         }
+    }
+
+    private var resolvedSaveErrorMessage: String {
+        if let saveErrorMessage, !saveErrorMessage.isEmpty {
+            return saveErrorMessage
+        }
+        if tunnel.profileMessageIsError, let message = tunnel.profileMessage, !message.isEmpty {
+            return message
+        }
+        return AppLocalization.string("Could not save overrides. Check the active profile and try again.")
     }
 
     private var settingsCard: some View {
@@ -283,6 +311,9 @@ struct CustomProxyGroupSheet: View {
                         Text(AppLocalization.string("300s")).tag(300)
                         Text(AppLocalization.string("600s")).tag(600)
                         Text(AppLocalization.string("1800s")).tag(1_800)
+                        if !Self.presetIntervals.contains(probeInterval) {
+                            Text(AppLocalization.format("%llds", Int64(probeInterval))).tag(probeInterval)
+                        }
                     }
                     .labelsHidden()
                     .fixedSize()
@@ -297,6 +328,9 @@ struct CustomProxyGroupSheet: View {
                         Text(AppLocalization.string("50 ms")).tag(50)
                         Text(AppLocalization.string("100 ms")).tag(100)
                         Text(AppLocalization.string("150 ms")).tag(150)
+                        if !Self.presetTolerances.contains(urlTestTolerance) {
+                            Text(AppLocalization.format("%lld ms", Int64(urlTestTolerance))).tag(urlTestTolerance)
+                        }
                     }
                     .labelsHidden()
                     .fixedSize()
@@ -332,10 +366,13 @@ struct CustomProxyGroupSheet: View {
             OverrideFormRow(AppLocalization.string("Show in")) {
                 Picker(AppLocalization.string("Show in"), selection: $parentGroup) {
                     Text(AppLocalization.string("No other group")).tag(Self.noParent)
-                    ForEach(parentOptions, id: \.self) { Text($0).tag($0) }
+                    ForEach(parentOptions, id: \.self) { Text(verbatim: $0).tag($0) }
+                    if parentGroup != Self.noParent, !parentOptions.contains(parentGroup) {
+                        Text(AppLocalization.format("%@ (not in this profile)", parentGroup)).tag(parentGroup)
+                    }
                 }
                 .labelsHidden()
-                .fixedSize()
+                .frame(maxWidth: 280, alignment: .trailing)
                 .accessibilityIdentifier("custom-group-parent")
             }
             if parentGroup != Self.noParent {
@@ -399,7 +436,7 @@ struct CustomProxyGroupSheet: View {
                     } label: {
                         Text(manualNodes.isEmpty
                              ? AppLocalization.string("Choose…")
-                             : String.localizedStringWithFormat(AppLocalization.string("%lld chosen"), Int64(manualNodes.count)))
+                             : AppLocalization.format("%lld chosen", Int64(manualNodes.count)))
                     }
                     .aetherButton()
                     .controlSize(.small)
@@ -444,7 +481,7 @@ struct CustomProxyGroupSheet: View {
                         .padding(.horizontal, AetherVisual.sectionHeaderInset)
                     } else {
                         MemberPreviewList(
-                            caption: String.localizedStringWithFormat(AppLocalization.string("%lld nodes match"), Int64(preview.members.count)),
+                            caption: AppLocalization.format("%lld nodes match", Int64(preview.members.count)),
                             members: preview.members
                         )
                     }
@@ -459,11 +496,21 @@ struct CustomProxyGroupSheet: View {
                 Button(AppLocalization.string("Delete Group"), role: .destructive) { confirmsDelete = true }
                     .aetherButton()
                     .accessibilityIdentifier("custom-group-delete")
+                    .confirmationDialog(
+                        AppLocalization.format("Delete the group %@?", initial?.name ?? ""),
+                        isPresented: $confirmsDelete
+                    ) {
+                        Button(AppLocalization.string("Delete Group"), role: .destructive) { delete() }
+                            .accessibilityIdentifier("custom-group-confirm-delete")
+                    } message: {
+                        Text(AppLocalization.string("Groups that list it no longer do. The subscription itself is not changed."))
+                    }
             }
             Spacer()
             Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                 .aetherButton()
                 .keyboardShortcut(.cancelAction)
+                .disabled(isSaving)
             Button {
                 save()
             } label: {
@@ -471,25 +518,38 @@ struct CustomProxyGroupSheet: View {
             }
             .aetherButton(prominent: true)
             .keyboardShortcut(.defaultAction)
-            .disabled(!canSave)
+            .disabled(!canSave || isSaving)
             .accessibilityIdentifier("custom-group-save")
         }
         .controlSize(.large)
     }
 
     private var canSave: Bool {
-        guard case .success = proposed, let preview else { return false }
-        return !preview.conflict && hasChanges
+        guard case .success = proposed, hasChanges else { return false }
+        return !(preview?.conflict ?? false)
     }
 
     private func save() {
-        guard case let .success(overrides) = proposed else { return }
-        isSaving = true
         saveFailed = false
+        saveErrorMessage = nil
+        recomputePreviewNow()
+        if preview?.conflict == true {
+            saveErrorMessage = AppLocalization.string("A node or group in this profile already has this name.")
+            saveFailed = true
+            return
+        }
+        guard case let .success(overrides) = proposed else { return }
+        let savedGroupName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSaving = true
         Task {
             let saved = await tunnel.setProfileOverrides(overrides)
             isSaving = false
-            if saved { dismiss() } else { saveFailed = true }
+            if saved {
+                onSaved?(savedGroupName.isEmpty ? nil : savedGroupName)
+                dismiss()
+            } else {
+                saveFailed = true
+            }
         }
     }
 
@@ -497,11 +557,18 @@ struct CustomProxyGroupSheet: View {
         guard let initial else { return }
         var overrides = tunnel.activeProfileOverrides
         overrides.groups.removeAll { $0.id == initial.id }
+        saveFailed = false
+        saveErrorMessage = nil
         isSaving = true
         Task {
             let saved = await tunnel.setProfileOverrides(overrides)
             isSaving = false
-            if saved { dismiss() } else { saveFailed = true }
+            if saved {
+                onSaved?(nil)
+                dismiss()
+            } else {
+                saveFailed = true
+            }
         }
     }
 
@@ -594,11 +661,11 @@ struct RegionGroupsSheet: View {
                                 }
                             )) {
                                 HStack {
-                                    Text(name)
+                                    Text(verbatim: name)
                                     Spacer()
                                     Text(exists
                                          ? AppLocalization.string("Already exists")
-                                         : String.localizedStringWithFormat(AppLocalization.string("%lld nodes"), Int64(region.nodeCount)))
+                                         : AppLocalization.format("%lld nodes", Int64(region.nodeCount)))
                                         .foregroundStyle(AetherVisual.secondaryText)
                                         .monospacedDigit()
                                 }
@@ -630,18 +697,21 @@ struct RegionGroupsSheet: View {
                     OverrideFormRow(AppLocalization.string("Show in")) {
                         Picker(AppLocalization.string("Show in"), selection: $parentGroup) {
                             Text(AppLocalization.string("No other group")).tag("")
-                            ForEach(parentOptions, id: \.self) { Text($0).tag($0) }
+                            ForEach(parentOptions, id: \.self) { Text(verbatim: $0).tag($0) }
+                            if !parentGroup.isEmpty, !parentOptions.contains(parentGroup) {
+                                Text(AppLocalization.format("%@ (not in this profile)", parentGroup)).tag(parentGroup)
+                            }
                         }
                         .labelsHidden()
-                        .fixedSize()
+                        .frame(maxWidth: 280, alignment: .trailing)
                         .accessibilityIdentifier("region-groups-parent")
                     }
                 }
                 .aetherPanel()
             }
 
-            if saveFailed, let message = tunnel.profileMessage {
-                AetherInlineMessage(text: message)
+            if saveFailed {
+                AetherInlineMessage(text: resolvedSaveErrorMessage)
             }
 
             HStack(spacing: AetherVisual.s2) {
@@ -654,7 +724,7 @@ struct RegionGroupsSheet: View {
                     create()
                 } label: {
                     AetherProgressButtonLabel(
-                        String.localizedStringWithFormat(AppLocalization.string("Create %lld groups"), Int64(selectedRegions.count)),
+                        AppLocalization.format("Create %lld groups", Int64(selectedRegions.count)),
                         isWorking: isSaving
                     )
                 }
@@ -668,7 +738,6 @@ struct RegionGroupsSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .disabled(isSaving)
-        .interactiveDismissDisabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .onAppear {
             // Every region with a free name starts chosen.
@@ -677,6 +746,13 @@ struct RegionGroupsSheet: View {
         // A container's identifier would otherwise replace every child's.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("region-groups-sheet")
+    }
+
+    private var resolvedSaveErrorMessage: String {
+        if tunnel.profileMessageIsError, let message = tunnel.profileMessage, !message.isEmpty {
+            return message
+        }
+        return AppLocalization.string("Could not save overrides. Check the active profile and try again.")
     }
 
     private var selectedRegions: [ProfileOverrideSuggestions.Region] {
@@ -717,20 +793,30 @@ struct HiddenNodesSheet: View {
     @State private var saveFailed = false
     @State private var requestsCancel = false
 
+    private var effectiveKeywords: [String] {
+        var merged = keywords
+        for word in CustomProxyGroupSheet.keywords(draft)
+            where !merged.contains(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) {
+            merged.append(word)
+        }
+        return merged
+    }
+
     private var hasChanges: Bool {
-        keywords != tunnel.activeProfileOverrides.hiddenNodeKeywords
-            || !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        effectiveKeywords != tunnel.activeProfileOverrides.hiddenNodeKeywords
     }
 
     private var nodes: [String] { tunnel.activeProfileNodeNames }
 
     private var hidden: [String] {
-        let lowered = keywords.map { $0.lowercased() }
+        let lowered = effectiveKeywords.map { $0.lowercased() }
         return nodes.filter { node in lowered.contains { node.lowercased().contains($0) } }
     }
 
     private var suggestions: [String] {
-        ProfileOverrideSuggestions.noticeKeywords(in: nodes).filter { !keywords.contains($0) }
+        ProfileOverrideSuggestions.noticeKeywords(in: nodes).filter { candidate in
+            !effectiveKeywords.contains { $0.caseInsensitiveCompare(candidate) == .orderedSame }
+        }
     }
 
     var body: some View {
@@ -742,60 +828,67 @@ struct HiddenNodesSheet: View {
                 tint: AppSection.proxies.tileColor
             )
 
-            VStack(alignment: .leading, spacing: AetherVisual.s3) {
-                HStack(spacing: AetherVisual.s2) {
-                    TextField(AppLocalization.string("Add a word, e.g. Expire"), text: $draft)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(addDraft)
-                        .accessibilityLabel(AppLocalization.string("Hide nodes"))
-                        .accessibilityIdentifier("hidden-nodes-field")
-                    Button(AppLocalization.string("Add"), action: addDraft)
-                        .aetherButton()
-                        .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                if !keywords.isEmpty {
-                    AetherFlowLayout(spacing: AetherVisual.s1) {
-                        ForEach(keywords, id: \.self) { keyword in
-                            KeywordChip(title: keyword, systemImage: "xmark") {
-                                keywords.removeAll { $0 == keyword }
+            ScrollView {
+                VStack(alignment: .leading, spacing: AetherVisual.s4) {
+                    VStack(alignment: .leading, spacing: AetherVisual.s3) {
+                        HStack(spacing: AetherVisual.s2) {
+                            TextField(AppLocalization.string("Add a word, e.g. Expire"), text: $draft)
+                                .textFieldStyle(.roundedBorder)
+                                .onSubmit(addDraft)
+                                .accessibilityLabel(AppLocalization.string("Hide nodes"))
+                                .accessibilityIdentifier("hidden-nodes-field")
+                            Button(AppLocalization.string("Add"), action: addDraft)
+                                .aetherButton()
+                                .disabled(CustomProxyGroupSheet.keywords(draft).isEmpty)
+                        }
+                        if !keywords.isEmpty {
+                            AetherFlowLayout(spacing: AetherVisual.s1) {
+                                ForEach(keywords, id: \.self) { keyword in
+                                    KeywordChip(title: keyword, systemImage: "xmark") {
+                                        keywords.removeAll { $0 == keyword }
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-                if !suggestions.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
-                        Text(AppLocalization.string("Found in this profile:"))
-                            .font(.caption)
-                            .foregroundStyle(AetherVisual.secondaryText)
-                        AetherFlowLayout(spacing: AetherVisual.s1) {
-                            ForEach(suggestions, id: \.self) { keyword in
-                                KeywordChip(title: keyword, systemImage: "plus") {
-                                    keywords.append(keyword)
+                        if !suggestions.isEmpty {
+                            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
+                                Text(AppLocalization.string("Found in this profile:"))
+                                    .font(.caption)
+                                    .foregroundStyle(AetherVisual.secondaryText)
+                                AetherFlowLayout(spacing: AetherVisual.s1) {
+                                    ForEach(suggestions, id: \.self) { suggestion in
+                                        KeywordChip(title: suggestion, systemImage: "plus") {
+                                            if !keywords.contains(where: { $0.caseInsensitiveCompare(suggestion) == .orderedSame }) {
+                                                keywords.append(suggestion)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
+                    .padding(AetherVisual.s4)
+                    .aetherPanel()
+
+                    if hidden.isEmpty {
+                        Text(effectiveKeywords.isEmpty
+                             ? AppLocalization.string("No node is hidden.")
+                             : AppLocalization.string("No node name contains these words."))
+                            .font(.callout)
+                            .foregroundStyle(AetherVisual.secondaryText)
+                            .padding(.horizontal, AetherVisual.sectionHeaderInset)
+                    } else {
+                        MemberPreviewList(
+                            caption: AppLocalization.format("%lld nodes hidden", Int64(hidden.count)),
+                            members: hidden
+                        )
+                    }
                 }
             }
-            .padding(AetherVisual.s4)
-            .aetherPanel()
+            .frame(maxHeight: 360)
 
-            if hidden.isEmpty {
-                Text(keywords.isEmpty
-                     ? AppLocalization.string("No node is hidden.")
-                     : AppLocalization.string("No node name contains these words."))
-                    .font(.callout)
-                    .foregroundStyle(AetherVisual.secondaryText)
-                    .padding(.horizontal, AetherVisual.sectionHeaderInset)
-            } else {
-                MemberPreviewList(
-                    caption: String.localizedStringWithFormat(AppLocalization.string("%lld nodes hidden"), Int64(hidden.count)),
-                    members: hidden
-                )
-            }
-
-            if saveFailed, let message = tunnel.profileMessage {
-                AetherInlineMessage(text: message)
+            if saveFailed {
+                AetherInlineMessage(text: resolvedSaveErrorMessage)
             }
 
             HStack(spacing: AetherVisual.s2) {
@@ -811,7 +904,7 @@ struct HiddenNodesSheet: View {
                 }
                 .aetherButton(prominent: true)
                 .keyboardShortcut(.defaultAction)
-                .disabled(isSaving || keywords == tunnel.activeProfileOverrides.hiddenNodeKeywords)
+                .disabled(isSaving || !hasChanges)
                 .accessibilityIdentifier("hidden-nodes-save")
             }
             .controlSize(.large)
@@ -819,7 +912,6 @@ struct HiddenNodesSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .disabled(isSaving)
-        .interactiveDismissDisabled(isSaving)
         .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: keywords)
         .onAppear { keywords = tunnel.activeProfileOverrides.hiddenNodeKeywords }
@@ -828,14 +920,23 @@ struct HiddenNodesSheet: View {
         .accessibilityIdentifier("hidden-nodes-sheet")
     }
 
+    private var resolvedSaveErrorMessage: String {
+        if tunnel.profileMessageIsError, let message = tunnel.profileMessage, !message.isEmpty {
+            return message
+        }
+        return AppLocalization.string("Could not save overrides. Check the active profile and try again.")
+    }
+
     private func addDraft() {
-        for word in CustomProxyGroupSheet.keywords(draft) where !keywords.contains(word) {
+        for word in CustomProxyGroupSheet.keywords(draft)
+            where !keywords.contains(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) {
             keywords.append(word)
         }
         draft = ""
     }
 
     private func save() {
+        addDraft()
         var overrides = tunnel.activeProfileOverrides
         overrides.hiddenNodeKeywords = keywords
         isSaving = true
@@ -868,6 +969,7 @@ struct ChainedProxySheet: View {
     @State private var existingNodeName: String
     @State private var customNode: AetherNode
     @State private var portText: String
+    @State private var allowedIPsText: String
     @State private var parentGroup: String
     @State private var position: CustomProxyGroup.Position
     @State private var cachedProfileNodes: [String] = []
@@ -876,6 +978,7 @@ struct ChainedProxySheet: View {
     @State private var pasteFeedback: (message: String, isError: Bool)?
     @State private var isSaving = false
     @State private var saveFailed = false
+    @State private var saveErrorMessage: String?
     @State private var requestsCancel = false
     @State private var confirmsDelete = false
 
@@ -898,17 +1001,24 @@ struct ChainedProxySheet: View {
             let seed = Self.defaultCustomNode()
             _customNode = State(initialValue: seed)
             _portText = State(initialValue: String(seed.port))
+            _allowedIPsText = State(initialValue: "0.0.0.0/0, ::/0")
         case let .customNode(node):
             _landingMode = State(initialValue: .customNode)
             _existingNodeName = State(initialValue: "")
             _customNode = State(initialValue: node)
             _portText = State(initialValue: String(node.port))
+            _allowedIPsText = State(
+                initialValue: node.allowedIPs.isEmpty
+                    ? "0.0.0.0/0, ::/0"
+                    : node.allowedIPs.joined(separator: ", ")
+            )
         case nil:
             _landingMode = State(initialValue: .customNode)
             _existingNodeName = State(initialValue: "")
             let seed = Self.defaultCustomNode()
             _customNode = State(initialValue: seed)
             _portText = State(initialValue: String(seed.port))
+            _allowedIPsText = State(initialValue: "0.0.0.0/0, ::/0")
         }
     }
 
@@ -932,7 +1042,15 @@ struct ChainedProxySheet: View {
         } else {
             copy.port = 0
         }
-        copy.dialerProxy = nil
+        if copy.protocolID == .wireGuard {
+            copy.privateKey = copy.privateKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            copy.publicKey = copy.publicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+            copy.localAddress = copy.localAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+            copy.allowedIPs = allowedIPsText
+                .split(whereSeparator: { $0 == "," || $0.isNewline })
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        }
         return copy
     }
 
@@ -957,9 +1075,12 @@ struct ChainedProxySheet: View {
         Result {
             if landingMode == .customNode {
                 guard let parsedPort = UInt16(portText.trimmingCharacters(in: .whitespacesAndNewlines)), parsedPort > 0 else {
-                    throw ProfileOverrideError.invalidChainedProxy
+                    throw AetherNodeValidationError.invalidField("Port")
                 }
                 _ = parsedPort
+                var nodeToValidate = syncedCustomNode
+                nodeToValidate.dialerProxy = nil
+                _ = try nodeToValidate.validated()
             }
             var overrides = tunnel.activeProfileOverrides
             let item = try candidate.validated()
@@ -1063,8 +1184,8 @@ struct ChainedProxySheet: View {
                 maxHeight: AetherVisual.sheetFormMaxHeight
             )
 
-            if saveFailed, let message = tunnel.profileMessage {
-                AetherInlineMessage(text: message)
+            if saveFailed {
+                AetherInlineMessage(text: resolvedSaveErrorMessage)
             }
 
             footer
@@ -1084,24 +1205,30 @@ struct ChainedProxySheet: View {
             refreshChainedNodeInventory()
             recomputeChainedDiagnosticsNow()
         }
-        .task(id: "\(candidate.id)|\(name)|\(dialerProxy)|\(landingMode)|\(existingNodeName)|\(customNode.server)|\(portText)|\(parentGroup)") {
+        .task(id: candidate) {
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
             recomputeChainedDiagnosticsNow()
         }
         .onChange(of: parentGroup) { _, newParent in
-            if !profileGroups.contains(dialerProxy) && !profileNodes.contains(dialerProxy) {
+            if !newParent.isEmpty, dialerProxy == newParent {
                 dialerProxy = defaultDialerProxy(forParent: newParent)
             }
         }
         .sheet(isPresented: $showsFullNodeEditor) {
+            let previousSyncedName = syncedCustomNode.name
             ManualNodeEditorSheet(
                 initialNode: syncedCustomNode,
                 save: { updated in
                     customNode = updated
                     portText = String(updated.port)
-                    if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                       updated.name != "Landing Node" {
+                    allowedIPsText = updated.allowedIPs.isEmpty
+                        ? "0.0.0.0/0, ::/0"
+                        : updated.allowedIPs.joined(separator: ", ")
+                    if updated.name != previousSyncedName, updated.name != "Landing Node" {
+                        name = updated.name
+                    } else if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                              updated.name != "Landing Node" {
                         name = updated.name
                     }
                     return true
@@ -1109,20 +1236,18 @@ struct ChainedProxySheet: View {
             )
             .environmentObject(tunnel)
         }
-        .confirmationDialog(
-            String.localizedStringWithFormat(
-                AppLocalization.string("Delete the chained proxy %@?"),
-                initial?.name ?? ""
-            ),
-            isPresented: $confirmsDelete
-        ) {
-            Button(AppLocalization.string("Delete Chained Proxy"), role: .destructive) { delete() }
-                .accessibilityIdentifier("chained-proxy-confirm-delete")
-        } message: {
-            Text(AppLocalization.string("Groups that list it no longer do. The subscription itself is not changed."))
-        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chained-proxy-sheet")
+    }
+
+    private var resolvedSaveErrorMessage: String {
+        if let saveErrorMessage, !saveErrorMessage.isEmpty {
+            return saveErrorMessage
+        }
+        if tunnel.profileMessageIsError, let message = tunnel.profileMessage, !message.isEmpty {
+            return message
+        }
+        return AppLocalization.string("Could not save overrides. Check the active profile and try again.")
     }
 
     private var chainDiagramCard: some View {
@@ -1130,7 +1255,7 @@ struct ChainedProxySheet: View {
             HStack(spacing: AetherVisual.s3) {
                 chainHopStep(
                     symbol: "laptopcomputer",
-                    tint: .secondary,
+                    tint: .gray,
                     label: AppLocalization.string("This Mac"),
                     value: AppLocalization.string("Local apps")
                 )
@@ -1153,7 +1278,7 @@ struct ChainedProxySheet: View {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 chainHopStep(
                     symbol: "laptopcomputer",
-                    tint: .secondary,
+                    tint: .gray,
                     label: AppLocalization.string("This Mac"),
                     value: AppLocalization.string("Local apps")
                 )
@@ -1231,6 +1356,11 @@ struct ChainedProxySheet: View {
             VStack(spacing: 0) {
                 OverrideFormRow(AppLocalization.string("Dial through")) {
                     Picker(AppLocalization.string("Dial through"), selection: $dialerProxy) {
+                        if !dialerProxy.isEmpty,
+                           !profileGroups.contains(dialerProxy),
+                           !profileNodes.contains(dialerProxy) {
+                            Text(AppLocalization.format("%@ (not in this profile)", dialerProxy)).tag(dialerProxy)
+                        }
                         if !profileGroups.isEmpty {
                             Section(AppLocalization.string("Proxy groups")) {
                                 ForEach(profileGroups, id: \.self) { groupName in
@@ -1279,6 +1409,9 @@ struct ChainedProxySheet: View {
                 case .existingNode:
                     OverrideFormRow(AppLocalization.string("Target node")) {
                         Picker(AppLocalization.string("Target node"), selection: $existingNodeName) {
+                            if !existingNodeName.isEmpty, !profileNodes.contains(existingNodeName) {
+                                Text(AppLocalization.format("%@ (not in this profile)", existingNodeName)).tag(existingNodeName)
+                            }
                             ForEach(profileNodes, id: \.self) { nodeName in
                                 Text(verbatim: nodeName).tag(nodeName)
                             }
@@ -1393,7 +1526,7 @@ struct ChainedProxySheet: View {
             }
         case .vmess, .vless:
             OverrideFormRow(AppLocalization.string("UUID")) {
-                TextField(AppLocalization.string("UUID"), text: $customNode.uuid)
+                SecureField(AppLocalization.string("UUID"), text: $customNode.uuid)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("UUID"))
                     .accessibilityIdentifier("chained-proxy-uuid-field")
@@ -1403,12 +1536,14 @@ struct ChainedProxySheet: View {
                 TextField(AppLocalization.string("Cipher"), text: $customNode.cipher)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Cipher"))
+                    .accessibilityIdentifier("chained-proxy-cipher")
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
+                    .accessibilityIdentifier("chained-proxy-password-field")
             }
         case .trojan, .hysteria, .hysteria2, .anyTLS, .snell:
             OverrideFormRow(AppLocalization.string("Password")) {
@@ -1419,45 +1554,80 @@ struct ChainedProxySheet: View {
             }
         case .tuic:
             OverrideFormRow(AppLocalization.string("UUID")) {
-                TextField(AppLocalization.string("UUID"), text: $customNode.uuid)
+                SecureField(AppLocalization.string("UUID"), text: $customNode.uuid)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("UUID"))
+                    .accessibilityIdentifier("chained-proxy-uuid-field")
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
+                    .accessibilityIdentifier("chained-proxy-password-field")
             }
         case .mieru, .ssh:
             OverrideFormRow(AppLocalization.string("Username")) {
                 TextField(AppLocalization.string("Username"), text: $customNode.username)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Username"))
+                    .accessibilityIdentifier("chained-proxy-username-field")
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
+                    .accessibilityIdentifier("chained-proxy-password-field")
             }
         case .wireGuard:
+            OverrideFormRow(AppLocalization.string("Private key")) {
+                SecureField(AppLocalization.string("Private key"), text: $customNode.privateKey)
+                    .overrideInputField()
+                    .accessibilityLabel(AppLocalization.string("Private key"))
+                    .accessibilityIdentifier("chained-proxy-wireguard-private-key")
+            }
+            Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Peer public key")) {
                 TextField(AppLocalization.string("Peer public key"), text: $customNode.publicKey)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Peer public key"))
+                    .accessibilityIdentifier("chained-proxy-wireguard-public-key")
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Local IPv4 CIDR")) {
+                TextField(AppLocalization.string("Local IPv4 CIDR"), text: $customNode.localAddress)
+                    .overrideInputField()
+                    .accessibilityLabel(AppLocalization.string("Local IPv4 CIDR"))
+                    .accessibilityIdentifier("chained-proxy-wireguard-local-address")
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Allowed IPs")) {
+                TextField(AppLocalization.string("Allowed IPs"), text: $allowedIPsText)
+                    .overrideInputField()
+                    .accessibilityLabel(AppLocalization.string("Allowed IPs"))
+                    .accessibilityIdentifier("chained-proxy-wireguard-allowed-ips")
             }
         case .shadowQUIC:
             OverrideFormRow(AppLocalization.string("Username")) {
                 TextField(AppLocalization.string("Username"), text: $customNode.username)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Username"))
+                    .accessibilityIdentifier("chained-proxy-username-field")
             }
             Divider().padding(.leading, AetherVisual.s4)
             OverrideFormRow(AppLocalization.string("Password")) {
                 SecureField(AppLocalization.string("Password"), text: $customNode.password)
                     .overrideInputField()
                     .accessibilityLabel(AppLocalization.string("Password"))
+                    .accessibilityIdentifier("chained-proxy-password-field")
+            }
+            Divider().padding(.leading, AetherVisual.s4)
+            OverrideFormRow(AppLocalization.string("Server name (SNI)")) {
+                TextField(AppLocalization.string("Server name (SNI)"), text: $customNode.tls.serverName)
+                    .overrideInputField()
+                    .accessibilityLabel(AppLocalization.string("Server name (SNI)"))
+                    .accessibilityIdentifier("chained-proxy-sni-field")
             }
         }
     }
@@ -1476,10 +1646,13 @@ struct ChainedProxySheet: View {
                 OverrideFormRow(AppLocalization.string("Show in")) {
                     Picker(AppLocalization.string("Show in"), selection: $parentGroup) {
                         ForEach(parentOptions, id: \.self) { Text(verbatim: $0).tag($0) }
+                        if parentGroup != Self.noParent, !parentOptions.contains(parentGroup) {
+                            Text(AppLocalization.format("%@ (not in this profile)", parentGroup)).tag(parentGroup)
+                        }
                         Text(AppLocalization.string("Standalone \"Chained Proxies\" group")).tag(Self.noParent)
                     }
                     .labelsHidden()
-                    .fixedSize()
+                    .frame(maxWidth: 280, alignment: .trailing)
                     .accessibilityIdentifier("chained-proxy-parent")
                 }
                 if parentGroup != Self.noParent {
@@ -1544,11 +1717,21 @@ struct ChainedProxySheet: View {
                 }
                 .aetherButton()
                 .accessibilityIdentifier("chained-proxy-delete")
+                .confirmationDialog(
+                    AppLocalization.format("Delete the chained proxy %@?", initial?.name ?? ""),
+                    isPresented: $confirmsDelete
+                ) {
+                    Button(AppLocalization.string("Delete Chained Proxy"), role: .destructive) { delete() }
+                        .accessibilityIdentifier("chained-proxy-confirm-delete")
+                } message: {
+                    Text(AppLocalization.string("Groups that list it no longer do. The subscription itself is not changed."))
+                }
             }
             Spacer()
             Button(AppLocalization.string("Cancel"), role: .cancel) { requestsCancel = true }
                 .aetherButton()
                 .keyboardShortcut(.cancelAction)
+                .disabled(isSaving)
             Button {
                 save()
             } label: {
@@ -1556,7 +1739,7 @@ struct ChainedProxySheet: View {
             }
             .aetherButton(prominent: true)
             .keyboardShortcut(.defaultAction)
-            .disabled(!canSave)
+            .disabled(!canSave || isSaving)
             .accessibilityIdentifier("chained-proxy-save")
         }
         .controlSize(.large)
@@ -1595,10 +1778,10 @@ struct ChainedProxySheet: View {
         if initial == nil, parentGroup == Self.noParent, let firstParent = parentOptions.first {
             parentGroup = firstParent
         }
-        if dialerProxy.isEmpty || (!profileGroups.contains(dialerProxy) && !profileNodes.contains(dialerProxy)) {
+        if initial == nil, dialerProxy.isEmpty {
             dialerProxy = defaultDialerProxy(forParent: parentGroup)
         }
-        if existingNodeName.isEmpty {
+        if initial == nil, existingNodeName.isEmpty {
             existingNodeName = profileNodes.first {
                 $0 != dialerProxy && InitialProxySelectionPolicy.isRouteCandidate($0)
             } ?? profileNodes.first { $0 != dialerProxy } ?? profileNodes.first ?? ""
@@ -1637,6 +1820,12 @@ struct ChainedProxySheet: View {
             portText = "22"
         case .wireGuard:
             customNode.tls.enabled = false
+            if allowedIPsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                allowedIPsText = "0.0.0.0/0, ::/0"
+            }
+            if customNode.allowedIPs.isEmpty {
+                customNode.allowedIPs = ["0.0.0.0/0", "::/0"]
+            }
             portText = "51820"
         default:
             customNode.tls.enabled = [
@@ -1668,12 +1857,15 @@ struct ChainedProxySheet: View {
             imported.dialerProxy = nil
             customNode = imported
             portText = String(imported.port)
+            allowedIPsText = imported.allowedIPs.isEmpty
+                ? "0.0.0.0/0, ::/0"
+                : imported.allowedIPs.joined(separator: ", ")
             if name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 name = imported.name
             }
             pasteFeedback = (
-                String.localizedStringWithFormat(
-                    AppLocalization.string("Filled %@ (%@:%lld) from clipboard."),
+                AppLocalization.format(
+                    "Filled %@ (%@:%lld) from clipboard.",
                     imported.protocolID.displayName,
                     imported.server,
                     Int64(imported.port)
@@ -1689,9 +1881,19 @@ struct ChainedProxySheet: View {
     }
 
     private func save() {
+        saveFailed = false
+        saveErrorMessage = nil
+        recomputeChainedDiagnosticsNow()
+        if diagnosticsForCandidate.contains(where: {
+            if case .nameConflict = $0 { return true }
+            return false
+        }) {
+            saveErrorMessage = AppLocalization.string("A node or group in this profile already has this name.")
+            saveFailed = true
+            return
+        }
         guard case let .success(overrides) = proposed else { return }
         isSaving = true
-        saveFailed = false
         Task {
             let saved = await tunnel.setProfileOverrides(overrides)
             isSaving = false
@@ -1703,6 +1905,8 @@ struct ChainedProxySheet: View {
         guard let initial else { return }
         var overrides = tunnel.activeProfileOverrides
         overrides.chainedProxies.removeAll { $0.id == initial.id }
+        saveFailed = false
+        saveErrorMessage = nil
         isSaving = true
         Task {
             let saved = await tunnel.setProfileOverrides(overrides)
@@ -1726,7 +1930,7 @@ private struct OverrideFormRow<Control: View>: View {
 
     var body: some View {
         HStack(spacing: AetherVisual.s3) {
-            Text(title)
+            Text(verbatim: title)
                 .foregroundStyle(.primary)
                 .fixedSize()
             Spacer(minLength: AetherVisual.s3)
@@ -1787,10 +1991,10 @@ private struct KeywordChip: View {
 
     private var actionAccessibilityLabel: String {
         if systemImage == "xmark" {
-            return String.localizedStringWithFormat(AppLocalization.string("Remove %@"), title)
+            return AppLocalization.format("Remove %@", title)
         }
         if systemImage == "plus" {
-            return String.localizedStringWithFormat(AppLocalization.string("Add %@"), title)
+            return AppLocalization.format("Add %@", title)
         }
         return title
     }
@@ -1821,7 +2025,7 @@ private struct MemberPreviewList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
-            Text(caption)
+            Text(verbatim: caption)
                 .font(.callout.weight(.semibold))
                 .padding(.horizontal, AetherVisual.sectionHeaderInset)
                 .accessibilityIdentifier("override-preview-count")
@@ -1853,6 +2057,13 @@ private struct NodeChecklist: View {
     @Binding var selection: [String]
     @State private var search = ""
 
+    private var missingSelected: [String] {
+        let missing = selection.filter { !nodes.contains($0) }
+        return search.isEmpty
+            ? missing
+            : missing.filter { $0.localizedCaseInsensitiveContains(search) }
+    }
+
     private var filtered: [String] {
         search.isEmpty ? nodes : nodes.filter { $0.localizedCaseInsensitiveContains(search) }
     }
@@ -1860,25 +2071,74 @@ private struct NodeChecklist: View {
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSearchField(text: $search, prompt: AppLocalization.string("Search nodes"), accessibilityIdentifier: "node-checklist-search")
-            if nodes.isEmpty {
+            if !filtered.isEmpty || !selection.isEmpty {
+                HStack(spacing: AetherVisual.s2) {
+                    Button(AppLocalization.string("Select All")) {
+                        for node in filtered where !selection.contains(node) {
+                            selection.append(node)
+                        }
+                    }
+                    .aetherButton()
+                    .controlSize(.mini)
+                    .disabled(filtered.allSatisfy { selection.contains($0) })
+
+                    Button(AppLocalization.string("Clear")) {
+                        let visibleSet = Set(filtered).union(missingSelected)
+                        selection.removeAll { visibleSet.contains($0) }
+                    }
+                    .aetherButton()
+                    .controlSize(.mini)
+                    .disabled(selection.isEmpty)
+
+                    Spacer(minLength: 0)
+                }
+            }
+            if nodes.isEmpty && missingSelected.isEmpty {
                 ContentUnavailableView(
                     AppLocalization.string("No Nodes"),
                     systemImage: "point.3.connected.trianglepath.dotted"
                 )
                 .frame(height: 260)
                 .frame(maxWidth: .infinity)
-            } else if filtered.isEmpty {
+            } else if filtered.isEmpty && missingSelected.isEmpty {
                 ContentUnavailableView.search(text: search)
                     .frame(height: 260)
                     .frame(maxWidth: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(missingSelected, id: \.self) { missingNode in
+                            Toggle(isOn: Binding(
+                                get: { selection.contains(missingNode) },
+                                set: { isOn in
+                                    if isOn {
+                                        if !selection.contains(missingNode) {
+                                            selection.append(missingNode)
+                                        }
+                                    } else {
+                                        selection.removeAll { $0 == missingNode }
+                                    }
+                                }
+                            )) {
+                                Text(AppLocalization.format("%@ (not in this profile)", missingNode))
+                                    .foregroundStyle(AetherReadableTint(color: .orange))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .toggleStyle(.checkbox)
+                            .frame(minHeight: AetherVisual.tableRowHeight)
+                        }
                         ForEach(filtered, id: \.self) { node in
                             Toggle(isOn: Binding(
                                 get: { selection.contains(node) },
                                 set: { isOn in
-                                    if isOn { selection.append(node) } else { selection.removeAll { $0 == node } }
+                                    if isOn {
+                                        if !selection.contains(node) {
+                                            selection.append(node)
+                                        }
+                                    } else {
+                                        selection.removeAll { $0 == node }
+                                    }
                                 }
                             )) {
                                 Text(verbatim: node).lineLimit(1).truncationMode(.middle)
@@ -1906,22 +2166,22 @@ extension ProfileOverrideError {
         case .unsupportedFormat:
             AppLocalization.string("These customizations were saved by a newer version of AetherRoute.")
         case .tooManyGroups:
-            String.localizedStringWithFormat(AppLocalization.string("A profile can have at most %lld custom groups."), Int64(ProfileOverride.maximumGroupCount))
+            AppLocalization.format("A profile can have at most %lld custom groups.", Int64(ProfileOverride.maximumGroupCount))
         case .tooManyKeywords:
-            String.localizedStringWithFormat(AppLocalization.string("Use at most %lld keywords."), Int64(ProfileOverride.maximumKeywordCount))
+            AppLocalization.format("Use at most %lld keywords.", Int64(ProfileOverride.maximumKeywordCount))
         case .tooManyNodes:
-            String.localizedStringWithFormat(AppLocalization.string("Pick at most %lld nodes."), Int64(ProfileOverride.maximumManualNodeCount))
+            AppLocalization.format("Pick at most %lld nodes.", Int64(ProfileOverride.maximumManualNodeCount))
         case .invalidKeyword:
             AppLocalization.string("A keyword is too long or contains control characters.")
         case .invalidGroupName:
             AppLocalization.string("Enter a name without quotes or backslashes that is not DIRECT, REJECT or GLOBAL.")
         case let .duplicateGroupName(name):
-            String.localizedStringWithFormat(AppLocalization.string("Another custom group is already named %@."), name)
+            AppLocalization.format("Another custom group is already named %@.", name)
         case .groupHasNoSource:
             AppLocalization.string("Choose regions, keywords or nodes for the group.")
         case .tooManyChainedProxies:
-            String.localizedStringWithFormat(
-                AppLocalization.string("A profile can have at most %lld chained proxies."),
+            AppLocalization.format(
+                "A profile can have at most %lld chained proxies.",
                 Int64(ProfileOverride.maximumChainedProxyCount)
             )
         case .invalidChainedProxy:
@@ -1929,15 +2189,15 @@ extension ProfileOverrideError {
         case .chainedProxyCycle:
             AppLocalization.string("The first-hop and second-hop proxies cannot form a loop.")
         case .tooManyCustomHosts:
-            String.localizedStringWithFormat(
-                AppLocalization.string("A profile can have at most %lld custom host mappings."),
+            AppLocalization.format(
+                "A profile can have at most %lld custom host mappings.",
                 Int64(ProfileOverride.maximumCustomHostCount)
             )
         case .invalidCustomHost:
             AppLocalization.string("Enter a valid domain pattern (e.g. nas.local, *.dev.internal, +.corp.example) and IPv4 or IPv6 address.")
         case let .duplicateCustomHost(domain):
-            String.localizedStringWithFormat(
-                AppLocalization.string("Another custom host mapping already uses %@."),
+            AppLocalization.format(
+                "Another custom host mapping already uses %@.",
                 domain
             )
         }
@@ -1947,7 +2207,13 @@ extension ProfileOverrideError {
 extension Error {
     /// Override errors in the app's language, anything else as it reports.
     var overrideMessage: String {
-        (self as? ProfileOverrideError)?.localizedMessage ?? localizedDescription
+        if let overrideError = self as? ProfileOverrideError {
+            return overrideError.localizedMessage
+        }
+        if let nodeError = self as? AetherNodeValidationError {
+            return nodeError.appLocalizedMessage
+        }
+        return localizedDescription
     }
 }
 

@@ -111,7 +111,8 @@ struct ThirdPartyLicensesView: View {
     private func licenseBrowser(
         _ report: ThirdPartyLicenseReport
     ) -> some View {
-        HStack(spacing: 0) {
+        let filtered = filteredComponents(in: report)
+        return HStack(spacing: 0) {
             VStack(spacing: 0) {
                 AetherSearchField(
                     text: $searchText,
@@ -122,56 +123,75 @@ struct ThirdPartyLicensesView: View {
 
                 Divider()
 
-                ScrollView {
-                    LazyVStack(spacing: AetherVisual.s1) {
-                        ForEach(filteredComponents(in: report)) { component in
-                            let isSelected = selectedComponentID == component.id
-                            Button {
-                                selectedComponentID = component.id
-                            } label: {
-                                ComponentRow(
-                                    component: component,
-                                    isSelected: isSelected
-                                )
-                                .padding(.horizontal, AetherVisual.s3)
-                                .padding(.vertical, AetherVisual.s2)
-                                .background {
-                                    RoundedRectangle(
-                                        cornerRadius: AetherVisual.controlRadius,
-                                        style: .continuous
+                if filtered.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollViewReader { scrollProxy in
+                        ScrollView {
+                            LazyVStack(spacing: AetherVisual.s1) {
+                                ForEach(filtered) { component in
+                                    let isSelected = selectedComponentID == component.id
+                                    Button {
+                                        selectedComponentID = component.id
+                                    } label: {
+                                        ComponentRow(
+                                            component: component,
+                                            isSelected: isSelected
+                                        )
+                                        .padding(.horizontal, AetherVisual.s3)
+                                        .padding(.vertical, AetherVisual.s2)
+                                        .background {
+                                            RoundedRectangle(
+                                                cornerRadius: AetherVisual.controlRadius,
+                                                style: .continuous
+                                            )
+                                            .fill(
+                                                isSelected
+                                                    ? Color.accentColor
+                                                    : Color.clear
+                                            )
+                                            .accessibilityHidden(true)
+                                        }
+                                    }
+                                    .id(component.id)
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(
+                                        Text(
+                                            verbatim: [
+                                                component.name,
+                                                component.version,
+                                                component.license,
+                                            ].joined(separator: ", ")
+                                        )
                                     )
-                                    .fill(
-                                        isSelected
-                                            ? Color.accentColor
-                                            : Color.clear
+                                    .accessibilityIdentifier(
+                                        "license-component-\(component.noticeID)"
                                     )
-                                    .accessibilityHidden(true)
+                                    .accessibilityAddTraits(
+                                        isSelected ? .isSelected : []
+                                    )
+                                    .padding(.horizontal, AetherVisual.s2)
                                 }
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(
-                                Text(
-                                    verbatim: [
-                                        component.name,
-                                        component.version,
-                                        component.license,
-                                    ].joined(separator: ", ")
-                                )
-                            )
-                            .accessibilityIdentifier(
-                                "license-component-\(component.noticeID)"
-                            )
-                            .accessibilityAddTraits(
-                                isSelected ? .isSelected : []
-                            )
-                            .padding(.horizontal, AetherVisual.s2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, AetherVisual.s2)
+                        }
+                        .onMoveCommand { direction in
+                            moveSelection(direction, in: filtered, proxy: scrollProxy)
+                        }
+                        .onKeyPress(.upArrow) {
+                            moveSelection(.up, in: filtered, proxy: scrollProxy)
+                            return .handled
+                        }
+                        .onKeyPress(.downArrow) {
+                            moveSelection(.down, in: filtered, proxy: scrollProxy)
+                            return .handled
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, AetherVisual.s2)
                 }
 
-                componentSummary(report)
+                componentSummary(report, filteredCount: filtered.count)
             }
             .frame(width: 220)
             .background(.bar)
@@ -182,7 +202,9 @@ struct ThirdPartyLicensesView: View {
             Divider()
 
             Group {
-                if let component = selectedComponent(in: report) {
+                if filtered.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                } else if let component = selectedComponent(in: filtered) {
                     ComponentLicenseDetail(
                         component: component,
                         blocks: report.licenses.filter {
@@ -203,9 +225,41 @@ struct ThirdPartyLicensesView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("license-detail")
         }
+        .onChange(of: searchText) { _, _ in
+            let currentFiltered = filteredComponents(in: report)
+            if let currentID = selectedComponentID,
+               !currentFiltered.contains(where: { $0.id == currentID }) {
+                selectedComponentID = currentFiltered.first?.id
+            } else if selectedComponentID == nil {
+                selectedComponentID = currentFiltered.first?.id
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Open-Source Software"))
         .accessibilityIdentifier("license-browser-root")
+    }
+
+    private func moveSelection(
+        _ direction: MoveCommandDirection,
+        in components: [ThirdPartyLicenseReport.Component],
+        proxy: ScrollViewProxy
+    ) {
+        guard !components.isEmpty else { return }
+        let currentIndex = components.firstIndex { $0.id == selectedComponentID }
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = max(0, (currentIndex ?? 0) - 1)
+        case .down:
+            targetIndex = min(components.count - 1, (currentIndex ?? -1) + 1)
+        default:
+            return
+        }
+        let targetID = components[targetIndex].id
+        selectedComponentID = targetID
+        withAnimation(AetherVisual.animation(AetherVisual.quickFade)) {
+            proxy.scrollTo(targetID, anchor: .center)
+        }
     }
 
     private func filteredComponents(
@@ -221,28 +275,47 @@ struct ThirdPartyLicensesView: View {
     }
 
     private func selectedComponent(
-        in report: ThirdPartyLicenseReport
+        in components: [ThirdPartyLicenseReport.Component]
     ) -> ThirdPartyLicenseReport.Component? {
-        report.components.first { $0.id == selectedComponentID }
+        components.first { $0.id == selectedComponentID }
     }
 
     private func componentSummary(
-        _ report: ThirdPartyLicenseReport
+        _ report: ThirdPartyLicenseReport,
+        filteredCount: Int
     ) -> some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s1) {
+        let hasQuery = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: AetherVisual.s1) {
             Divider()
             Text(
-                AppLocalization.format("%lld components", Int64(report.components.count))
+                hasQuery
+                    ? AppLocalization.format(
+                        "%lld of %lld components",
+                        Int64(filteredCount),
+                        Int64(report.components.count)
+                    )
+                    : AppLocalization.format("%lld components", Int64(report.components.count))
             )
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))
-            Text(AppLocalization.string("Independent app runtime"))
+            Text(localizedSurfaceTitle(report.surface))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color(nsColor: .labelColor))
         }
         .padding(.horizontal, AetherVisual.s3)
         .padding(.bottom, AetherVisual.s2)
         .background(.bar)
+    }
+
+    private func localizedSurfaceTitle(_ surface: String) -> String {
+        switch surface.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "independent":
+            AppLocalization.string("Direct distribution")
+        case "app-store", "appstore", "mac-app-store":
+            AppLocalization.string("App Store distribution")
+        default:
+            AppLocalization.string("Open-Source Software")
+        }
     }
 }
 
@@ -309,15 +382,16 @@ private struct ComponentLicenseDetail: View {
                 .font(.largeTitle.weight(.semibold))
                 .textSelection(.enabled)
 
-            HStack(spacing: AetherVisual.s2) {
+            AetherFlowLayout(spacing: AetherVisual.s2) {
                 Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("Version %@"),
+                    AppLocalization.format(
+                        "Version %@",
                         component.version
                     )
                 )
                     .licensePillStyle()
-                Text(component.license)
+                Text(verbatim: component.license)
+                    .fixedSize(horizontal: false, vertical: true)
                     .licensePillStyle()
             }
 

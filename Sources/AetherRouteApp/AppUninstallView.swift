@@ -5,14 +5,11 @@ import SwiftUI
 /// Settings > About: removes the network extensions and configurations that
 /// dragging the app to the Trash leaves behind, then the app itself.
 struct AppUninstallSection: View {
-    @EnvironmentObject private var tunnel: TunnelManager
-    @State private var isConfirming = false
+    let onRequestUninstall: () -> Void
 
     var body: some View {
         Section {
-            Button(role: .destructive) {
-                isConfirming = true
-            } label: {
+            Button(role: .destructive, action: onRequestUninstall) {
                 Label(AppLocalization.string("Uninstall AetherRoute…"), systemImage: "trash")
             }
             .accessibilityIdentifier("about-uninstall")
@@ -20,10 +17,6 @@ struct AppUninstallSection: View {
             Text(AppLocalization.string("Removes the network extensions and their configurations, which moving the app to the Trash leaves behind."))
                 .font(.caption)
                 .foregroundStyle(AetherVisual.secondaryText)
-        }
-        .sheet(isPresented: $isConfirming) {
-            AppUninstallSheet()
-                .environmentObject(tunnel)
         }
     }
 }
@@ -34,6 +27,8 @@ struct AppUninstallSheet: View {
     @State private var deletesUserData = true
     @State private var isRunning = false
     @State private var report: UninstallReport?
+    @State private var activePerformer: AppUninstallPerformer?
+    @State private var isConfirmingPartialTrash = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
@@ -60,17 +55,31 @@ struct AppUninstallSheet: View {
             HStack(spacing: AetherVisual.s2) {
                 Spacer()
                 if let report {
-                    Button(report.networkRemovalFailed
-                           ? AppLocalization.string("Close")
-                           : AppLocalization.string("Done")) {
-                        if !report.networkRemovalFailed {
-                            AppUninstallPerformer.removeAppAndTerminate(deletingUserData: deletesUserData)
-                        } else {
-                            dismiss()
+                    if report.networkRemovalFailed {
+                        Button(AppLocalization.string("Close")) {
+                            recoverAndDismiss()
                         }
+                        .aetherButton(prominent: true)
+                        .keyboardShortcut(.defaultAction)
+                    } else if !report.failures.isEmpty {
+                        Button(AppLocalization.string("Keep App"), role: .cancel) {
+                            recoverAndDismiss()
+                        }
+                        .aetherButton()
+                        .keyboardShortcut(.cancelAction)
+
+                        Button(AppLocalization.string("Move App to Trash Anyway"), role: .destructive) {
+                            isConfirmingPartialTrash = true
+                        }
+                        .aetherButton(prominent: true)
+                    } else if report.failures.isEmpty {
+                        Button(AppLocalization.string("Done")) {
+                            confirmExitAndTrash()
+                        }
+                        .aetherButton(prominent: true)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(isRunning)
                     }
-                    .aetherButton(prominent: true)
-                    .keyboardShortcut(.defaultAction)
                 } else {
                     Button(AppLocalization.string("Cancel"), role: .cancel) { dismiss() }
                         .aetherButton()
@@ -91,6 +100,26 @@ struct AppUninstallSheet: View {
         .padding(AetherVisual.dialogPadding)
         .aetherSheetFrame()
         .interactiveDismissDisabled(isRunning)
+        .confirmationDialog(
+            AppLocalization.string("Move AetherRoute to Trash despite cleanup failures?"),
+            isPresented: $isConfirmingPartialTrash,
+            titleVisibility: .visible
+        ) {
+            Button(AppLocalization.string("Move to Trash"), role: .destructive) {
+                confirmExitAndTrash()
+            }
+            Button(AppLocalization.string("Cancel"), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string("Some local files or login settings could not be removed automatically and may remain on this Mac."))
+        }
+    }
+
+    private func recoverAndDismiss() {
+        let tunnelManager = tunnel
+        Task { @MainActor in
+            await tunnelManager.prepare()
+        }
+        dismiss()
     }
 
     @ViewBuilder
@@ -99,6 +128,11 @@ struct AppUninstallSheet: View {
             if report.networkRemovalFailed {
                 AetherInlineMessage(
                     text: AppLocalization.string("Some network components could not be removed, so AetherRoute was kept. Uninstall again; if it keeps failing, restart your Mac and retry."),
+                    kind: .warning
+                )
+            } else if !report.failures.isEmpty {
+                AetherInlineMessage(
+                    text: AppLocalization.string("Network components were removed, but some cleanup steps failed. Review the details below before moving AetherRoute to the Trash."),
                     kind: .warning
                 )
             } else {
@@ -131,6 +165,16 @@ struct AppUninstallSheet: View {
         return text
     }
 
+    private func confirmExitAndTrash() {
+        guard !isRunning else { return }
+        isRunning = true
+        let performer = activePerformer ?? AppUninstallPerformer(tunnel: tunnel)
+        Task { @MainActor in
+            await performer.finalizeTearDownForConfirmedExit()
+            AppUninstallPerformer.removeAppAndTerminate(deletingUserData: deletesUserData)
+        }
+    }
+
     private func uninstall() {
         isRunning = true
         let plan = AppUninstaller.plan(
@@ -138,6 +182,7 @@ struct AppUninstallSheet: View {
             extensionIdentifiers: AppUninstallPerformer.extensionIdentifiers
         )
         let performer = AppUninstallPerformer(tunnel: tunnel)
+        activePerformer = performer
         Task {
             let result = await AppUninstaller.run(plan, performer: performer)
             report = result
@@ -145,6 +190,7 @@ struct AppUninstallSheet: View {
             NSApplication.shared.activate(ignoringOtherApps: true)
             if !result.networkRemovalFailed && result.failures.isEmpty && !result.needsRestart {
                 try? await Task.sleep(for: .milliseconds(800))
+                await performer.finalizeTearDownForConfirmedExit()
                 AppUninstallPerformer.removeAppAndTerminate(deletingUserData: deletesUserData)
             }
         }
@@ -172,10 +218,8 @@ struct UninstallCommandButton: View {
 
     var body: some View {
         Button(AppLocalization.string("Uninstall AetherRoute…")) {
+            AppWindowManager.shared.requestSettingsTab("about")
             openSettings()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                NotificationCenter.default.post(name: .aetherRouteNavigateToSettings, object: "about")
-            }
         }
     }
 }

@@ -2,53 +2,442 @@ import AppKit
 import AetherRouteKit
 import SwiftUI
 
+@MainActor
+private final class FrozenConnectionSnapshotCache {
+    private struct FlowEdgeSignature: Equatable {
+        let transport: UInt8
+        let destination: String
+        let destinationPort: UInt16
+        let startedAtUnixMilliseconds: UInt64
+        let downloadTotal: UInt64
+        let uploadTotal: UInt64
+
+        init(_ connection: ConnectionTelemetry) {
+            self.transport = connection.transport.rawValue
+            self.destination = connection.destination
+            self.destinationPort = connection.destinationPort
+            self.startedAtUnixMilliseconds = connection.startedAtUnixMilliseconds
+            self.downloadTotal = connection.downloadTotal
+            self.uploadTotal = connection.uploadTotal
+        }
+    }
+
+    private struct Key: Equatable {
+        let isPaused: Bool
+        let showsRecentlyClosed: Bool
+        let count: Int
+        let first: FlowEdgeSignature?
+        let samples: [FlowEdgeSignature]
+        let middle: FlowEdgeSignature?
+        let last: FlowEdgeSignature?
+    }
+
+    private var key: Key?
+    private var identified: [ConnectionTableItem] = []
+    private var outletCounts = ConnectionOutletClassifier.Counts(all: 0, proxied: 0, direct: 0, rejected: 0)
+
+    private func makeKey(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) -> Key {
+        let middleIndex = connections.isEmpty ? nil : connections.count / 2
+        let step = max(1, connections.count / 8)
+        let samples = connections.isEmpty
+            ? []
+            : stride(from: 0, to: connections.count, by: step).map { FlowEdgeSignature(connections[$0]) }
+        return Key(
+            isPaused: isPaused,
+            showsRecentlyClosed: showsRecentlyClosed,
+            count: connections.count,
+            first: connections.first.map(FlowEdgeSignature.init),
+            samples: samples,
+            middle: middleIndex.map { FlowEdgeSignature(connections[$0]) },
+            last: connections.last.map(FlowEdgeSignature.init)
+        )
+    }
+
+    private func refreshIfNeeded(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) {
+        let nextKey = makeKey(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
+        guard key != nextKey else { return }
+        key = nextKey
+        identified = ConnectionTableItem.identify(connections)
+        outletCounts = ConnectionOutletClassifier.counts(for: connections)
+    }
+
+    func identifiedItems(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) -> [ConnectionTableItem] {
+        refreshIfNeeded(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
+        return identified
+    }
+
+    func counts(
+        for connections: [ConnectionTelemetry],
+        isPaused: Bool,
+        showsRecentlyClosed: Bool
+    ) -> ConnectionOutletClassifier.Counts {
+        refreshIfNeeded(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
+        return outletCounts
+    }
+}
+
+struct ConnectionsAppFilter: Equatable {
+    let key: String
+    let name: String
+}
+
+struct ConnectionsDimensionFilter: Equatable {
+    let dimension: ConnectionTrafficDimension
+    let key: String
+    let name: String
+}
+
+enum ConnectionSort: String, CaseIterable, Identifiable {
+    case speed
+    case traffic
+    case newest
+    case destination
+
+    var id: Self { self }
+
+    var localizedTitle: String {
+        switch self {
+        case .speed:
+            AppLocalization.string("By live speed")
+        case .traffic: AppLocalization.string("By traffic")
+        case .newest: AppLocalization.string("By newest")
+        case .destination: AppLocalization.string("By destination")
+        }
+    }
+}
+
+@MainActor
+private final class ConnectionsRowsModel: ObservableObject {
+    struct SnapshotData {
+        let displayedConnections: [ConnectionTelemetry]
+        let isDisplayedEmpty: Bool
+        let rows: [ConnectionTableItem]
+        let appRows: [ConnectionAppRow]
+        let leaderboardEntries: [ConnectionTrafficEntry]
+        let outletCounts: [ConnectionOutletFilter: Int]
+        let allCount: Int
+        let snapshotBreakdownCount: Int
+        let isSnapshotTruncated: Bool
+        let totalCount: Int
+    }
+
+    private struct InputsKey: Equatable {
+        let snapshot: NetworkTelemetrySnapshot?
+        let displayedConnections: [ConnectionTelemetry]
+        let filter: ConnectionOutletFilter
+        let sort: ConnectionSort
+        let searchText: String
+        let isPaused: Bool
+        let showsRecentlyClosed: Bool
+        let appFilter: ConnectionsAppFilter?
+        let dimensionFilter: ConnectionsDimensionFilter?
+        let groupsByApp: Bool
+        let groupingDimension: ConnectionTrafficDimension?
+
+        @MainActor
+        init(telemetry: NetworkTelemetryViewModel, drafts: ConnectionsPageDraftState) {
+            let usesLive = drafts.pausedConnections == nil && !drafts.showsRecentlyClosed
+            self.snapshot = usesLive ? telemetry.snapshot : nil
+            if let paused = drafts.pausedConnections {
+                self.displayedConnections = paused
+            } else if drafts.showsRecentlyClosed {
+                self.displayedConnections = telemetry.recentlyClosed.connections
+            } else {
+                self.displayedConnections = telemetry.snapshot.connections
+            }
+            self.filter = drafts.filter
+            self.sort = drafts.sort
+            self.searchText = drafts.searchText
+            self.isPaused = drafts.pausedConnections != nil
+            self.showsRecentlyClosed = drafts.showsRecentlyClosed
+            self.appFilter = drafts.appFilter
+            self.dimensionFilter = drafts.dimensionFilter
+            self.groupsByApp = drafts.groupsByApp
+            self.groupingDimension = drafts.groupingDimension
+        }
+    }
+
+    @Published private(set) var data: SnapshotData
+    private var lastInputs: InputsKey
+    private var frozenCache = FrozenConnectionSnapshotCache()
+
+    init(telemetry: NetworkTelemetryViewModel, drafts: ConnectionsPageDraftState) {
+        var initialCache = FrozenConnectionSnapshotCache()
+        self.lastInputs = InputsKey(telemetry: telemetry, drafts: drafts)
+        self.data = Self.build(telemetry: telemetry, drafts: drafts, frozenCache: &initialCache)
+        self.frozenCache = initialCache
+    }
+
+    func refresh(telemetry: NetworkTelemetryViewModel, drafts: ConnectionsPageDraftState) {
+        let inputs = InputsKey(telemetry: telemetry, drafts: drafts)
+        guard inputs != lastInputs else { return }
+        lastInputs = inputs
+        data = Self.build(telemetry: telemetry, drafts: drafts, frozenCache: &frozenCache)
+    }
+
+    private static func build(
+        telemetry: NetworkTelemetryViewModel,
+        drafts: ConnectionsPageDraftState,
+        frozenCache: inout FrozenConnectionSnapshotCache
+    ) -> SnapshotData {
+        let displayedConnections: [ConnectionTelemetry]
+        if let paused = drafts.pausedConnections {
+            displayedConnections = paused
+        } else if drafts.showsRecentlyClosed {
+            displayedConnections = telemetry.recentlyClosed.connections
+        } else {
+            displayedConnections = telemetry.snapshot.connections
+        }
+
+        let usesLiveSnapshot = drafts.pausedConnections == nil && !drafts.showsRecentlyClosed
+        let tallied = usesLiveSnapshot
+            ? telemetry.snapshotOutletCounts()
+            : frozenCache.counts(
+                for: displayedConnections,
+                isPaused: drafts.pausedConnections != nil,
+                showsRecentlyClosed: drafts.showsRecentlyClosed
+            )
+        let allCount = usesLiveSnapshot
+            ? max(tallied.all, telemetry.snapshot.totalActiveConnections)
+            : tallied.all
+        let breakdownCount = tallied.proxied + tallied.direct + tallied.rejected
+        let outletCounts: [ConnectionOutletFilter: Int] = [
+            .all: allCount,
+            .proxied: tallied.proxied,
+            .direct: tallied.direct,
+            .rejected: tallied.rejected,
+        ]
+        let totalCount = usesLiveSnapshot
+            ? max(displayedConnections.count, telemetry.snapshot.totalActiveConnections)
+            : displayedConnections.count
+
+        let rows = computeConnectionRows(
+            displayedConnections: displayedConnections,
+            usesLiveSnapshot: usesLiveSnapshot,
+            telemetry: telemetry,
+            drafts: drafts,
+            frozenCache: &frozenCache
+        )
+
+        let computedAppRows: [ConnectionAppRow] = drafts.groupsByApp
+            ? computeAppRows(rows: rows, usesLiveSnapshot: usesLiveSnapshot, telemetry: telemetry, sort: drafts.sort)
+            : []
+
+        let leaderboardEntries: [ConnectionTrafficEntry] = {
+            guard !drafts.groupsByApp,
+                  let dimension = drafts.groupingDimension,
+                  dimension != .application else {
+                return []
+            }
+            return ConnectionTrafficAggregator.summarize(
+                connections: rows.map(\.connection),
+                dimension: dimension,
+                limit: 100
+            ).entries
+        }()
+
+        return SnapshotData(
+            displayedConnections: displayedConnections,
+            isDisplayedEmpty: displayedConnections.isEmpty,
+            rows: rows,
+            appRows: computedAppRows,
+            leaderboardEntries: leaderboardEntries,
+            outletCounts: outletCounts,
+            allCount: allCount,
+            snapshotBreakdownCount: breakdownCount,
+            isSnapshotTruncated: usesLiveSnapshot && allCount > breakdownCount,
+            totalCount: totalCount
+        )
+    }
+
+    private static func computeConnectionRows(
+        displayedConnections: [ConnectionTelemetry],
+        usesLiveSnapshot: Bool,
+        telemetry: NetworkTelemetryViewModel,
+        drafts: ConnectionsPageDraftState,
+        frozenCache: inout FrozenConnectionSnapshotCache
+    ) -> [ConnectionTableItem] {
+        let hasActiveFilter = drafts.filter != .all
+            || drafts.appFilter != nil
+            || drafts.dimensionFilter != nil
+            || !drafts.searchText.isEmpty
+        if usesLiveSnapshot && !hasActiveFilter && drafts.sort == .traffic {
+            return telemetry.trafficSortedSnapshotConnections()
+        }
+        if usesLiveSnapshot && !hasActiveFilter && drafts.sort == .speed {
+            return telemetry.speedSortedSnapshotConnections()
+        }
+        let identified = usesLiveSnapshot
+            ? telemetry.identifiedSnapshotConnections()
+            : frozenCache.identifiedItems(
+                for: displayedConnections,
+                isPaused: drafts.pausedConnections != nil,
+                showsRecentlyClosed: drafts.showsRecentlyClosed
+            )
+        let filtered: [ConnectionTableItem]
+        if !hasActiveFilter {
+            filtered = identified
+        } else {
+            let directory = SourceAppDirectory.shared
+            let needsAppPresentation = drafts.appFilter != nil || !drafts.searchText.isEmpty
+            filtered = identified.filter { item in
+                guard ConnectionOutlet.matches(proxyChain: item.connection.proxyChain, filter: drafts.filter) else {
+                    return false
+                }
+                if let dimensionFilter = drafts.dimensionFilter,
+                   !ConnectionTrafficAggregator.matchesFilter(
+                       item.connection,
+                       dimension: dimensionFilter.dimension,
+                       key: dimensionFilter.key
+                   ) {
+                    return false
+                }
+                guard needsAppPresentation else {
+                    return true
+                }
+                let app = directory.presentation(for: item.connection)
+                if let appFilter = drafts.appFilter, appFilter.key != app.groupingKey {
+                    return false
+                }
+                guard !drafts.searchText.isEmpty else {
+                    return true
+                }
+                return app.displayName.localizedCaseInsensitiveContains(drafts.searchText)
+                    || item.connection.destination.localizedCaseInsensitiveContains(drafts.searchText)
+                    || item.connection.rule.localizedCaseInsensitiveContains(drafts.searchText)
+                    || item.connection.ruleSummary.localizedCaseInsensitiveContains(drafts.searchText)
+                    || item.connection.rulePayload.localizedCaseInsensitiveContains(drafts.searchText)
+                    || item.connection.proxyChain.localizedCaseInsensitiveContains(drafts.searchText)
+            }
+        }
+        return filtered.sorted { lhs, rhs in
+            switch drafts.sort {
+            case .speed:
+                let lhsSpeed = usesLiveSnapshot ? (telemetry.connectionRates[lhs.id]?.totalBytesPerSecond ?? 0) : 0
+                let rhsSpeed = usesLiveSnapshot ? (telemetry.connectionRates[rhs.id]?.totalBytesPerSecond ?? 0) : 0
+                if lhsSpeed != rhsSpeed {
+                    return lhsSpeed > rhsSpeed
+                }
+                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+            case .traffic:
+                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+            case .newest:
+                if lhs.connection.startedAtUnixMilliseconds != rhs.connection.startedAtUnixMilliseconds {
+                    return lhs.connection.startedAtUnixMilliseconds > rhs.connection.startedAtUnixMilliseconds
+                }
+                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
+                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
+            case .destination:
+                return lhs.connection.destination.localizedStandardCompare(
+                    rhs.connection.destination
+                )
+                    == .orderedAscending
+            }
+        }
+    }
+
+    private static func computeAppRows(
+        rows: [ConnectionTableItem],
+        usesLiveSnapshot: Bool,
+        telemetry: NetworkTelemetryViewModel,
+        sort: ConnectionSort
+    ) -> [ConnectionAppRow] {
+        let directory = SourceAppDirectory.shared
+        var groups: [String: ConnectionAppRow] = [:]
+        for row in rows {
+            let app = directory.presentation(for: row.connection)
+            let rates = usesLiveSnapshot ? telemetry.connectionRates[row.id] : nil
+            groups[app.groupingKey, default: ConnectionAppRow(app: app)]
+                .add(row.connection, rates: rates)
+        }
+        return groups.values.sorted { lhs, rhs in
+            switch sort {
+            case .speed:
+                if lhs.liveBytesPerSecond != rhs.liveBytesPerSecond {
+                    return lhs.liveBytesPerSecond > rhs.liveBytesPerSecond
+                }
+                return lhs.downloadTotal + lhs.uploadTotal
+                    > rhs.downloadTotal + rhs.uploadTotal
+            case .traffic:
+                return lhs.downloadTotal + lhs.uploadTotal
+                    > rhs.downloadTotal + rhs.uploadTotal
+            case .newest:
+                return lhs.latestStartedAtUnixMilliseconds > rhs.latestStartedAtUnixMilliseconds
+            case .destination:
+                return lhs.app.displayName.localizedStandardCompare(
+                    rhs.app.displayName
+                ) == .orderedAscending
+            }
+        }
+    }
+}
+
 /// The connections page exists to show the flow list. State is compressed into
 /// a single session bar so the table gets the screen: previously five separate
 /// boxes all restated "not connected" while the one thing worth looking at had
 /// nowhere to go.
 struct ConnectionsView: View {
+    let telemetry: NetworkTelemetryViewModel
+    @Environment(\.pageSessionDrafts) private var pageDrafts
+
+    var body: some View {
+        if let drafts = pageDrafts?.connections {
+            ConnectionsBodyView(
+                telemetry: telemetry,
+                drafts: drafts
+            )
+        } else {
+            ConnectionsStandaloneView(telemetry: telemetry)
+        }
+    }
+}
+
+private struct ConnectionsStandaloneView: View {
+    let telemetry: NetworkTelemetryViewModel
+    @StateObject private var fallbackDrafts = ConnectionsPageDraftState()
+
+    var body: some View {
+        ConnectionsBodyView(
+            telemetry: telemetry,
+            drafts: fallbackDrafts
+        )
+    }
+}
+
+private struct ConnectionsBodyView: View {
     @EnvironmentObject private var tunnel: TunnelManager
-    @ObservedObject var telemetry: NetworkTelemetryViewModel
+    let telemetry: NetworkTelemetryViewModel
+    @ObservedObject var drafts: ConnectionsPageDraftState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var filter: ConnectionOutletFilter = .all
-    @State private var filterBarWidth: CGFloat = 0
-    @State private var sort: ConnectionSort = .traffic
     @State private var showingDisconnectConfirmation = false
-    @State private var searchText = ""
-    @State private var pausedConnections: [ConnectionTelemetry]?
-    @State private var frozenCache = FrozenConnectionSnapshotCache()
+    @State private var showingCloseAllConfirmation = false
+    @State private var closeConnectionsError: String?
     @State private var inspectedConnection: ConnectionTableItem?
-    @State private var selectedConnectionID: ConnectionTableItem.ID?
-    @State private var groupsByApp = false
-    @State private var groupingDimension: ConnectionTrafficDimension?
-    @State private var showsRecentlyClosed = false
-    /// Limits the list to one app (`SourceAppPresentation.groupingKey`).
-    @State private var appFilter: AppFilter?
-    /// Limits the list to one host or outbound hop selected from the leaderboard.
-    @State private var dimensionFilter: DimensionFilter?
-
-    private struct AppFilter: Equatable {
-        let key: String
-        let name: String
-    }
-
-    private struct DimensionFilter: Equatable {
-        let dimension: ConnectionTrafficDimension
-        let key: String
-        let name: String
-    }
 
     private var displayedConnections: [ConnectionTelemetry] {
-        if let pausedConnections {
+        if let pausedConnections = drafts.pausedConnections {
             return pausedConnections
         }
-        return showsRecentlyClosed
+        return drafts.showsRecentlyClosed
             ? telemetry.recentlyClosed.connections
             : telemetry.snapshot.connections
     }
 
     var body: some View {
-        let rows = connectionRows
         VStack(spacing: 0) {
             // Tables use the full width, so the header and bars carry the
             // page margins themselves instead of `aetherPageContent`.
@@ -64,36 +453,21 @@ struct ConnectionsView: View {
                 .padding(.horizontal, AetherVisual.pageHorizontalPadding)
                 .padding(.bottom, AetherVisual.s2)
 
-            if displayedConnections.isEmpty {
-                emptyState
-            } else {
-                connectionList(rows: rows, apps: groupsByApp ? appRows(rows) : nil)
-                    .overlay {
-                        // A search or filter that matches nothing says so
-                        // instead of leaving a bare table.
-                        if rows.isEmpty {
-                            ContentUnavailableView(
-                                AppLocalization.string("No matching connections"),
-                                systemImage: "magnifyingglass",
-                                description: Text(AppLocalization.string("Change the filter, or clear the search field."))
-                            )
-                            .transition(.opacity)
-                        }
-                    }
+            if let closeConnectionsError {
+                AetherInlineMessage(text: closeConnectionsError, kind: .failure, isCompact: true)
+                    .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                    .padding(.bottom, AetherVisual.s2)
             }
 
-            // One line at every width: the privacy note truncates (full text
-            // on hover) rather than growing the footer past the window.
-            HStack(spacing: AetherVisual.s3) {
-                footerContents(visibleCount: rows.count)
-            }
-                .layoutPriority(1)
-                .font(.callout)
-                .foregroundStyle(AetherVisual.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
-                .padding(.vertical, AetherVisual.s2)
-                .overlay(alignment: .top) { Divider() }
+            ConnectionsListSection(
+                telemetry: telemetry,
+                drafts: drafts,
+                inspectedConnection: $inspectedConnection,
+                onCloseRequest: close,
+                onCloseConnectionsOfApp: closeConnections(of:),
+                onCloseGroupConnections: closeGroupConnections
+            )
+            .environmentObject(tunnel)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AppLocalization.string("Connections"))
@@ -104,41 +478,384 @@ struct ConnectionsView: View {
 #if DEBUG
         .task {
             switch ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_SHEET"] {
-            case "inspector": inspectedConnection = connectionRows.first
-            case "apps": groupsByApp = true
+            case "inspector": inspectedConnection = telemetry.trafficSortedSnapshotConnections().first
+            case "apps": drafts.groupsByApp = true
             default: break
             }
         }
 #endif
         .sheet(item: $inspectedConnection) { row in
             ConnectionInspector(
-                flowID: row.id,
-                initialConnection: row.connection,
-                initiallyClosed: showsRecentlyClosed,
+                initialItem: row,
+                initiallyClosed: drafts.showsRecentlyClosed,
                 telemetry: telemetry
             )
             .environmentObject(tunnel)
         }
         .onChange(of: tunnel.isConnected) { _, connected in
             if !connected {
-                pausedConnections = nil
-                showsRecentlyClosed = false
-                appFilter = nil
-                dimensionFilter = nil
-                groupingDimension = nil
+                drafts.resetForDisconnect()
+                showingDisconnectConfirmation = false
+                showingCloseAllConfirmation = false
+                closeConnectionsError = nil
             }
         }
     }
 
+    /// The page's actions in three groups (1.5.2): how the list is shown,
+    /// pausing it, and what acts on every flow. Seven loose buttons read as
+    /// clutter; a menu per group keeps every name visible where it is chosen.
     @ViewBuilder
-    private func footerContents(visibleCount: Int) -> some View {
-        if showsRecentlyClosed {
+    private var connectionActions: some View {
+        Menu {
+            Toggle(isOn: Binding(
+                get: { drafts.groupsByApp },
+                set: { value in
+                    drafts.groupsByApp = value
+                    drafts.groupingDimension = value ? .application : nil
+                }
+            )) {
+                Label(AppLocalization.string("Group by app"), systemImage: "square.stack.3d.up")
+            }
+            .accessibilityIdentifier("connections-group-by-app")
+            Toggle(isOn: Binding(
+                get: { drafts.groupingDimension == .host },
+                set: { value in
+                    drafts.groupsByApp = false
+                    drafts.groupingDimension = value ? .host : nil
+                }
+            )) {
+                Label(AppLocalization.string("Group by host"), systemImage: "globe")
+            }
+            .accessibilityIdentifier("connections-group-by-host")
+            Toggle(isOn: Binding(
+                get: { drafts.groupingDimension == .outbound },
+                set: { value in
+                    drafts.groupsByApp = false
+                    drafts.groupingDimension = value ? .outbound : nil
+                }
+            )) {
+                Label(AppLocalization.string("Group by outbound"), systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            .accessibilityIdentifier("connections-group-by-outbound")
+            Toggle(isOn: Binding(
+                get: { drafts.showsRecentlyClosed },
+                set: { value in
+                    drafts.showsRecentlyClosed = value
+                    drafts.pausedConnections = nil
+                    drafts.pausedAt = nil
+                    drafts.recentlyClosedFrozenAt = value ? .now : nil
+                }
+            )) {
+                Label(AppLocalization.string("Recently closed"), systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityIdentifier("connections-recently-closed-toggle")
+            Divider()
+            Picker(AppLocalization.string("Sort"), selection: $drafts.sort) {
+                ForEach(ConnectionSort.allCases) { option in
+                    Text(verbatim: option.localizedTitle).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+            .accessibilityIdentifier("connections-sort-picker")
+        } label: {
+            Label(
+                AppLocalization.string("View"),
+                systemImage: (drafts.groupsByApp || drafts.groupingDimension != nil || drafts.showsRecentlyClosed)
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle"
+            )
+        }
+        .menuIndicator(.visible)
+        .aetherButton()
+        .fixedSize()
+        .help(AppLocalization.string("Group and sort connections"))
+        .accessibilityIdentifier("connections-view-menu")
+
+        if drafts.showsRecentlyClosed {
+            ConnectionsClearRecentlyClosedButton(model: telemetry)
+        }
+
+        // The symbol alone keeps the header on one line in the smallest
+        // window; the name stays in the tooltip and for VoiceOver, and
+        // a paused list turns the button orange so it never passes for live.
+        Button {
+            if drafts.pausedConnections == nil {
+                drafts.pausedConnections = telemetry.snapshot.connections
+                drafts.pausedAt = .now
+            } else {
+                drafts.pausedConnections = nil
+                drafts.pausedAt = nil
+            }
+        } label: {
+            pauseButtonLabel
+        }
+        .help(AppLocalization.string(drafts.pausedConnections == nil ? "Pause list" : "Resume list"))
+        .disabled(drafts.showsRecentlyClosed || (!tunnel.isConnected && drafts.pausedConnections == nil))
+        .tint(drafts.pausedConnections == nil ? nil : .orange)
+        .aetherButton(prominent: drafts.pausedConnections != nil)
+        .accessibilityIdentifier("connections-pause-button")
+
+        ConnectionsMoreMenuButton(
+            model: telemetry,
+            isConnected: tunnel.isConnected,
+            isTransitioning: tunnel.isTransitioning,
+            onRequestCloseAll: { showingCloseAllConfirmation = true },
+            onRequestDisconnect: { showingDisconnectConfirmation = true }
+        )
+        .confirmationDialog(
+            AppLocalization.string("Close All Active Connections"),
+            isPresented: $showingCloseAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(AppLocalization.string("Close All Connections"), role: .destructive) {
+                close(.all)
+            }
+            Button(AppLocalization.string("Cancel"), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string("Active apps may immediately open new connections following the current rules."))
+        }
+        .confirmationDialog(
+            AppLocalization.string("Disconnect Tunnel"),
+            isPresented: $showingDisconnectConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(AppLocalization.string("Disconnect"), role: .destructive) {
+                Task { await tunnel.setEnabled(false) }
+            }
+            Button(AppLocalization.string("Cancel"), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string("Disconnecting the tunnel will stop proxy routing and terminate all active connections."))
+        }
+    }
+
+    private var pauseButtonLabel: some View {
+        Label {
+            Text(AppLocalization.string(drafts.pausedConnections == nil ? "Pause list" : "Resume list"))
+        } icon: {
+            Image(systemName: drafts.pausedConnections == nil ? "pause.fill" : "play.fill")
+                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+        }
+        .labelStyle(.iconOnly)
+    }
+
+    /// Sends one close request and leaves the list to the next telemetry
+    /// sample; the apps that owned the connections reconnect on their own.
+    private func close(_ request: ConnectionCloseRequest) {
+        closeConnectionsError = nil
+        Task {
+            let closed = await tunnel.closeConnections(request)
+            if !closed {
+                closeConnectionsError = AppLocalization.string("Could not close the connection. Refresh or try again.")
+            }
+        }
+    }
+
+    /// An app here can stand for several processes (a browser and its
+    /// helpers), each with its own signing identity, so every identity the
+    /// list currently shows for it is closed.
+    private func closeConnections(of app: SourceAppPresentation) {
+        let directory = SourceAppDirectory.shared
+        let apps = displayedConnections
+            .filter { directory.presentation(for: $0).groupingKey == app.groupingKey }
+            .map(ConnectionCloseApp.init(of:))
+        let requests = ConnectionCloseRequest.closing(apps: apps)
+        guard !requests.isEmpty else { return }
+        closeConnectionsError = nil
+        Task {
+            var allSucceeded = true
+            for request in requests {
+                let closed = await tunnel.closeConnections(request)
+                if !closed {
+                    allSucceeded = false
+                }
+            }
+            if !allSucceeded {
+                closeConnectionsError = AppLocalization.string("Some connections could not be closed. Refresh or try again.")
+            }
+        }
+    }
+
+    private func closeGroupConnections(
+        entry: ConnectionTrafficEntry,
+        dimension: ConnectionTrafficDimension,
+        matching rows: [ConnectionTableItem]
+    ) {
+        let requests: [ConnectionCloseRequest]
+        if dimension == .outbound {
+            requests = [.proxyChainMember(entry.key)]
+        } else {
+            let filteredConnections = rows.map(\.connection).filter {
+                ConnectionTrafficAggregator.matchesFilter($0, dimension: dimension, key: entry.key)
+            }
+            guard !filteredConnections.isEmpty else { return }
+            var deduplicated: [ConnectionCloseRequest] = []
+            for connection in filteredConnections {
+                let request = ConnectionCloseRequest(row: connection)
+                if !deduplicated.contains(request) {
+                    deduplicated.append(request)
+                }
+            }
+            requests = deduplicated
+        }
+        guard !requests.isEmpty else { return }
+        closeConnectionsError = nil
+        Task {
+            var allSucceeded = true
+            for request in requests {
+                let ok = await tunnel.closeConnections(request)
+                if !ok {
+                    allSucceeded = false
+                }
+            }
+            if !allSucceeded {
+                closeConnectionsError = AppLocalization.string("Some connections could not be closed. Refresh or try again.")
+            }
+        }
+    }
+}
+
+private struct ConnectionsClearRecentlyClosedButton: View {
+    @ObservedObject var model: NetworkTelemetryViewModel
+
+    var body: some View {
+        if !model.recentlyClosed.connections.isEmpty {
+            Button {
+                model.clearRecentlyClosed()
+            } label: {
+                Label(AppLocalization.string("Clear"), systemImage: "trash")
+            }
+            .aetherButton()
+            .fixedSize()
+            .help(AppLocalization.string("Clear recently closed connections"))
+            .accessibilityIdentifier("connections-clear-recently-closed")
+        }
+    }
+}
+
+private struct ConnectionsMoreMenuButton: View {
+    @ObservedObject var model: NetworkTelemetryViewModel
+    let isConnected: Bool
+    let isTransitioning: Bool
+    let onRequestCloseAll: () -> Void
+    let onRequestDisconnect: () -> Void
+
+    var body: some View {
+        Menu {
+            // Ends every listed flow but keeps the tunnel up; apps open
+            // fresh connections, which follow the current rules and nodes.
+            Button(AppLocalization.string("Close All Connections"), systemImage: "xmark.circle") {
+                onRequestCloseAll()
+            }
+            .disabled(!isConnected || isTransitioning || model.snapshot.connections.isEmpty)
+            .accessibilityIdentifier("close-all-connections")
+            Divider()
+            // This stops the tunnel, not only the listed flows, so it says
+            // "Disconnect" like the overview and confirms first.
+            Button(AppLocalization.string("Disconnect"), systemImage: "power", role: .destructive) {
+                onRequestDisconnect()
+            }
+            .disabled(!isConnected || isTransitioning)
+            .accessibilityIdentifier("disconnect-all-connections")
+        } label: {
+            // Named, like the actions beside it: a lone ellipsis drew a
+            // button half their height.
+            Label(AppLocalization.string("More"), systemImage: "ellipsis.circle")
+        }
+        .menuIndicator(.hidden)
+        .aetherButton()
+        .fixedSize()
+        .help(AppLocalization.string("Close all active connections or disconnect"))
+        .accessibilityIdentifier("connections-more-menu")
+    }
+}
+
+private struct ConnectionsListSection: View {
+    @EnvironmentObject private var tunnel: TunnelManager
+    @ObservedObject var telemetry: NetworkTelemetryViewModel
+    @ObservedObject var drafts: ConnectionsPageDraftState
+    @Binding var inspectedConnection: ConnectionTableItem?
+    let onCloseRequest: (ConnectionCloseRequest) -> Void
+    let onCloseConnectionsOfApp: (SourceAppPresentation) -> Void
+    let onCloseGroupConnections: (ConnectionTrafficEntry, ConnectionTrafficDimension, [ConnectionTableItem]) -> Void
+
+    @StateObject private var rowsModel: ConnectionsRowsModel
+    @State private var filterBarWidth: CGFloat = 0
+
+    init(
+        telemetry: NetworkTelemetryViewModel,
+        drafts: ConnectionsPageDraftState,
+        inspectedConnection: Binding<ConnectionTableItem?>,
+        onCloseRequest: @escaping (ConnectionCloseRequest) -> Void,
+        onCloseConnectionsOfApp: @escaping (SourceAppPresentation) -> Void,
+        onCloseGroupConnections: @escaping (ConnectionTrafficEntry, ConnectionTrafficDimension, [ConnectionTableItem]) -> Void
+    ) {
+        self.telemetry = telemetry
+        self.drafts = drafts
+        self._inspectedConnection = inspectedConnection
+        self.onCloseRequest = onCloseRequest
+        self.onCloseConnectionsOfApp = onCloseConnectionsOfApp
+        self.onCloseGroupConnections = onCloseGroupConnections
+        _rowsModel = StateObject(wrappedValue: ConnectionsRowsModel(telemetry: telemetry, drafts: drafts))
+    }
+
+    private func refreshRows() {
+        rowsModel.refresh(telemetry: telemetry, drafts: drafts)
+    }
+
+    var body: some View {
+        let derived = rowsModel.data
+        VStack(spacing: 0) {
+            if derived.isDisplayedEmpty {
+                emptyState
+            } else {
+                connectionList(derived: derived)
+            }
+
+            // One line at every width: the privacy note truncates (full text
+            // on hover) rather than growing the footer past the window.
+            HStack(spacing: AetherVisual.s3) {
+                footerContents(derived: derived)
+            }
+                .layoutPriority(1)
+                .font(.callout)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AetherVisual.pageHorizontalPadding)
+                .padding(.vertical, AetherVisual.s2)
+                .overlay(alignment: .top) { Divider() }
+        }
+        .onAppear {
+            refreshRows()
+        }
+        .onChange(of: telemetry.snapshot) { _, _ in
+            guard drafts.pausedConnections == nil && !drafts.showsRecentlyClosed else { return }
+            refreshRows()
+        }
+        .onChange(of: telemetry.recentlyClosed.connections) { _, _ in
+            guard drafts.showsRecentlyClosed && drafts.pausedConnections == nil else { return }
+            refreshRows()
+        }
+        .onChange(of: drafts.filter) { _, _ in refreshRows() }
+        .onChange(of: drafts.sort) { _, _ in refreshRows() }
+        .onChange(of: drafts.searchText) { _, _ in refreshRows() }
+        .onChange(of: drafts.pausedConnections) { _, _ in refreshRows() }
+        .onChange(of: drafts.showsRecentlyClosed) { _, _ in refreshRows() }
+        .onChange(of: drafts.appFilter) { _, _ in refreshRows() }
+        .onChange(of: drafts.dimensionFilter) { _, _ in refreshRows() }
+        .onChange(of: drafts.groupsByApp) { _, _ in refreshRows() }
+        .onChange(of: drafts.groupingDimension) { _, _ in refreshRows() }
+    }
+
+    @ViewBuilder
+    private func footerContents(derived: ConnectionsRowsModel.SnapshotData) -> some View {
+        if drafts.showsRecentlyClosed {
             Label(AppLocalization.string("Recently closed"), systemImage: "clock.arrow.circlepath")
                 .foregroundStyle(AetherReadableTint(color: .indigo))
                 .lineLimit(1)
                 .fixedSize()
                 .transition(AetherVisual.insertion)
-        } else if pausedConnections != nil {
+        } else if drafts.pausedConnections != nil {
             Label(AppLocalization.string("List paused · session counters are live"), systemImage: "pause.circle.fill")
                 .foregroundStyle(AetherReadableTint(color: .orange))
                 .lineLimit(1)
@@ -146,11 +863,17 @@ struct ConnectionsView: View {
                 .transition(AetherVisual.insertion)
         }
         // "Showing 0 of 0" only repeats the empty state above it.
-        if !displayedConnections.isEmpty {
-            Text(footerText(visibleCount: visibleCount))
-                .lineLimit(1)
-                .fixedSize()
-                .accessibilityIdentifier("connections-count-summary")
+        if !derived.isDisplayedEmpty {
+            Text(
+                AppLocalization.format(
+                    "Showing %lld of %lld connections",
+                    Int64(derived.rows.count),
+                    Int64(derived.totalCount)
+                )
+            )
+            .lineLimit(1)
+            .fixedSize()
+            .accessibilityIdentifier("connections-count-summary")
         }
         Text(AppLocalization.string("Counted on this Mac only; nothing is reported."))
             .lineLimit(1)
@@ -164,13 +887,13 @@ struct ConnectionsView: View {
     private var emptyState: some View {
         // The same empty-state card as Proxies, Rules and DNS.
         FeatureEmptyState(
-            symbol: showsRecentlyClosed ? "clock.arrow.circlepath" : "arrow.left.arrow.right",
-            title: showsRecentlyClosed
+            symbol: drafts.showsRecentlyClosed ? "clock.arrow.circlepath" : "arrow.left.arrow.right",
+            title: drafts.showsRecentlyClosed
                 ? AppLocalization.string("No recently closed connections")
                 : (tunnel.isConnected
                     ? AppLocalization.string("No active connections")
                     : AppLocalization.string("No connections yet")),
-            detail: showsRecentlyClosed
+            detail: drafts.showsRecentlyClosed
                 ? AppLocalization.string("Connections that finish while the tunnel is running appear here so you can inspect them or create rules.")
                 : (tunnel.isConnected
                     ? AppLocalization.string("Each live connection shows its destination, matched rule, outlet and traffic.")
@@ -181,13 +904,9 @@ struct ConnectionsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private func connectionList(
-        rows: [ConnectionTableItem],
-        apps: [ConnectionAppRow]?
-    ) -> some View {
-        // Counted once per sample, not once per filter and layout candidate:
-        // with 2,000 flows that was 8 passes over every proxy chain.
-        let counts = outletCounts
+    private func connectionList(derived: ConnectionsRowsModel.SnapshotData) -> some View {
+        let counts = derived.outletCounts
+        let rows = derived.rows
         return VStack(alignment: .leading, spacing: 0) {
             // Single-instantiation filter bar: choose either segmented or menu
             // picker from the measured bar width rather than double-building via ViewThatFits.
@@ -198,7 +917,7 @@ struct ConnectionsView: View {
                     menuFilter()
                 }
                 AetherSearchField(
-                    text: $searchText,
+                    text: $drafts.searchText,
                     prompt: AppLocalization.string("Search connections"),
                     accessibilityIdentifier: "connections-search-field"
                 )
@@ -214,22 +933,53 @@ struct ConnectionsView: View {
                 }
             }
 
-            if let appFilter {
+            if derived.isSnapshotTruncated {
+                HStack(spacing: AetherVisual.s1) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                        .accessibilityHidden(true)
+                    Text(
+                        AppLocalization.format(
+                            "All counts %lld active flows; Proxied, Direct, and Rejected reflect the top %lld captured flows.",
+                            Int64(derived.allCount),
+                            Int64(derived.snapshotBreakdownCount)
+                        )
+                    )
+                }
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.bottom, AetherVisual.s2)
+                .accessibilityIdentifier("connections-snapshot-cap-note")
+            }
+
+            if let appFilter = drafts.appFilter {
                 appFilterBar(appFilter)
             }
-            if let dimensionFilter {
+            if let dimensionFilter = drafts.dimensionFilter {
                 dimensionFilterBar(dimensionFilter)
             }
 
-            if let apps {
-                appTable(apps)
-            } else if let dimension = groupingDimension, dimension != .application {
-                let summary = ConnectionTrafficAggregator.summarize(
-                    connections: rows.map(\.connection),
-                    dimension: dimension,
-                    limit: 100
-                )
-                leaderboardTable(summary.entries, dimension: dimension)
+            if rows.isEmpty {
+                ContentUnavailableView {
+                    Label(AppLocalization.string("No matching connections"), systemImage: "magnifyingglass")
+                } description: {
+                    Text(AppLocalization.string("Change the filter, or clear the search field."))
+                } actions: {
+                    Button(AppLocalization.string("Clear Filters")) {
+                        drafts.filter = .all
+                        drafts.searchText = ""
+                        drafts.appFilter = nil
+                        drafts.dimensionFilter = nil
+                    }
+                    .aetherButton()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if drafts.groupsByApp {
+                appTable(derived.appRows)
+            } else if let dimension = drafts.groupingDimension, dimension != .application {
+                leaderboardTable(derived.leaderboardEntries, dimension: dimension, matching: rows)
             } else {
                 connectionTable(rows)
             }
@@ -239,7 +989,7 @@ struct ConnectionsView: View {
         .padding(.bottom, AetherVisual.s2)
     }
 
-    private func appFilterBar(_ filter: AppFilter) -> some View {
+    private func appFilterBar(_ filter: ConnectionsAppFilter) -> some View {
         HStack(spacing: AetherVisual.s2) {
             Image(systemName: "line.3.horizontal.decrease.circle.fill")
                 .foregroundStyle(.tint)
@@ -250,7 +1000,7 @@ struct ConnectionsView: View {
             Spacer(minLength: 0)
             Button(AppLocalization.string("Show all apps")) {
                 withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                    appFilter = nil
+                    drafts.appFilter = nil
                 }
             }
             .buttonStyle(.link)
@@ -263,7 +1013,7 @@ struct ConnectionsView: View {
         .accessibilityIdentifier("connections-app-filter")
     }
 
-    private func dimensionFilterBar(_ filter: DimensionFilter) -> some View {
+    private func dimensionFilterBar(_ filter: ConnectionsDimensionFilter) -> some View {
         let formatKey = filter.dimension == .host
             ? "Only connections to %@"
             : "Only connections via %@"
@@ -277,7 +1027,7 @@ struct ConnectionsView: View {
             Spacer(minLength: 0)
             Button(AppLocalization.string("Show all connections")) {
                 withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                    dimensionFilter = nil
+                    drafts.dimensionFilter = nil
                 }
             }
             .buttonStyle(.link)
@@ -296,8 +1046,8 @@ struct ConnectionsView: View {
     // columns 79 pt past the table. Duration keeps its 56/60/100 budget
     // (verify_ui_design_tokens.sh) for abbreviated Chinese durations.
     private func connectionTable(_ rows: [ConnectionTableItem]) -> some View {
-        let showsLiveRates = pausedConnections == nil && !showsRecentlyClosed
-        return Table(rows, selection: $selectedConnectionID) {
+        let showsLiveRates = drafts.pausedConnections == nil && !drafts.showsRecentlyClosed
+        return Table(rows, selection: $drafts.selectedConnectionID) {
             TableColumn(AppLocalization.string("App")) { row in
                 let app = SourceAppDirectory.shared.presentation(for: row.connection)
                 ConnectionAppCell(app: app)
@@ -349,14 +1099,60 @@ struct ConnectionsView: View {
         .accessibilityLabel(AppLocalization.string("Connections"))
         .accessibilityIdentifier("connections-table")
         .scrollIndicators(.hidden, axes: .horizontal)
+        .onKeyPress(.return) {
+            guard inspectedConnection == nil, let selected = selectedRow(in: rows) else {
+                return .ignored
+            }
+            inspectedConnection = selected
+            return .handled
+        }
+        .onKeyPress(keys: [.delete, .deleteForward]) { _ in
+            guard inspectedConnection == nil,
+                  tunnel.isConnected,
+                  !drafts.showsRecentlyClosed,
+                  let selected = selectedRow(in: rows) else {
+                return .ignored
+            }
+            onCloseRequest(.init(row: selected.connection))
+            return .handled
+        }
+        .onDeleteCommand {
+            guard inspectedConnection == nil,
+                  tunnel.isConnected,
+                  !drafts.showsRecentlyClosed,
+                  let selected = selectedRow(in: rows) else {
+                return
+            }
+            onCloseRequest(.init(row: selected.connection))
+        }
+        .onCopyCommand {
+            guard let selected = selectedRow(in: rows) else { return [] }
+            return [NSItemProvider(object: selected.connection.destinationAddress as NSString)]
+        }
+        .onKeyPress(characters: CharacterSet(charactersIn: "cC")) { press in
+            guard inspectedConnection == nil,
+                  press.modifiers.contains(.command),
+                  let selected = selectedRow(in: rows) else {
+                return .ignored
+            }
+            copyDestination(selected.connection)
+            return .handled
+        }
+    }
+
+    private func selectedRow(in rows: [ConnectionTableItem]) -> ConnectionTableItem? {
+        guard let selectedID = drafts.selectedConnectionID else { return nil }
+        return rows.first(where: { $0.id == selectedID })
     }
 
     private func durationColumnCell(for row: ConnectionTableItem) -> some View {
         ConnectionDurationColumnCell(
             connection: row.connection,
-            showsCloseButton: tunnel.isConnected && !showsRecentlyClosed,
-            isSelected: selectedConnectionID == row.id,
-            onClose: { close(.init(row: row.connection)) }
+            showsCloseButton: tunnel.isConnected && !drafts.showsRecentlyClosed,
+            isSelected: drafts.selectedConnectionID == row.id,
+            isPaused: drafts.pausedConnections != nil || drafts.showsRecentlyClosed,
+            frozenAt: drafts.pausedAt ?? (drafts.showsRecentlyClosed ? drafts.recentlyClosedFrozenAt : nil),
+            onClose: { onCloseRequest(.init(row: row.connection)) }
         )
         .contextMenu { connectionRowContextMenu(for: row) }
         .onTapGesture(count: 2) { inspectedConnection = row }
@@ -366,34 +1162,36 @@ struct ConnectionsView: View {
     private func connectionRowContextMenu(for row: ConnectionTableItem) -> some View {
         Button(AppLocalization.string("Copy destination")) { copyDestination(row.connection) }
         Button(AppLocalization.string("Connection details")) { inspectedConnection = row }
-        if tunnel.isConnected, !showsRecentlyClosed {
+        if tunnel.isConnected, !drafts.showsRecentlyClosed {
             Button(AppLocalization.string("Close Connection")) {
-                close(.init(row: row.connection))
+                onCloseRequest(.init(row: row.connection))
             }
         }
         Divider()
         destinationRuleMenu(for: row.connection)
         appContextMenu(
-            SourceAppDirectory.shared.presentation(for: row.connection)
+            SourceAppDirectory.shared.presentation(for: row.connection),
+            allowsLiveClose: tunnel.isConnected && !drafts.showsRecentlyClosed
         )
     }
 
     /// One row per app: how many connections it has open and their traffic.
     /// Double-click (or the context menu) lists that app's connections.
     private func appTable(_ apps: [ConnectionAppRow]) -> some View {
-        Table(apps) {
+        Table(apps, selection: $drafts.selectedAppKey) {
             TableColumn(AppLocalization.string("App")) { row in
                 ConnectionAppCell(app: row.app)
-                    .contextMenu { appContextMenu(row.app) }
+                    .contextMenu { appContextMenu(row.app, allowsLiveClose: tunnel.isConnected && !drafts.showsRecentlyClosed) }
                     .onTapGesture(count: 2) { showOnly(row.app) }
             }
             .width(min: 140, ideal: 220, max: 520)
             TableColumn(AppLocalization.string("Connections")) { row in
                 Text(verbatim: "\(row.connectionCount)")
                     .font(.body.monospacedDigit())
+                    .aetherLiveValue()
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: AetherVisual.tableRowHeight)
-                    .contextMenu { appContextMenu(row.app) }
+                    .contextMenu { appContextMenu(row.app, allowsLiveClose: tunnel.isConnected && !drafts.showsRecentlyClosed) }
             }
             .width(min: 72, ideal: 84, max: 120)
             .alignment(.numeric)
@@ -405,34 +1203,37 @@ struct ConnectionsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: AetherVisual.tableRowHeight)
                     .help(Text(verbatim: summary))
-                    .contextMenu { appContextMenu(row.app) }
+                    .contextMenu { appContextMenu(row.app, allowsLiveClose: tunnel.isConnected && !drafts.showsRecentlyClosed) }
             }
             .width(min: 84, ideal: 120, max: 320)
             TableColumn(AppLocalization.string("Traffic")) { row in
                 Group {
                     if row.liveBytesPerSecond > 0 {
                         VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
-                            Text(verbatim: "↓ \(formattedRate(row.liveDownloadBytesPerSecond)) · ↑ \(formattedRate(row.liveUploadBytesPerSecond))")
-                                .font(.caption.monospacedDigit().weight(.semibold))
+                            Text(verbatim: "↓ \(formattedRate(row.liveDownloadBytesPerSecond))")
+                                .font(.callout.monospacedDigit())
                                 .foregroundStyle(AetherReadableTint(color: .accentColor))
                                 .lineLimit(1)
                                 .aetherLiveValue()
-                            Text(verbatim: "↓ \(formattedBytes(row.downloadTotal)) · ↑ \(formattedBytes(row.uploadTotal))")
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(AetherVisual.secondaryText)
+                            Text(verbatim: "↑ \(formattedRate(row.liveUploadBytesPerSecond))")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(AetherReadableTint(color: .accentColor))
                                 .lineLimit(1)
+                                .aetherLiveValue()
                         }
+                        .help(Text(verbatim: "↓ \(formattedBytes(row.downloadTotal)) · ↑ \(formattedBytes(row.uploadTotal))"))
                     } else {
                         VStack(alignment: .trailing, spacing: AetherVisual.s1) {
                             Text(verbatim: "↓ \(formattedBytes(row.downloadTotal))")
                             Text(verbatim: "↑ \(formattedBytes(row.uploadTotal))")
                         }
                         .font(.body.monospacedDigit())
+                        .aetherLiveValue()
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .frame(height: AetherVisual.tableRowHeight)
-                .contextMenu { appContextMenu(row.app) }
+                .contextMenu { appContextMenu(row.app, allowsLiveClose: tunnel.isConnected && !drafts.showsRecentlyClosed) }
             }
             .width(min: 64, ideal: 96, max: 180)
             .alignment(.numeric)
@@ -446,12 +1247,13 @@ struct ConnectionsView: View {
 
     private func leaderboardTable(
         _ entries: [ConnectionTrafficEntry],
-        dimension: ConnectionTrafficDimension
+        dimension: ConnectionTrafficDimension,
+        matching rows: [ConnectionTableItem]
     ) -> some View {
         let primaryColumnTitle = dimension == .host
             ? AppLocalization.string("Destination")
             : AppLocalization.string("Outlet")
-        return Table(entries) {
+        return Table(entries, selection: $drafts.selectedDimensionKey) {
             TableColumn(primaryColumnTitle) { entry in
                 VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
                     Text(verbatim: entry.displayName)
@@ -468,7 +1270,7 @@ struct ConnectionsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .frame(height: AetherVisual.tableRowHeight)
-                .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
+                .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension, matching: rows) }
                 .onTapGesture(count: 2) {
                     showOnlyDimension(entry)
                 }
@@ -477,9 +1279,10 @@ struct ConnectionsView: View {
             TableColumn(AppLocalization.string("Connections")) { entry in
                 Text(verbatim: "\(entry.connectionCount)")
                     .font(.body.monospacedDigit())
+                    .aetherLiveValue()
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: AetherVisual.tableRowHeight)
-                    .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
+                    .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension, matching: rows) }
             }
             .width(min: 72, ideal: 84, max: 120)
             .alignment(.numeric)
@@ -487,10 +1290,11 @@ struct ConnectionsView: View {
                 let percent = Int((entry.shareOfTotal * 100).rounded())
                 Text(verbatim: "\(percent)%")
                     .font(.body.monospacedDigit())
+                    .aetherLiveValue()
                     .foregroundStyle(AetherVisual.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .frame(height: AetherVisual.tableRowHeight)
-                    .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
+                    .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension, matching: rows) }
             }
             .width(min: 56, ideal: 68, max: 100)
             .alignment(.numeric)
@@ -500,9 +1304,10 @@ struct ConnectionsView: View {
                     Text(verbatim: "↑ \(formattedBytes(entry.uploadTotal))")
                 }
                 .font(.body.monospacedDigit())
+                .aetherLiveValue()
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .frame(height: AetherVisual.tableRowHeight)
-                .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension) }
+                .contextMenu { leaderboardContextMenu(for: entry, dimension: dimension, matching: rows) }
             }
             .width(min: 64, ideal: 80, max: 120)
             .alignment(.numeric)
@@ -517,14 +1322,15 @@ struct ConnectionsView: View {
     @ViewBuilder
     private func leaderboardContextMenu(
         for entry: ConnectionTrafficEntry,
-        dimension: ConnectionTrafficDimension
+        dimension: ConnectionTrafficDimension,
+        matching rows: [ConnectionTableItem]
     ) -> some View {
         Button(AppLocalization.format("Show only %@", entry.displayName)) {
             showOnlyDimension(entry)
         }
-        if tunnel.isConnected, !showsRecentlyClosed {
+        if tunnel.isConnected, !drafts.showsRecentlyClosed {
             Button {
-                closeGroupConnections(entry: entry, dimension: dimension)
+                onCloseGroupConnections(entry, dimension, rows)
             } label: {
                 Text(AppLocalization.format(
                     "Close connections (%lld)",
@@ -542,38 +1348,14 @@ struct ConnectionsView: View {
         }
     }
 
-    private func closeGroupConnections(
-        entry: ConnectionTrafficEntry,
-        dimension: ConnectionTrafficDimension
-    ) {
-        let matching = displayedConnections.filter {
-            ConnectionTrafficAggregator.matchesFilter($0, dimension: dimension, key: entry.key)
-        }
-        guard !matching.isEmpty else { return }
-        var requests: [ConnectionCloseRequest] = []
-        for connection in matching {
-            let request = ConnectionCloseRequest(row: connection)
-            if !requests.contains(request) {
-                requests.append(request)
-            }
-        }
-        Task {
-            for request in requests {
-                await tunnel.closeConnections(request)
-            }
-        }
-    }
-
     private func showOnlyDimension(_ entry: ConnectionTrafficEntry) {
-        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-            dimensionFilter = DimensionFilter(
-                dimension: entry.dimension,
-                key: entry.key,
-                name: entry.displayName
-            )
-            groupsByApp = false
-            groupingDimension = nil
-        }
+        drafts.dimensionFilter = ConnectionsDimensionFilter(
+            dimension: entry.dimension,
+            key: entry.key,
+            name: entry.displayName
+        )
+        drafts.groupsByApp = false
+        drafts.groupingDimension = nil
     }
 
     @ViewBuilder
@@ -592,8 +1374,8 @@ struct ConnectionsView: View {
                                     noResolve: candidate.noResolve,
                                     target: target
                                 )
-                                if saved, tunnel.isConnected {
-                                    await tunnel.closeConnections(.init(row: connection))
+                                if saved, tunnel.isConnected, !drafts.showsRecentlyClosed {
+                                    onCloseRequest(.init(row: connection))
                                 }
                             }
                         } label: {
@@ -609,8 +1391,8 @@ struct ConnectionsView: View {
                         Button(AppLocalization.string("Remove rule"), role: .destructive) {
                             Task {
                                 let deleted = await tunnel.deleteCustomRule(id: existing.id)
-                                if deleted, tunnel.isConnected {
-                                    await tunnel.closeConnections(.init(row: connection))
+                                if deleted, tunnel.isConnected, !drafts.showsRecentlyClosed {
+                                    onCloseRequest(.init(row: connection))
                                 }
                             }
                         }
@@ -622,7 +1404,7 @@ struct ConnectionsView: View {
     }
 
     @ViewBuilder
-    private func appContextMenu(_ app: SourceAppPresentation) -> some View {
+    private func appContextMenu(_ app: SourceAppPresentation, allowsLiveClose: Bool) -> some View {
         if let subject = SourceAppDirectory.shared.ruleSubject(for: app) {
             let existing = tunnel.applicationRule(
                 bundleIdentifier: subject.bundleIdentifier,
@@ -638,7 +1420,7 @@ struct ConnectionsView: View {
                                 displayName: app.displayName,
                                 target: target
                             )
-                            if saved, tunnel.isConnected {
+                            if saved, allowsLiveClose {
                                 closeConnections(of: app)
                             }
                         }
@@ -655,7 +1437,7 @@ struct ConnectionsView: View {
                     Button(AppLocalization.string("Remove rule"), role: .destructive) {
                         Task {
                             let deleted = await tunnel.deleteCustomRule(id: existing.id)
-                            if deleted, tunnel.isConnected {
+                            if deleted, allowsLiveClose {
                                 closeConnections(of: app)
                             }
                         }
@@ -664,7 +1446,7 @@ struct ConnectionsView: View {
             }
             Divider()
         }
-        if tunnel.isConnected {
+        if allowsLiveClose {
             Button(AppLocalization.format("Close Connections of %@", app.displayName)) {
                 closeConnections(of: app)
             }
@@ -683,6 +1465,10 @@ struct ConnectionsView: View {
         }
     }
 
+    private func closeConnections(of app: SourceAppPresentation) {
+        onCloseConnectionsOfApp(app)
+    }
+
     /// Direct, reject, and each proxy group of the active profile.
     private var applicationRuleTargets: [CustomRuleTarget] {
         let groups = (tunnel.activeProfileSummary?.proxyGroups ?? []).map(\.name)
@@ -697,69 +1483,14 @@ struct ConnectionsView: View {
         }
     }
 
-    /// Sends one close request and leaves the list to the next telemetry
-    /// sample; the apps that owned the connections reconnect on their own.
-    private func close(_ request: ConnectionCloseRequest) {
-        Task { await tunnel.closeConnections(request) }
-    }
-
-    /// An app here can stand for several processes (a browser and its
-    /// helpers), each with its own signing identity, so every identity the
-    /// list currently shows for it is closed.
-    private func closeConnections(of app: SourceAppPresentation) {
-        let directory = SourceAppDirectory.shared
-        let apps = displayedConnections
-            .filter { directory.presentation(for: $0).groupingKey == app.groupingKey }
-            .map(ConnectionCloseApp.init(of:))
-        let requests = ConnectionCloseRequest.closing(apps: apps)
-        guard !requests.isEmpty else { return }
-        Task {
-            for request in requests {
-                await tunnel.closeConnections(request)
-            }
-        }
-    }
-
     private func showOnly(_ app: SourceAppPresentation) {
-        withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-            appFilter = AppFilter(key: app.groupingKey, name: app.displayName)
-            groupsByApp = false
-        }
-    }
-
-    private func appRows(_ rows: [ConnectionTableItem]) -> [ConnectionAppRow] {
-        let directory = SourceAppDirectory.shared
-        let showsLiveRates = pausedConnections == nil && !showsRecentlyClosed
-        var groups: [String: ConnectionAppRow] = [:]
-        for row in rows {
-            let app = directory.presentation(for: row.connection)
-            let rates = showsLiveRates ? telemetry.connectionRates[row.id] : nil
-            groups[app.groupingKey, default: ConnectionAppRow(app: app)]
-                .add(row.connection, rates: rates)
-        }
-        return groups.values.sorted { lhs, rhs in
-            switch sort {
-            case .speed:
-                if lhs.liveBytesPerSecond != rhs.liveBytesPerSecond {
-                    return lhs.liveBytesPerSecond > rhs.liveBytesPerSecond
-                }
-                return lhs.downloadTotal + lhs.uploadTotal
-                    > rhs.downloadTotal + rhs.uploadTotal
-            case .traffic:
-                return lhs.downloadTotal + lhs.uploadTotal
-                    > rhs.downloadTotal + rhs.uploadTotal
-            case .newest:
-                return lhs.latestStartedAtUnixMilliseconds > rhs.latestStartedAtUnixMilliseconds
-            case .destination:
-                return lhs.app.displayName.localizedStandardCompare(
-                    rhs.app.displayName
-                ) == .orderedAscending
-            }
-        }
+        drafts.appFilter = ConnectionsAppFilter(key: app.groupingKey, name: app.displayName)
+        drafts.groupsByApp = false
+        drafts.groupingDimension = nil
     }
 
     private func menuFilter() -> some View {
-        Picker(AppLocalization.string("Filter"), selection: $filter) {
+        Picker(AppLocalization.string("Filter"), selection: $drafts.filter) {
             ForEach(ConnectionOutletFilter.allCases, id: \.self) { option in
                 Text(option.localizedTitle).tag(option)
             }
@@ -787,7 +1518,7 @@ struct ConnectionsView: View {
 
     private func segmentedFilter(counts: [ConnectionOutletFilter: Int]) -> some View {
         AetherSegmentedPicker(
-            selection: $filter,
+            selection: $drafts.filter,
             options: ConnectionOutletFilter.allCases.map {
                 .init(value: $0, title: "\($0.localizedTitle) \(counts[$0, default: 0])")
             },
@@ -797,282 +1528,9 @@ struct ConnectionsView: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    /// The page's actions in three groups (1.5.2): how the list is shown,
-    /// pausing it, and what acts on every flow. Seven loose buttons read as
-    /// clutter; a menu per group keeps every name visible where it is chosen.
-    @ViewBuilder
-    private var connectionActions: some View {
-        Menu {
-            Toggle(isOn: Binding(
-                get: { groupsByApp },
-                set: { value in
-                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                        groupsByApp = value
-                        groupingDimension = value ? .application : nil
-                    }
-                }
-            )) {
-                Label(AppLocalization.string("Group by app"), systemImage: "square.stack.3d.up")
-            }
-            .accessibilityIdentifier("connections-group-by-app")
-            Toggle(isOn: Binding(
-                get: { groupingDimension == .host },
-                set: { value in
-                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                        groupsByApp = false
-                        groupingDimension = value ? .host : nil
-                    }
-                }
-            )) {
-                Label(AppLocalization.string("Group by host"), systemImage: "globe")
-            }
-            .accessibilityIdentifier("connections-group-by-host")
-            Toggle(isOn: Binding(
-                get: { groupingDimension == .outbound },
-                set: { value in
-                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                        groupsByApp = false
-                        groupingDimension = value ? .outbound : nil
-                    }
-                }
-            )) {
-                Label(AppLocalization.string("Group by outbound"), systemImage: "point.3.connected.trianglepath.dotted")
-            }
-            .accessibilityIdentifier("connections-group-by-outbound")
-            Toggle(isOn: Binding(
-                get: { showsRecentlyClosed },
-                set: { value in
-                    withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                        showsRecentlyClosed = value
-                        pausedConnections = nil
-                    }
-                }
-            )) {
-                Label(AppLocalization.string("Recently closed"), systemImage: "clock.arrow.circlepath")
-            }
-            .accessibilityIdentifier("connections-recently-closed-toggle")
-            Divider()
-            Picker(AppLocalization.string("Sort"), selection: $sort) {
-                ForEach(ConnectionSort.allCases) { option in
-                    Text(verbatim: option.localizedTitle).tag(option)
-                }
-            }
-            .pickerStyle(.inline)
-            .accessibilityIdentifier("connections-sort-picker")
-        } label: {
-            Label(
-                AppLocalization.string("View"),
-                systemImage: (groupsByApp || groupingDimension != nil || showsRecentlyClosed)
-                    ? "line.3.horizontal.decrease.circle.fill"
-                    : "line.3.horizontal.decrease.circle"
-            )
-        }
-        .menuIndicator(.visible)
-        .aetherButton()
-        .fixedSize()
-        .help(AppLocalization.string("Group and sort connections"))
-        .accessibilityIdentifier("connections-view-menu")
-
-        Button {
-            withAnimation(AetherVisual.animation(AetherVisual.gentleSpring)) {
-                pausedConnections = pausedConnections == nil ? telemetry.snapshot.connections : nil
-            }
-        } label: {
-            Label {
-                Text(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
-            } icon: {
-                Image(systemName: pausedConnections == nil ? "pause.fill" : "play.fill")
-                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
-            }
-            // The symbol alone keeps the header on one line in the smallest
-            // window; the name stays in the tooltip and for VoiceOver, and
-            // a paused list turns the button orange.
-            .labelStyle(.iconOnly)
-        }
-        // A frozen list must not pass for a live one: the button stays
-        // tinted while the list is paused.
-        .tint(pausedConnections == nil ? nil : .orange)
-        .aetherButton(prominent: pausedConnections != nil)
-        .help(AppLocalization.string(pausedConnections == nil ? "Pause list" : "Resume list"))
-        .accessibilityIdentifier("connections-pause-button")
-
-        Menu {
-            // Ends every listed flow but keeps the tunnel up; apps open
-            // fresh connections, which follow the current rules and nodes.
-            Button(AppLocalization.string("Close All"), systemImage: "xmark.circle") {
-                close(.all)
-            }
-            .disabled(!tunnel.isConnected || tunnel.isTransitioning || telemetry.snapshot.connections.isEmpty)
-            .accessibilityIdentifier("close-all-connections")
-            Divider()
-            // This stops the tunnel, not only the listed flows, so it says
-            // "Disconnect" like the overview and confirms first.
-            Button(AppLocalization.string("Disconnect"), systemImage: "power", role: .destructive) {
-                showingDisconnectConfirmation = true
-            }
-            .disabled(!tunnel.isConnected || tunnel.isTransitioning)
-            .accessibilityIdentifier("disconnect-all-connections")
-        } label: {
-            // Named, like the actions beside it: a lone ellipsis drew a
-            // button half their height.
-            Label(AppLocalization.string("More"), systemImage: "ellipsis.circle")
-        }
-        .menuIndicator(.hidden)
-        .aetherButton()
-        .fixedSize()
-        .help(AppLocalization.string("Close all connections without disconnecting"))
-        .accessibilityIdentifier("connections-more-menu")
-        .confirmationDialog(
-            AppLocalization.string("Disconnect Tunnel"),
-            isPresented: $showingDisconnectConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button(AppLocalization.string("Disconnect"), role: .destructive) {
-                Task { await tunnel.setEnabled(false) }
-            }
-            Button(AppLocalization.string("Cancel"), role: .cancel) {}
-        } message: {
-            Text(AppLocalization.string("Disconnecting the tunnel will stop proxy routing and terminate all active connections."))
-        }
-    }
-
-    private var connectionRows: [ConnectionTableItem] {
-        let usesLiveSnapshot = pausedConnections == nil && !showsRecentlyClosed
-        let hasActiveFilter = filter != .all
-            || appFilter != nil
-            || dimensionFilter != nil
-            || !searchText.isEmpty
-        if usesLiveSnapshot && !hasActiveFilter && sort == .traffic {
-            return telemetry.trafficSortedSnapshotConnections()
-        }
-        if usesLiveSnapshot && !hasActiveFilter && sort == .speed {
-            return telemetry.speedSortedSnapshotConnections()
-        }
-        let identified = usesLiveSnapshot
-            ? telemetry.identifiedSnapshotConnections()
-            : frozenCache.identifiedItems(
-                for: displayedConnections,
-                isPaused: pausedConnections != nil,
-                showsRecentlyClosed: showsRecentlyClosed
-            )
-        let filtered: [ConnectionTableItem]
-        if !hasActiveFilter {
-            filtered = identified
-        } else {
-            let directory = SourceAppDirectory.shared
-            let needsAppPresentation = appFilter != nil || !searchText.isEmpty
-            filtered = identified.filter { item in
-                guard ConnectionOutlet.matches(proxyChain: item.connection.proxyChain, filter: filter) else {
-                    return false
-                }
-                if let dimensionFilter,
-                   !ConnectionTrafficAggregator.matchesFilter(
-                       item.connection,
-                       dimension: dimensionFilter.dimension,
-                       key: dimensionFilter.key
-                   ) {
-                    return false
-                }
-                guard needsAppPresentation else {
-                    return true
-                }
-                let app = directory.presentation(for: item.connection)
-                if let appFilter, appFilter.key != app.groupingKey {
-                    return false
-                }
-                guard !searchText.isEmpty else {
-                    return true
-                }
-                return app.displayName.localizedCaseInsensitiveContains(searchText)
-                    || item.connection.destination.localizedCaseInsensitiveContains(searchText)
-                    || item.connection.rule.localizedCaseInsensitiveContains(searchText)
-                    || item.connection.ruleSummary.localizedCaseInsensitiveContains(searchText)
-                    || item.connection.rulePayload.localizedCaseInsensitiveContains(searchText)
-                    || item.connection.proxyChain.localizedCaseInsensitiveContains(searchText)
-            }
-        }
-        return filtered.sorted { lhs, rhs in
-            switch sort {
-            case .speed:
-                let lhsSpeed = usesLiveSnapshot ? (telemetry.connectionRates[lhs.id]?.totalBytesPerSecond ?? 0) : 0
-                let rhsSpeed = usesLiveSnapshot ? (telemetry.connectionRates[rhs.id]?.totalBytesPerSecond ?? 0) : 0
-                if lhsSpeed != rhsSpeed {
-                    return lhsSpeed > rhsSpeed
-                }
-                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
-                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
-            case .traffic:
-                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
-                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
-            case .newest:
-                if lhs.connection.startedAtUnixMilliseconds != rhs.connection.startedAtUnixMilliseconds {
-                    return lhs.connection.startedAtUnixMilliseconds > rhs.connection.startedAtUnixMilliseconds
-                }
-                return lhs.connection.downloadTotal + lhs.connection.uploadTotal
-                    > rhs.connection.downloadTotal + rhs.connection.uploadTotal
-            case .destination:
-                return lhs.connection.destination.localizedStandardCompare(
-                    rhs.connection.destination
-                )
-                    == .orderedAscending
-            }
-        }
-    }
-
     private func copyDestination(_ connection: ConnectionTelemetry) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
-    }
-
-    private func footerText(visibleCount: Int) -> String {
-        let totalCount = (pausedConnections == nil && !showsRecentlyClosed)
-            ? max(displayedConnections.count, telemetry.snapshot.totalActiveConnections)
-            : displayedConnections.count
-        return AppLocalization.format(
-            "Showing %lld of %lld connections",
-            Int64(visibleCount),
-            Int64(totalCount)
-        )
-    }
-
-    private enum ConnectionSort: String, CaseIterable, Identifiable {
-        case speed
-        case traffic
-        case newest
-        case destination
-
-        var id: Self { self }
-
-        var localizedTitle: String {
-            switch self {
-            case .speed:
-                AppLocalization.string("By live speed")
-            case .traffic: AppLocalization.string("By traffic")
-            case .newest: AppLocalization.string("By newest")
-            case .destination: AppLocalization.string("By destination")
-            }
-        }
-    }
-
-    /// Flows per outlet, in one pass over the list.
-    private var outletCounts: [ConnectionOutletFilter: Int] {
-        let usesLiveSnapshot = pausedConnections == nil && !showsRecentlyClosed
-        let tallied = usesLiveSnapshot
-            ? telemetry.snapshotOutletCounts()
-            : frozenCache.counts(
-                for: displayedConnections,
-                isPaused: pausedConnections != nil,
-                showsRecentlyClosed: showsRecentlyClosed
-            )
-        let allCount = usesLiveSnapshot
-            ? max(tallied.all, telemetry.snapshot.totalActiveConnections)
-            : tallied.all
-        return [
-            .all: allCount,
-            .proxied: tallied.proxied,
-            .direct: tallied.direct,
-            .rejected: tallied.rejected,
-        ]
     }
 }
 
@@ -1092,7 +1550,7 @@ private struct SessionBar: View {
                     HStack(spacing: AetherVisual.s2) {
                         AetherStatusBeacon(
                             isConnected: false,
-                            isConnecting: tunnel.state == .connecting,
+                            isConnecting: tunnel.state == .connecting || tunnel.state == .recovering,
                             isFailed: tunnel.isFailed,
                             size: 7
                         )
@@ -1216,22 +1674,21 @@ private struct SessionBar: View {
 
     private var memorySummaryText: String {
         if tunnel.isConnected, telemetry.snapshot.memoryBytes > 0 {
-            return String.localizedStringWithFormat(
-                AppLocalization.string("Core %@ · App %@"),
+            return AppLocalization.format(
+                "Core %@ · App %@",
                 formattedBytes(telemetry.snapshot.memoryBytes),
                 formattedBytes(telemetry.appMemoryBytes)
             )
         }
-        return String.localizedStringWithFormat(
-            AppLocalization.string("App %@"),
+        return AppLocalization.format(
+            "App %@",
             formattedBytes(telemetry.appMemoryBytes)
         )
     }
 
     private var outlet: String? {
         guard tunnel.isConnected else { return nil }
-        let mode = tunnel.sessionRoutingMode ?? tunnel.routingMode
-        switch mode {
+        switch tunnel.effectiveRoutingMode {
         case .direct:
             return AppLocalization.string("Direct outbound (no proxy)")
         case .global:
@@ -1299,7 +1756,7 @@ private struct ConnectionAppCell: View {
 }
 
 /// One app's connections, summed for the grouped view.
-private struct ConnectionAppRow: Identifiable {
+struct ConnectionAppRow: Identifiable {
     let app: SourceAppPresentation
     private(set) var connectionCount = 0
     private(set) var uploadTotal: UInt64 = 0
@@ -1464,14 +1921,14 @@ private struct ConnectionTrafficCell: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: AetherVisual.sMicro) {
             if let rates, rates.totalBytesPerSecond > 0 {
-                Text(verbatim: "↓ \(formattedRate(rates.downloadBytesPerSecond)) · ↑ \(formattedRate(rates.uploadBytesPerSecond))")
+                Text(verbatim: "↓ \(formattedRate(rates.downloadBytesPerSecond))")
                     .font(.callout.monospacedDigit())
                     .foregroundStyle(AetherReadableTint(color: .accentColor))
                     .lineLimit(1)
                     .aetherLiveValue()
-                Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal)) · ↑ \(formattedBytes(connection.uploadTotal))")
+                Text(verbatim: "↑ \(formattedRate(rates.uploadBytesPerSecond))")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(AetherVisual.secondaryText)
+                    .foregroundStyle(AetherReadableTint(color: .accentColor))
                     .lineLimit(1)
                     .aetherLiveValue()
             } else {
@@ -1487,6 +1944,7 @@ private struct ConnectionTrafficCell: View {
                     .aetherLiveValue()
             }
         }
+        .help(Text(verbatim: "↓ \(formattedBytes(connection.downloadTotal)) · ↑ \(formattedBytes(connection.uploadTotal))"))
         .frame(maxWidth: .infinity, alignment: .trailing)
         .frame(height: AetherVisual.tableRowHeight)
     }
@@ -1496,13 +1954,20 @@ private struct ConnectionDurationColumnCell: View {
     let connection: ConnectionTelemetry
     let showsCloseButton: Bool
     let isSelected: Bool
+    var isPaused: Bool = false
+    var frozenAt: Date? = nil
     let onClose: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         let revealClose = showsCloseButton && (isHovered || isSelected)
-        HStack(spacing: AetherVisual.s1) {
-            ConnectionDurationCell(connection: connection)
+        ConnectionDurationCell(
+            connection: connection,
+            isPaused: isPaused,
+            frozenAt: frozenAt
+        )
+        .opacity(revealClose ? 0.35 : 1)
+        .overlay(alignment: .trailing) {
             if showsCloseButton {
                 Button(action: onClose) {
                     Image(systemName: "xmark.circle.fill")
@@ -1510,10 +1975,13 @@ private struct ConnectionDurationColumnCell: View {
                         .foregroundStyle(AetherVisual.secondaryText)
                 }
                 .buttonStyle(.plain)
+                .background(.regularMaterial, in: Circle())
                 .help(AppLocalization.string("Close Connection"))
                 .accessibilityLabel(AppLocalization.string("Close Connection"))
                 .accessibilityIdentifier("close-connection-row-button")
                 .opacity(revealClose ? 1 : 0)
+                .disabled(!revealClose)
+                .focusable(revealClose)
                 .allowsHitTesting(revealClose)
                 .accessibilityHidden(!revealClose)
             }
@@ -1522,15 +1990,18 @@ private struct ConnectionDurationColumnCell: View {
         .frame(height: AetherVisual.tableRowHeight)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: revealClose)
+        .aetherAnimation(AetherVisual.quickFade, value: revealClose)
     }
 }
 
 private struct ConnectionDurationCell: View {
     let connection: ConnectionTelemetry
+    var isPaused: Bool = false
+    var frozenAt: Date? = nil
 
     var body: some View {
-        let elapsed = duration
+        let referenceDate = (isPaused ? frozenAt : nil) ?? frozenAt ?? Date.now
+        let elapsed = duration(at: referenceDate)
         let text = elapsed ?? AppLocalization.string("Unknown")
         Text(text)
             .font(.body.monospacedDigit().weight(.medium))
@@ -1549,9 +2020,9 @@ private struct ConnectionDurationCell: View {
             ))
     }
 
-    private var duration: String? {
+    private func duration(at referenceDate: Date) -> String? {
         let started = Double(connection.startedAtUnixMilliseconds) / 1_000
-        let elapsed = Int(Date.now.timeIntervalSince1970 - started)
+        let elapsed = Int(referenceDate.timeIntervalSince1970 - started)
         // A stale or malformed provider timestamp must not turn into a
         // multi-thousand-hour duration in the table.
         guard elapsed >= 0, elapsed <= 31 * 24 * 3_600 else { return nil }
@@ -1562,37 +2033,45 @@ private struct ConnectionDurationCell: View {
 private struct ConnectionInspector: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @Environment(\.dismiss) private var dismiss
-    let flowID: ConnectionTableItem.ID
-    let initialConnection: ConnectionTelemetry
+    let initialItem: ConnectionTableItem
     let initiallyClosed: Bool
     @ObservedObject private var model: NetworkTelemetryViewModel
     @State private var lastSeenConnection: ConnectionTelemetry
     @State private var cachedDecisionTrace: ConnectionRouteDecisionTrace?
 
     init(
-        flowID: ConnectionTableItem.ID,
-        initialConnection: ConnectionTelemetry,
+        initialItem: ConnectionTableItem,
         initiallyClosed: Bool,
         telemetry: NetworkTelemetryViewModel
     ) {
-        self.flowID = flowID
-        self.initialConnection = initialConnection
+        self.initialItem = initialItem
         self.initiallyClosed = initiallyClosed
         self.model = telemetry
-        _lastSeenConnection = State(initialValue: initialConnection)
+        _lastSeenConnection = State(initialValue: initialItem.connection)
     }
 
-    private func resolveLiveConnection() -> ConnectionTelemetry? {
+    /// Identity tracks `TunnelManager`'s `ConnectionLiveRateTracker` and uses
+    /// `ConnectionTableItem.disambiguatedMatch` when peer flows shift occurrence indices.
+    private func resolveLiveItem() -> ConnectionTableItem? {
         guard !initiallyClosed, tunnel.isConnected else { return nil }
-        return model.identifiedSnapshotConnections()
-            .first(where: { $0.id == flowID })?
-            .connection
+        return ConnectionTableItem.disambiguatedMatch(
+            for: initialItem,
+            in: model.identifiedSnapshotConnections()
+        )
+    }
+
+    private func timingValueText(_ milliseconds: UInt32, timing: ConnectionTimingBreakdown) -> String {
+        let formatted = AppLocalization.format("%lld ms", Int64(milliseconds))
+        if timing.isMeasuredByEngine {
+            return formatted
+        }
+        return AppLocalization.format("%@ (Estimated)", formatted)
     }
 
     private func computeDecisionTrace(for conn: ConnectionTelemetry) -> ConnectionRouteDecisionTrace {
         ConnectionRouteDecisionTrace.evaluate(
             connection: conn,
-            routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode,
+            routingMode: tunnel.effectiveRoutingMode,
             customHosts: tunnel.effectiveCustomHosts,
             customRules: tunnel.effectiveRuntimeCustomRules,
             summary: tunnel.activeProfileSummary
@@ -1605,13 +2084,14 @@ private struct ConnectionInspector: View {
     }
 
     var body: some View {
-        let currentLive = resolveLiveConnection()
+        let currentItem = resolveLiveItem()
+        let currentLive = currentItem?.connection
         let connection = currentLive ?? lastSeenConnection
         let isClosed = initiallyClosed || currentLive == nil
-        let liveRates: ConnectionTransferRates? = isClosed ? nil : model.connectionRates[flowID]
+        let liveRates: ConnectionTransferRates? = isClosed ? nil : (currentItem.flatMap { model.connectionRates[$0.id] })
         let destination = connection.destinationAddress
         let app = SourceAppDirectory.shared.presentation(for: connection)
-        let trace = cachedDecisionTrace ?? computeDecisionTrace(for: initialConnection)
+        let trace = cachedDecisionTrace ?? computeDecisionTrace(for: initialItem.connection)
         VStack(alignment: .leading, spacing: 0) {
             AetherSheetHeader(
                 symbol: connection.transport == .tcp ? "arrow.left.arrow.right" : "dot.radiowaves.left.and.right",
@@ -1624,6 +2104,20 @@ private struct ConnectionInspector: View {
                 inspectorStatusBadge(isClosed: isClosed)
             }
             .padding([.horizontal, .top], AetherVisual.dialogPadding)
+
+            if let ruleMessage = tunnel.customRuleMessage {
+                Group {
+                    if tunnel.customRuleMessageIsError {
+                        AetherInlineMessage(text: ruleMessage, kind: .failure, isCompact: true)
+                    } else {
+                        Label(ruleMessage, systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(AetherReadableTint(color: .green))
+                    }
+                }
+                .padding(.horizontal, AetherVisual.dialogPadding)
+                .padding(.top, AetherVisual.s2)
+            }
 
             Form {
                 Section(AppLocalization.string("App")) {
@@ -1651,7 +2145,7 @@ private struct ConnectionInspector: View {
                         connection: connection,
                         appName: app.displayName,
                         trace: trace,
-                        routingMode: tunnel.sessionRoutingMode ?? tunnel.routingMode
+                        routingMode: tunnel.effectiveRoutingMode
                     )
                 }
                 quickRulesSection(connection: connection, app: app)
@@ -1679,24 +2173,15 @@ private struct ConnectionInspector: View {
                     Section(AppLocalization.string("Timing")) {
                         LabeledContent(
                             AppLocalization.string("DNS lookup"),
-                            value: String.localizedStringWithFormat(
-                                AppLocalization.string("%lld ms"),
-                                Int64(timing.dnsMilliseconds)
-                            )
+                            value: timingValueText(timing.dnsMilliseconds, timing: timing)
                         )
                         LabeledContent(
                             AppLocalization.string("Outbound handshake"),
-                            value: String.localizedStringWithFormat(
-                                AppLocalization.string("%lld ms"),
-                                Int64(timing.connectMilliseconds)
-                            )
+                            value: timingValueText(timing.connectMilliseconds, timing: timing)
                         )
                         LabeledContent(
                             AppLocalization.string("Total setup"),
-                            value: String.localizedStringWithFormat(
-                                AppLocalization.string("%lld ms"),
-                                Int64(timing.totalMilliseconds)
-                            )
+                            value: timingValueText(timing.totalMilliseconds, timing: timing)
                         )
                     }
                 }
@@ -1718,7 +2203,7 @@ private struct ConnectionInspector: View {
                     return NSPasteboard.general.setString(connection.destinationAddress, forType: .string)
                 }
                 Button {
-                    tunnel.pendingRuleTestDestination = connection.destinationHost
+                    tunnel.pendingRuleTestDestination = connection.destinationAddress
                     dismiss()
                     NotificationCenter.default.post(
                         name: .aetherRouteNavigateToSection,
@@ -1743,7 +2228,13 @@ private struct ConnectionInspector: View {
         .onChange(of: tunnel.customRules) { _, _ in
             cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
         }
-        .onChange(of: tunnel.routingMode) { _, _ in
+        .onChange(of: tunnel.effectiveRoutingMode) { _, _ in
+            cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
+        }
+        .onChange(of: tunnel.effectiveCustomHosts) { _, _ in
+            cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
+        }
+        .onChange(of: tunnel.activeProfileID) { _, _ in
             cachedDecisionTrace = computeDecisionTrace(for: currentLive ?? lastSeenConnection)
         }
         .onChange(of: currentLive) { _, latest in
@@ -1751,10 +2242,10 @@ private struct ConnectionInspector: View {
                 lastSeenConnection = latest
             } else if !initiallyClosed,
                       let closedMatch = model.recentlyClosed.connections.first(where: {
-                          $0.transport == initialConnection.transport
-                              && $0.destination == initialConnection.destination
-                              && $0.destinationPort == initialConnection.destinationPort
-                              && $0.startedAtUnixMilliseconds == initialConnection.startedAtUnixMilliseconds
+                          $0.transport == initialItem.connection.transport
+                              && $0.destination == initialItem.connection.destination
+                              && $0.destinationPort == initialItem.connection.destinationPort
+                              && $0.startedAtUnixMilliseconds == initialItem.connection.startedAtUnixMilliseconds
                       }) {
                 lastSeenConnection = closedMatch
             }
@@ -1882,9 +2373,16 @@ private struct ConnectionInspector: View {
     }
 
     private func closeInspectorAppConnections(for connection: ConnectionTelemetry) async {
-        let requests = ConnectionCloseRequest.closing(apps: [ConnectionCloseApp(of: connection)])
+        let directory = SourceAppDirectory.shared
+        let groupingKey = directory.presentation(for: connection).groupingKey
+        let siblingApps = model.snapshot.connections
+            .filter { directory.presentation(for: $0).groupingKey == groupingKey }
+            .map(ConnectionCloseApp.init(of:))
+        let requests = ConnectionCloseRequest.closing(
+            apps: siblingApps.isEmpty ? [ConnectionCloseApp(of: connection)] : siblingApps
+        )
         for request in requests {
-            await tunnel.closeConnections(request)
+            _ = await tunnel.closeConnections(request)
         }
     }
 
@@ -1897,7 +2395,9 @@ private struct ConnectionInspector: View {
     }
 
     private func bytes(_ value: UInt64) -> String {
-        ByteCountFormatter.string(fromByteCount: Int64(clamping: value), countStyle: .file)
+        Int64(clamping: value).formatted(
+            .byteCount(style: .file).locale(AppLocalization.currentLocale)
+        )
     }
 }
 
@@ -1938,10 +2438,9 @@ private struct ConnectionRoutePipelineView: View {
         let dnsValue = trace.resolvedHostAlias.map { "\(connection.destinationHost) → \($0)" }
             ?? connection.destinationAddress
         let dnsDetail: String? = if let timing {
-            String.localizedStringWithFormat(
-                AppLocalization.string("%lld ms"),
-                Int64(timing.dnsMilliseconds)
-            )
+            timing.isMeasuredByEngine
+                ? AppLocalization.format("%lld ms", Int64(timing.dnsMilliseconds))
+                : AppLocalization.format("~%lld ms", Int64(timing.dnsMilliseconds))
         } else if trace.resolvedHostAlias != nil {
             AppLocalization.string("Hosts override")
         } else {
@@ -2000,27 +2499,34 @@ private struct ConnectionRoutePipelineView: View {
         }
 
         // 5. Exit Node
-        let exitName = trace.outboundHops.last
+        let rawExitName = trace.outboundHops.last
             ?? (connection.proxyChain.isEmpty ? "DIRECT" : connection.proxyChain)
-        let exitKind = ConnectionOutletClassifier.classify(exitName)
+        let exitKind = ConnectionOutletClassifier.classify(rawExitName)
+        let exitName: String
         let exitSymbol: String
         let exitTint: Color
         switch exitKind {
         case .direct:
+            exitName = rawExitName.uppercased() == "DIRECT"
+                ? AppLocalization.string("Direct")
+                : rawExitName
             exitSymbol = "arrow.forward"
             exitTint = .green
         case .rejected:
+            exitName = rawExitName.uppercased().hasPrefix("REJECT")
+                ? AppLocalization.string("Reject")
+                : rawExitName
             exitSymbol = "hand.raised.fill"
             exitTint = .red
         case .proxied:
+            exitName = rawExitName
             exitSymbol = "globe"
             exitTint = .indigo
         }
         let exitDetail = timing.map {
-            String.localizedStringWithFormat(
-                AppLocalization.string("%lld ms"),
-                Int64($0.connectMilliseconds)
-            )
+            $0.isMeasuredByEngine
+                ? AppLocalization.format("%lld ms", Int64($0.connectMilliseconds))
+                : AppLocalization.format("~%lld ms", Int64($0.connectMilliseconds))
         }
         result.append(PipelineHop(
             id: "exit",
@@ -2083,86 +2589,6 @@ private struct ConnectionRoutePipelineView: View {
         .padding(.vertical, AetherVisual.s1)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("connection-route-pipeline")
-    }
-}
-
-@MainActor
-private final class FrozenConnectionSnapshotCache {
-    private struct FlowEdgeSignature: Equatable {
-        let transport: UInt8
-        let destination: String
-        let destinationPort: UInt16
-        let startedAtUnixMilliseconds: UInt64
-        let downloadTotal: UInt64
-        let uploadTotal: UInt64
-
-        init(_ connection: ConnectionTelemetry) {
-            self.transport = connection.transport.rawValue
-            self.destination = connection.destination
-            self.destinationPort = connection.destinationPort
-            self.startedAtUnixMilliseconds = connection.startedAtUnixMilliseconds
-            self.downloadTotal = connection.downloadTotal
-            self.uploadTotal = connection.uploadTotal
-        }
-    }
-
-    private struct Key: Equatable {
-        let isPaused: Bool
-        let showsRecentlyClosed: Bool
-        let count: Int
-        let first: FlowEdgeSignature?
-        let middle: FlowEdgeSignature?
-        let last: FlowEdgeSignature?
-    }
-
-    private var key: Key?
-    private var identified: [ConnectionTableItem] = []
-    private var outletCounts = ConnectionOutletClassifier.Counts(all: 0, proxied: 0, direct: 0, rejected: 0)
-
-    private func makeKey(
-        for connections: [ConnectionTelemetry],
-        isPaused: Bool,
-        showsRecentlyClosed: Bool
-    ) -> Key {
-        let middleIndex = connections.isEmpty ? nil : connections.count / 2
-        return Key(
-            isPaused: isPaused,
-            showsRecentlyClosed: showsRecentlyClosed,
-            count: connections.count,
-            first: connections.first.map(FlowEdgeSignature.init),
-            middle: middleIndex.map { FlowEdgeSignature(connections[$0]) },
-            last: connections.last.map(FlowEdgeSignature.init)
-        )
-    }
-
-    private func refreshIfNeeded(
-        for connections: [ConnectionTelemetry],
-        isPaused: Bool,
-        showsRecentlyClosed: Bool
-    ) {
-        let nextKey = makeKey(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
-        guard key != nextKey else { return }
-        key = nextKey
-        identified = ConnectionTableItem.identify(connections)
-        outletCounts = ConnectionOutletClassifier.counts(for: connections)
-    }
-
-    func identifiedItems(
-        for connections: [ConnectionTelemetry],
-        isPaused: Bool,
-        showsRecentlyClosed: Bool
-    ) -> [ConnectionTableItem] {
-        refreshIfNeeded(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
-        return identified
-    }
-
-    func counts(
-        for connections: [ConnectionTelemetry],
-        isPaused: Bool,
-        showsRecentlyClosed: Bool
-    ) -> ConnectionOutletClassifier.Counts {
-        refreshIfNeeded(for: connections, isPaused: isPaused, showsRecentlyClosed: showsRecentlyClosed)
-        return outletCounts
     }
 }
 

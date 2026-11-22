@@ -13,6 +13,7 @@ struct PrivacyDisclosureView: View {
     var isSheet = false
     @Environment(\.dismiss) private var dismiss
     @State private var showsCommitments = false
+    @State private var isAccepting = false
 
     var body: some View {
         if isEmbedded {
@@ -93,6 +94,11 @@ struct PrivacyDisclosureView: View {
         } actions: {
             actionArea
         }
+        .onExitCommand {
+            if isSheet {
+                dismiss()
+            }
+        }
     }
 
     /// The four promises, then where data goes once connected: shown, not
@@ -130,9 +136,16 @@ struct PrivacyDisclosureView: View {
             VStack(spacing: AetherVisual.s2) {
                 OnboardingPrimaryButton(
                     title: AppLocalization.string("Agree and Continue"),
+                    isWorking: isAccepting,
+                    isEnabled: !isAccepting,
                     identifier: "privacy-consent-button",
                     action: {
-                        Task { await tunnel.acceptPrivacyDisclosure() }
+                        guard !isAccepting else { return }
+                        isAccepting = true
+                        Task {
+                            defer { isAccepting = false }
+                            await tunnel.acceptPrivacyDisclosure()
+                        }
                     }
                 )
                 .accessibilityHint(Text(AppLocalization.string("Nothing is configured or connected until you continue.")))

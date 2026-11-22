@@ -133,17 +133,27 @@ enum AetherVisual {
     /// Larger surfaces: panel swaps, list reflow, section reveals.
     static let panelSpring = Animation.spring(response: 0.42, dampingFraction: 0.88)
 
-    /// Returns `animation` unless the user asked for reduced motion, in which
-    /// case state still changes but does so without travel.
-    static func animation(_ animation: Animation) -> Animation? {
+    /// Whether reduced motion is forced via the UI review environment or the
+    /// system accessibility display preference.
+    static var isReduceMotionForced: Bool {
 #if DEBUG
         if ProcessInfo.processInfo.environment["AETHERROUTE_UI_REVIEW_REDUCE_MOTION"] == "1" {
-            return nil
+            return true
         }
 #endif
         return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            ? nil
-            : animation
+    }
+
+    /// Returns `animation` unless the user asked for reduced motion, in which
+    /// case state still changes but does so without travel.
+    static func animation(_ animation: Animation) -> Animation? {
+        isReduceMotionForced ? nil : animation
+    }
+
+    /// Variant that also respects SwiftUI's reactive `accessibilityReduceMotion`
+    /// environment alongside `AETHERROUTE_UI_REVIEW_REDUCE_MOTION` and AppKit's setting.
+    static func animation(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : Self.animation(animation)
     }
 
     static let pageHorizontalPadding = s5
@@ -184,6 +194,7 @@ enum AetherVisual {
     static let windowMinWidth: CGFloat = 780
     static let windowMinHeight: CGFloat = 560
     static let popoverWidth: CGFloat = 380
+    static let helpPopoverMaxHeight: CGFloat = 360
     static let menuNodePaneDefaultHeight: CGFloat = 396
     static let menuNodePaneMinHeight: CGFloat = 340
     /// Sheet content follows the final dialog handoff rather than the page
@@ -999,6 +1010,7 @@ extension View {
 /// and Escape to clear. Pages previously mixed a toolbar `.searchable` (which
 /// was invisible because the window hides its toolbar) with plain text fields.
 struct AetherSearchField: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var text: String
     let prompt: String
     var accessibilityIdentifier: String?
@@ -1024,6 +1036,7 @@ struct AetherSearchField: View {
                         .foregroundStyle(AetherVisual.tertiaryText)
                 }
                 .buttonStyle(.plain)
+                .help(AppLocalization.string("Clear"))
                 .accessibilityLabel(AppLocalization.string("Clear"))
                 .transition(.opacity)
             }
@@ -1039,8 +1052,8 @@ struct AetherSearchField: View {
                     lineWidth: isFocused ? 1.5 : 0.5
                 )
         }
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isFocused)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: text.isEmpty)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isFocused)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: text.isEmpty)
     }
 }
 
@@ -1048,6 +1061,7 @@ struct AetherSearchField: View {
 /// The action title remains visible, so the control neither collapses to a
 /// spinner nor makes people guess which operation is running.
 struct AetherProgressButtonLabel: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: Text
     var systemImage: String?
     let isWorking: Bool
@@ -1066,6 +1080,7 @@ struct AetherProgressButtonLabel: View {
     }
 
     var body: some View {
+        let shouldReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         HStack(spacing: AetherVisual.s2) {
             if isWorking {
                 ProgressView()
@@ -1075,11 +1090,11 @@ struct AetherProgressButtonLabel: View {
             } else if let systemImage {
                 Image(systemName: systemImage)
                     .accessibilityHidden(true)
-                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    .transition(shouldReduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             }
             title
         }
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isWorking)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isWorking)
         .accessibilityElement(children: .combine)
     }
 }
@@ -1181,6 +1196,22 @@ extension AetherSheetHeader where Accessory == EmptyView {
     }
 }
 
+private struct AetherHoverHighlightModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let isHovered: Bool
+    let cornerRadius: CGFloat
+    let hoverColor: Color
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isHovered ? hoverColor : Color.clear,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isHovered)
+    }
+}
+
 extension View {
     /// Every Settings pane and form sheet: sections as cards, the same as
     /// the main window's pages, with an optional large page title.
@@ -1240,11 +1271,7 @@ extension View {
         cornerRadius: CGFloat = AetherVisual.controlRadius,
         hoverColor: Color = AetherVisual.hoverFill
     ) -> some View {
-        background(
-            isHovered ? hoverColor : Color.clear,
-            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        )
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
+        modifier(AetherHoverHighlightModifier(isHovered: isHovered, cornerRadius: cornerRadius, hoverColor: hoverColor))
     }
 }
 
@@ -1257,6 +1284,7 @@ struct AetherProtocolBadge: View {
     var body: some View {
         Text(displayLabel)
             .font(.caption2.weight(.semibold).monospaced())
+            .lineLimit(1)
             .foregroundStyle(
                 badgeColor == .secondary
                     ? AnyShapeStyle(AetherVisual.secondaryText)
@@ -1265,6 +1293,7 @@ struct AetherProtocolBadge: View {
             .padding(.horizontal, AetherVisual.s1)
             .padding(.vertical, AetherVisual.sMicro)
             .background(AetherVisual.tintFill(badgeColor), in: RoundedRectangle(cornerRadius: AetherVisual.badgeRadius, style: .continuous))
+            .fixedSize()
     }
 
     private var resolvedKind: String {
@@ -1321,16 +1350,17 @@ public struct AetherStatusBeacon: View {
     }
 
     public var body: some View {
+        let effectiveReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         ZStack {
             if isConnected {
                 Circle()
                     .fill(Color.green.opacity(0.22))
                     .frame(width: size * 1.8, height: size * 1.8)
-                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    .transition(effectiveReduceMotion ? .opacity : .scale(scale: 0.5).combined(with: .opacity))
             } else if isConnecting {
                 // A partial arc, so the rotation is actually visible; a full
                 // circle turning in place looks identical to a still one.
-                TimelineView(.animation(paused: reduceMotion)) { context in
+                TimelineView(.animation(paused: effectiveReduceMotion)) { context in
                     Circle()
                         .trim(from: 0, to: 0.3)
                         .stroke(Color.orange, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
@@ -1345,13 +1375,13 @@ public struct AetherStatusBeacon: View {
                 .frame(width: size, height: size)
         }
         .frame(width: size * 2.2, height: size * 2.2)
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: isConnected)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isConnecting)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: isFailed)
+        .animation(AetherVisual.animation(AetherVisual.gentleSpring, reduceMotion: reduceMotion), value: isConnected)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isConnecting)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: isFailed)
     }
 
     private func angle(at date: Date) -> Double {
-        guard !reduceMotion else { return -90 }
+        guard !reduceMotion && !AetherVisual.isReduceMotionForced else { return -90 }
         return date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360
     }
 
@@ -1742,25 +1772,38 @@ private struct AetherGlassFormSection: View {
 /// and VoiceOver land on the control.
 struct AetherRowToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: AetherVisual.s3) {
-            configuration.label
-                .foregroundStyle(.primary)
-            Spacer(minLength: AetherVisual.s3)
-            Toggle(isOn: configuration.$isOn) { EmptyView() }
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .accessibilityHidden(true)
-        }
-        // The whole row toggles, so a click on the label works too (and the
-        // accessibility element, which spans the row, presses the switch).
-        .contentShape(Rectangle())
-        .onTapGesture { configuration.isOn.toggle() }
-        .accessibilityRepresentation {
-            // A hidden label becomes the switch's own name instead of a
-            // separate text element it merely points to.
-            Toggle(isOn: configuration.$isOn) { configuration.label }
-                .toggleStyle(.switch)
-                .labelsHidden()
+        RowBody(configuration: configuration)
+    }
+
+    private struct RowBody: View {
+        @Environment(\.isEnabled) private var isEnabled
+        let configuration: Configuration
+
+        var body: some View {
+            HStack(spacing: AetherVisual.s3) {
+                configuration.label
+                    .foregroundStyle(isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(AetherVisual.secondaryText))
+                    .opacity(isEnabled ? 1 : 0.5)
+                Spacer(minLength: AetherVisual.s3)
+                Toggle(isOn: configuration.$isOn) { EmptyView() }
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .accessibilityHidden(true)
+            }
+            // The whole row toggles, so a click on the label works too (and the
+            // accessibility element, which spans the row, presses the switch).
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard isEnabled else { return }
+                configuration.isOn.toggle()
+            }
+            .accessibilityRepresentation {
+                // A hidden label becomes the switch's own name instead of a
+                // separate text element it merely points to.
+                Toggle(isOn: configuration.$isOn) { configuration.label }
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
         }
     }
 }
@@ -1785,9 +1828,10 @@ struct AetherReadableTint: ShapeStyle {
     let color: Color
 
     func resolve(in environment: EnvironmentValues) -> Color {
-        environment.colorScheme == .dark
-            ? color.mix(with: .white, by: 0.6)
-            : color.mix(with: .black, by: 0.55)
+        let increased = environment.colorSchemeContrast == .increased
+        return environment.colorScheme == .dark
+            ? color.mix(with: .white, by: increased ? 0.72 : 0.6)
+            : color.mix(with: .black, by: increased ? 0.68 : 0.55)
     }
 }
 

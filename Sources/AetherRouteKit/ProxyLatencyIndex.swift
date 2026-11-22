@@ -12,9 +12,28 @@ public struct ProxyLatencyResult: Sendable, Equatable {
 
 public struct ProxyLatencyState: Sendable, Equatable {
     public let results: [ProxyLatencyResult]
+    public let resultsByMember: [String: ProxyLatencyResult]
 
     public init(results: [ProxyLatencyResult]) {
         self.results = results
+        var indexed: [String: ProxyLatencyResult] = [:]
+        indexed.reserveCapacity(results.count)
+        for result in results where indexed[result.member] == nil {
+            indexed[result.member] = result
+        }
+        self.resultsByMember = indexed
+    }
+
+    init(
+        results: [ProxyLatencyResult],
+        resultsByMember: [String: ProxyLatencyResult]
+    ) {
+        self.results = results
+        self.resultsByMember = resultsByMember
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.results == rhs.results
     }
 }
 
@@ -341,16 +360,20 @@ public struct ProxyLatencyIndex {
         // flushes and SwiftUI diffs cleanly.
         var results: [ProxyLatencyResult] = []
         results.reserveCapacity(entries.count)
+        var resultsByMember: [String: ProxyLatencyResult] = [:]
+        resultsByMember.reserveCapacity(entries.count)
         for member in order {
             guard let measurement = entries[member] else { continue }
-            results.append(
-                ProxyLatencyResult(
-                    member: member,
-                    delayMilliseconds: measurement.delayMilliseconds
-                )
+            let result = ProxyLatencyResult(
+                member: member,
+                delayMilliseconds: measurement.delayMilliseconds
             )
+            results.append(result)
+            if resultsByMember[member] == nil {
+                resultsByMember[member] = result
+            }
         }
-        return ProxyLatencyState(results: results)
+        return ProxyLatencyState(results: results, resultsByMember: resultsByMember)
     }
 
     /// Only the active child can describe a strategy group's actual route.
@@ -421,12 +444,39 @@ public enum ProxyLatencyReading: Equatable, Sendable {
     /// numbers would sit there for the whole sweep.
     public static func resolve(
         member: String,
+        state: ProxyLatencyState?,
+        isTesting: Bool
+    ) -> ProxyLatencyReading {
+        resolve(
+            member: member,
+            resultsByMember: state?.resultsByMember,
+            isTesting: isTesting
+        )
+    }
+
+    public static func resolve(
+        member: String,
+        resultsByMember: [String: ProxyLatencyResult]?,
+        isTesting: Bool
+    ) -> ProxyLatencyReading {
+        if let result = resultsByMember?[member] {
+            guard let delay = result.delayMilliseconds else { return .timedOut }
+            return .responded(delay)
+        }
+        if isTesting { return .testing }
+        return .untested
+    }
+
+    public static func resolve(
+        member: String,
         results: [ProxyLatencyResult]?,
         isTesting: Bool
     ) -> ProxyLatencyReading {
-        if let result = results?.first(where: { $0.member == member }) {
-            guard let delay = result.delayMilliseconds else { return .timedOut }
-            return .responded(delay)
+        if let results {
+            for result in results where result.member == member {
+                guard let delay = result.delayMilliseconds else { return .timedOut }
+                return .responded(delay)
+            }
         }
         if isTesting { return .testing }
         return .untested

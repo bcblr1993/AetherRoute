@@ -142,7 +142,7 @@ struct TunnelLifecycleV3Tests {
         let source = try Self.source("Sources/AetherRouteApp/TunnelManager+CustomRules.swift")
         let body = try #require(Self.functionBody(named: "func reloadCustomRulesLive()", in: source))
 
-        #expect(body.contains("customRuleMessage = error.localizedDescription"))
+        #expect(body.contains("customRuleMessage = localizedCustomRuleError(error)"))
         #expect(body.contains("customRuleMessageIsError = true"))
     }
 

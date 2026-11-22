@@ -947,6 +947,9 @@ public enum ProfileOverrideCompiler {
                 hostsDict[entry.domain] = entry.ip
             }
             root["hosts"] = hostsDict
+            var dnsDict = (root["dns"] as? [String: Any]) ?? [:]
+            dnsDict["use-hosts"] = true
+            root["dns"] = dnsDict
         }
         guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]),
               let output = String(data: data, encoding: .utf8) else {
@@ -1045,6 +1048,10 @@ struct YAMLDocument {
     private var hostsHeader: Int?
     private var hostsItemIndent = 2
     private var existingHostRangeByDomain: [String: Range<Int>] = [:]
+    private var dnsHeader: Int?
+    private var dnsFieldIndent = 2
+    private var dnsUseHostsLine: Int?
+    private var dnsFlowInline: String?
 
     func filterUnseenRules(_ candidates: [String]) -> [String] {
         var result: [String] = []
@@ -1115,6 +1122,32 @@ struct YAMLDocument {
                         includeAll: item.includeAll,
                         excludeFilterPattern: item.excludeFilterPattern
                     )
+                }
+            case "dns":
+                dnsHeader = section.start
+                let strippedInline = Self.stripComment(inline)
+                if strippedInline.hasPrefix("{"), strippedInline.hasSuffix("}") {
+                    dnsFlowInline = strippedInline
+                } else {
+                    var detectedIndent: Int?
+                    for index in (section.start + 1)..<end {
+                        let line = lines[index]
+                        let trimmed = Self.stripComment(line.trimmingCharacters(in: .whitespaces))
+                        guard !trimmed.isEmpty, !trimmed.hasPrefix("-") else { continue }
+                        let indent = Self.indent(of: line)
+                        guard indent > 0 else { continue }
+                        if detectedIndent == nil {
+                            detectedIndent = indent
+                        }
+                        if indent == detectedIndent,
+                           let (key, _) = Self.keyValue(trimmed),
+                           key.lowercased() == "use-hosts" {
+                            dnsUseHostsLine = index
+                        }
+                    }
+                    if let detectedIndent {
+                        dnsFieldIndent = detectedIndent
+                    }
                 }
             case "hosts":
                 let strippedInline = Self.stripComment(inline)
@@ -1500,11 +1533,13 @@ struct YAMLDocument {
             }
         }
         let firstMajorHeader = [proxiesHeader, groupsHeader, rulesHeader].compactMap { $0 }.min()
+        let enableDNSUseHosts = !insertingHosts.isEmpty
+        var wroteDNSUseHosts = !enableDNSUseHosts
         var wroteHostsSection = hostsHeader != nil || hostLines.isEmpty
         var wroteRules = ruleLines.isEmpty
         var output: [String] = []
         output.reserveCapacity(
-            lines.count + insertingGroups.count + insertingProxies.count + hostLines.count + ruleLines.count + 8
+            lines.count + insertingGroups.count + insertingProxies.count + hostLines.count + ruleLines.count + 10
         )
         let lastGroupLowerBound = groups.last?.lineRange.lowerBound
         let lastGroupLastLine = groups.last.map { $0.lineRange.upperBound - 1 }
@@ -1518,14 +1553,37 @@ struct YAMLDocument {
                 strippedProxyStarts[range.lowerBound] = (range, replacement)
             }
         }
+        let dnsPad = String(repeating: " ", count: dnsFieldIndent)
         var skipUntil = -1
         for (index, line) in lines.enumerated() {
             if index < skipUntil { continue }
             if overriddenHostLineIndices.contains(index) { continue }
+            if enableDNSUseHosts, dnsHeader == nil, !wroteDNSUseHosts, index == firstMajorHeader {
+                output.append("dns:")
+                output.append("  use-hosts: true")
+                wroteDNSUseHosts = true
+            }
             if !wroteHostsSection, index == firstMajorHeader {
                 output.append("hosts:")
                 output.append(contentsOf: hostLines)
                 wroteHostsSection = true
+            }
+            if enableDNSUseHosts, let useHostsIdx = dnsUseHostsLine, index == useHostsIdx {
+                output.append("\(dnsPad)use-hosts: true")
+                wroteDNSUseHosts = true
+                continue
+            }
+            if enableDNSUseHosts, index == dnsHeader, let flowInline = dnsFlowInline {
+                let inner = String(flowInline.dropFirst().dropLast())
+                let pairs = Self.splitTopLevel(inner, separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                    .filter { pair in
+                        Self.keyValue(pair)?.0.lowercased() != "use-hosts"
+                    }
+                output.append("dns: {\((pairs + ["use-hosts: true"]).joined(separator: ", "))}")
+                wroteDNSUseHosts = true
+                continue
             }
             if let (range, replacementLines) = strippedProxyStarts[index] {
                 output.append(contentsOf: replacementLines)
@@ -1566,6 +1624,10 @@ struct YAMLDocument {
                 continue
             }
             output.append(line)
+            if enableDNSUseHosts, index == dnsHeader, dnsUseHostsLine == nil, dnsFlowInline == nil {
+                output.append("\(dnsPad)use-hosts: true")
+                wroteDNSUseHosts = true
+            }
             if index == proxiesHeader, !insertingProxies.isEmpty {
                 output.append(contentsOf: insertingProxies)
             }
@@ -1579,6 +1641,13 @@ struct YAMLDocument {
                 output.append(contentsOf: ruleLines)
                 wroteRules = true
             }
+        }
+        if enableDNSUseHosts, !wroteDNSUseHosts {
+            if output.last == "" { output.removeLast() }
+            output.append("dns:")
+            output.append("  use-hosts: true")
+            output.append("")
+            wroteDNSUseHosts = true
         }
         if !wroteHostsSection {
             if output.last == "" { output.removeLast() }

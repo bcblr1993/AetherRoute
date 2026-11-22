@@ -37,14 +37,27 @@ struct AetherPressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let pressed = configuration.isPressed && isEnabled
         configuration.label
-            .scaleEffect(pressed && !reduceMotion ? 0.985 : 1)
+            .scaleEffect(pressed && !reduceMotion && !AetherVisual.isReduceMotionForced ? 0.985 : 1)
             .opacity(pressed ? 0.82 : 1)
-            .animation(reduceMotion ? nil : AetherVisual.pressFeedback, value: pressed)
+            .animation(AetherVisual.animation(AetherVisual.pressFeedback, reduceMotion: reduceMotion), value: pressed)
     }
 }
 
 extension ButtonStyle where Self == AetherPressableButtonStyle {
     static var aetherPressable: AetherPressableButtonStyle { AetherPressableButtonStyle() }
+}
+
+private struct AetherAnimationModifier<Value: Equatable>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let animation: Animation
+    let value: Value
+
+    func body(content: Content) -> some View {
+        content.animation(
+            AetherVisual.animation(animation, reduceMotion: reduceMotion),
+            value: value
+        )
+    }
 }
 
 private struct AetherNumericValueModifier<Value: Equatable>: ViewModifier {
@@ -63,15 +76,17 @@ private struct AetherNumericValueModifier<Value: Equatable>: ViewModifier {
 }
 
 extension View {
-    /// Rolls the digits of a changing number instead of swapping the text.
-    /// Pair it with `.monospacedDigit()` so the width does not jitter.
-    ///
-    /// Only for numbers that change because something happened (a count, a
-    /// result). Never for a value that ticks on its own: every frame of the
-    /// roll draws the digits blurred, scaled and offset, Core Graphics caches
-    /// each of those renderings, and a once-a-second rate filled its glyph
-    /// cache to about 90 MB that is never returned (1.5.1). Use
-    /// `aetherLiveValue()` for those.
+    /// Applies `animation` while reactively respecting SwiftUI's
+    /// `accessibilityReduceMotion` environment as well as the UI review override.
+    func aetherAnimation<Value: Equatable>(_ animation: Animation, value: Value) -> some View {
+        modifier(AetherAnimationModifier(animation: animation, value: value))
+    }
+
+    /// Marks an event-driven numeric value (counts, measured results) so
+    /// updates swap cleanly in place via `.contentTransition(.identity)` without
+    /// interpolating variable-font frames into CoreGraphics's glyph cache.
+    /// Pair it with `.monospacedDigit()` so width does not jitter, and use
+    /// `aetherLiveValue()` for self-ticking metrics.
     func aetherNumericValue<Value: Equatable>(_ value: Value, countsDown: Bool = false) -> some View {
         modifier(AetherNumericValueModifier(value: value, countsDown: countsDown))
     }
@@ -94,7 +109,7 @@ struct AetherDisclosureChevron: View {
         Image(systemName: "chevron.right")
             .font(.caption.weight(.semibold))
             .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .animation(reduceMotion ? nil : AetherVisual.disclosure, value: isExpanded)
+            .animation(AetherVisual.animation(AetherVisual.disclosure, reduceMotion: reduceMotion), value: isExpanded)
             .frame(width: 12)
             .accessibilityHidden(true)
     }
@@ -107,12 +122,14 @@ struct AetherCopyButton: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let title: Text
     var systemImage = "doc.on.doc"
+    var copiedTitle: Text? = nil
     let action: () -> Bool
 
     @State private var didCopy = false
     @State private var resetTask: Task<Void, Never>?
 
     var body: some View {
+        let shouldReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         Button {
             guard action() else { return }
             didCopy = true
@@ -124,16 +141,21 @@ struct AetherCopyButton: View {
             }
         } label: {
             Label {
-                title
+                if didCopy, let copiedTitle {
+                    copiedTitle
+                        .foregroundStyle(AetherReadableTint(color: .green))
+                } else {
+                    title
+                }
             } icon: {
                 Image(systemName: didCopy ? "checkmark" : systemImage)
-                    .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                    .contentTransition(shouldReduceMotion ? .identity : .symbolEffect(.replace))
                     // Only the confirmation is tinted; otherwise the icon
                     // inherits the button's style, including its disabled dim.
                     .foregroundStyle(didCopy ? AnyShapeStyle(AetherReadableTint(color: .green)) : AnyShapeStyle(ForegroundStyle()))
             }
         }
-        .animation(reduceMotion ? nil : AetherVisual.quickFade, value: didCopy)
+        .animation(AetherVisual.animation(AetherVisual.quickFade, reduceMotion: reduceMotion), value: didCopy)
         .onDisappear { resetTask?.cancel() }
     }
 }

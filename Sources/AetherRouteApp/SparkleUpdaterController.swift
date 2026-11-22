@@ -423,8 +423,8 @@ final class SparkleUpdaterController: NSObject, ObservableObject {
 
             let content = UNMutableNotificationContent()
             content.title = AppLocalization.string("AetherRoute Update Available")
-            content.body = String(
-                format: AppLocalization.string("Version %@ is ready to install. Click to view release notes and update."),
+            content.body = AppLocalization.format(
+                "Version %@ is ready to install. Click to view release notes and update.",
                 version
             )
             content.sound = .default

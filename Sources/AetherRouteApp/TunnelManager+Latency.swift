@@ -109,14 +109,25 @@ extension TunnelManager {
             selectedMembers: latencySelectedMembers
         )
         pendingLatencyFlush.formUnion(aggregated)
+        guard !pendingLatencyFlush.isEmpty else { return }
+
+        var nextLatencies = proxyLatencies
+        var nextDates = latencyMeasuredAt
         for group in pendingLatencyFlush {
-            proxyLatencies[group] = latencyIndex.state(for: group)
-            latencyMeasuredAt[group] = latencyIndex.measurementDates(for: group)
+            nextLatencies[group] = latencyIndex.state(for: group)
+            nextDates[group] = latencyIndex.measurementDates(for: group)
+        }
+        if nextLatencies != proxyLatencies {
+            proxyLatencies = nextLatencies
+        }
+        if nextDates != latencyMeasuredAt {
+            latencyMeasuredAt = nextDates
         }
         pendingLatencyFlush.removeAll(keepingCapacity: true)
     }
 
-    /// Records one measurement in every group that lists the member.
+    /// Records one measurement in every group that lists the member, skipping
+    /// any group currently running an isolated single-member probe for that member.
     func recordLatency(
         member: String,
         measurement: ProxyLatencyMeasurement,
@@ -124,11 +135,61 @@ extension TunnelManager {
         force: Bool = false
     ) {
         guard runToken == currentLatencyRunToken else { return }
+        if !memberLatencyRequests.isEmpty {
+            let listingGroups = latencyIndex.groups(containing: member)
+            let blockedGroups = listingGroups.filter {
+                memberLatencyRequests.contains("\($0):\(member)")
+            }
+            if !blockedGroups.isEmpty {
+                let allowed = listingGroups.filter { !blockedGroups.contains($0) }
+                for group in allowed {
+                    latencyIndex.recordDirect(
+                        member: member,
+                        measurement: measurement,
+                        in: group
+                    )
+                }
+                if !allowed.isEmpty {
+                    publishLatency(groups: allowed, force: force)
+                }
+                return
+            }
+        }
         let affected = latencyIndex.merge(
             member: member,
             measurement: measurement
         )
         publishLatency(groups: affected, force: force)
+    }
+
+    /// Records a single-member probe result without disturbing an active group
+    /// sweep in another group that happens to share the same member.
+    private func recordSingleMemberLatency(
+        member: String,
+        measurement: ProxyLatencyMeasurement,
+        group groupName: String,
+        runToken: LatencyRunToken?
+    ) {
+        guard runToken == currentLatencyRunToken else { return }
+        let listingGroups = latencyIndex.groups(containing: member)
+        let hasActiveOtherSweep = listingGroups.contains {
+            $0 != groupName && proxyLatencyRequests.contains($0)
+        }
+        if hasActiveOtherSweep {
+            latencyIndex.recordDirect(
+                member: member,
+                measurement: measurement,
+                in: groupName
+            )
+            publishLatency(groups: [groupName], force: true)
+        } else {
+            recordLatency(
+                member: member,
+                measurement: measurement,
+                runToken: runToken,
+                force: true
+            )
+        }
     }
 
     /// Whether a row's number came from the protocol core rather than a bare
@@ -185,6 +246,14 @@ extension TunnelManager {
               !proxyLatencyRequests.contains(groupName) else {
             return
         }
+        let memberPrefix = "\(groupName):"
+        let overlappingKeys = memberLatencyRequests.filter { $0.hasPrefix(memberPrefix) }
+        for key in overlappingKeys {
+            memberLatencyRequests.remove(key)
+            if let memberToken = activeMemberLatencyTokens.removeValue(forKey: key) {
+                activeLatencyRunTasks.removeValue(forKey: memberToken)?.cancel()
+            }
+        }
         let epoch = latencyRuntimeEpoch
         let batchToken = UUID()
         let runToken = prepareLatencyIndex()
@@ -234,11 +303,12 @@ extension TunnelManager {
             }
 
             if self.state == .connected {
-                if await self.measureVerifiedLatency(
+                switch await self.measureVerifiedLatencyOutcome(
                     group: groupName,
                     members: members,
                     runToken: runToken
                 ) {
+                case .completed:
                     guard !Task.isCancelled,
                           runToken == self.currentLatencyRunToken,
                           self.latencyRuntimeEpoch == epoch else { return }
@@ -249,29 +319,44 @@ extension TunnelManager {
                         "stage=proxyLatency success results=\(measured.count, privacy: .public) responsive=\(measured.lazy.filter { $0.delayMilliseconds != nil }.count, privacy: .public)"
                     )
                     return
+                case let .failed(error):
+                    guard !Task.isCancelled,
+                          runToken == self.currentLatencyRunToken,
+                          self.latencyRuntimeEpoch == epoch else { return }
+                    Self.runtimeLogger.error(
+                        "stage=proxyLatency providerFailed group=\(groupName, privacy: .public) fallingBackToReachability=false error=\(String(reflecting: error), privacy: .public)"
+                    )
+                    self.proxySelectionMessages[groupName] = self.localizedLatencyProbeError(error)
+                    self.latencyIndex.clear(group: groupName)
+                    self.proxyLatencies[groupName] = nil
+                    self.latencyMeasuredAt[groupName] = nil
+                    return
+                case .unsupportedSelector:
+                    guard !Task.isCancelled,
+                          runToken == self.currentLatencyRunToken,
+                          self.latencyRuntimeEpoch == epoch else { return }
+                    Self.runtimeLogger.error(
+                        "stage=proxyLatency providerUnsupportedSelector group=\(groupName, privacy: .public) fallingBackToReachability=true"
+                    )
                 }
-                guard !Task.isCancelled,
-                      runToken == self.currentLatencyRunToken,
-                      self.latencyRuntimeEpoch == epoch else { return }
-                Self.runtimeLogger.error(
-                    "stage=proxyLatency providerFailed group=\(groupName, privacy: .public) fallingBackToReachability=true"
-                )
             }
 
             guard !Task.isCancelled,
                   runToken == self.currentLatencyRunToken,
                   self.latencyRuntimeEpoch == epoch else { return }
 
-            // Offline / fallback: bare TCP reachability, streamed.
+            // Offline / unsupported selector fallback: resolve nested child
+            // groups down to their active leaves and run bare TCP reachability.
+            let offlineTargets = self.resolvedOfflineProbeTargets(for: members)
             let probeTargets = Set(self.latencyIndex.probeTargets)
             await self.measureReachability(
-                members: members.filter(probeTargets.contains),
+                members: offlineTargets.leaves.filter(probeTargets.contains),
                 runToken: runToken
             )
             guard !Task.isCancelled,
                   runToken == self.currentLatencyRunToken,
                   self.latencyRuntimeEpoch == epoch else { return }
-            let aggregated = self.latencyIndex.aggregateChildGroups(selectedMembers: self.latencySelectedMembers)
+            let aggregated = self.latencyIndex.aggregateChildGroups(selectedMembers: offlineTargets.selections)
             self.publishLatency(groups: aggregated.union([groupName]), force: true)
 
             let measured = self.proxyLatencies[groupName]?.results ?? []
@@ -331,6 +416,49 @@ extension TunnelManager {
         )
     }
 
+    private enum VerifiedLatencyOutcome {
+        case completed
+        case unsupportedSelector
+        case failed(Error)
+    }
+
+    private static func isUnsupportedSelectorLatencyError(_ error: Error) -> Bool {
+        guard let clientError = error as? ProxySelectionProviderClientError else {
+            return false
+        }
+        if case .providerFailure(.rejected) = clientError {
+            return true
+        }
+        return false
+    }
+
+    private func localizedLatencyProbeError(_ error: Error) -> String {
+        if let clientError = error as? ProxySelectionProviderClientError {
+            switch clientError {
+            case let .providerFailure(failure):
+                switch failure {
+                case .invalidRequest:
+                    return AppLocalization.string("The network extension rejected an invalid latency request.")
+                case .unavailable:
+                    return AppLocalization.string("The live proxy selector is not available.")
+                case .rejected:
+                    return AppLocalization.string("This proxy group does not support verified latency checks.")
+                case .responseTooLarge:
+                    return AppLocalization.string("The proxy group is too large to measure safely.")
+                case .internalFailure:
+                    return AppLocalization.string("The network extension could not measure proxy latency.")
+                }
+            case .selectionNotApplied:
+                return AppLocalization.string("The network extension did not confirm the selected proxy.")
+            case .routingModeNotApplied:
+                return AppLocalization.string("The network extension did not confirm the routing mode.")
+            case .unexpectedResponse:
+                return AppLocalization.string("The network extension returned an unexpected latency response.")
+            }
+        }
+        return localizedConnectionError(error).localizedDescription
+    }
+
     /// Streams protocol-verified latency for a group's members using a bounded
     /// sliding window of per-member `activeLatency` probes.
     ///
@@ -342,10 +470,25 @@ extension TunnelManager {
         members: [String],
         runToken: LatencyRunToken?
     ) async -> Bool {
+        if case .completed = await measureVerifiedLatencyOutcome(
+            group: groupName,
+            members: members,
+            runToken: runToken
+        ) {
+            return true
+        }
+        return false
+    }
+
+    private func measureVerifiedLatencyOutcome(
+        group groupName: String,
+        members: [String],
+        runToken: LatencyRunToken?
+    ) async -> VerifiedLatencyOutcome {
         let testableMembers = members.filter {
             !InitialProxySelectionPolicy.isSubscriptionMetadata($0)
         }
-        guard !testableMembers.isEmpty else { return true }
+        guard !testableMembers.isEmpty else { return .completed }
         let selected = proxySelections[groupName]?.selectedMember
         var orderedTargets: [String] = []
         orderedTargets.reserveCapacity(testableMembers.count)
@@ -363,6 +506,8 @@ extension TunnelManager {
         let maxConcurrent = 8
         var anyProviderProbeSucceeded = false
         var hadRemoteProbes = false
+        var sawUnsupportedSelector = false
+        var firstFailureError: Error?
 
         for member in orderedTargets {
             let upper = member.uppercased()
@@ -387,12 +532,12 @@ extension TunnelManager {
               runToken == currentLatencyRunToken,
               latencyRuntimeEpoch == epoch,
               state == .connected else {
-            return false
+            return .failed(TunnelManagerError.providerSessionUnavailable)
         }
 
         if !remoteTargets.isEmpty {
             await withTaskGroup(
-                of: (member: String, measurement: ProxyLatencyMeasurement?, succeeded: Bool).self
+                of: (member: String, measurement: ProxyLatencyMeasurement?, error: Error?).self
             ) { taskGroup in
                 var iterator = remoteTargets.makeIterator()
                 var activeCount = 0
@@ -410,9 +555,9 @@ extension TunnelManager {
                                 client: client,
                                 timeoutMilliseconds: timeoutMilliseconds
                             )
-                            return (member, measurement, true)
+                            return (member, measurement, nil)
                         } catch {
-                            return (member, nil, false)
+                            return (member, nil, error)
                         }
                     }
                 }
@@ -422,19 +567,19 @@ extension TunnelManager {
                         taskGroup.cancelAll()
                         break
                     }
-                    if result.succeeded, let measurement = result.measurement {
+                    if let measurement = result.measurement {
                         anyProviderProbeSucceeded = true
                         recordLatency(
                             member: result.member,
                             measurement: measurement,
                             runToken: runToken
                         )
-                    } else {
-                        recordLatency(
-                            member: result.member,
-                            measurement: .timedOut,
-                            runToken: runToken
-                        )
+                    } else if let error = result.error {
+                        if Self.isUnsupportedSelectorLatencyError(error) {
+                            sawUnsupportedSelector = true
+                        } else if !(error is CancellationError) {
+                            firstFailureError = firstFailureError ?? error
+                        }
                     }
                     if let nextMember = iterator.next() {
                         taskGroup.addTask {
@@ -444,9 +589,9 @@ extension TunnelManager {
                                     client: client,
                                     timeoutMilliseconds: timeoutMilliseconds
                                 )
-                                return (nextMember, measurement, true)
+                                return (nextMember, measurement, nil)
                             } catch {
-                                return (nextMember, nil, false)
+                                return (nextMember, nil, error)
                             }
                         }
                     }
@@ -455,7 +600,10 @@ extension TunnelManager {
         }
 
         guard runToken == currentLatencyRunToken, state == .connected else {
-            return anyProviderProbeSucceeded || !hadRemoteProbes
+            if anyProviderProbeSucceeded || !hadRemoteProbes {
+                return .completed
+            }
+            return .failed(firstFailureError ?? TunnelManagerError.providerSessionUnavailable)
         }
 
         // Propagate measured leaf nodes up to any child strategy groups first.
@@ -464,9 +612,16 @@ extension TunnelManager {
             publishLatency(groups: aggregated, force: false)
         }
 
-        // Child groups were probed alongside nodes, through their active
-        // handler. No fastest-child estimate may replace those readings.
-        return anyProviderProbeSucceeded || !hadRemoteProbes
+        if anyProviderProbeSucceeded || !hadRemoteProbes {
+            return .completed
+        }
+        if let firstFailureError {
+            return .failed(firstFailureError)
+        }
+        if sawUnsupportedSelector {
+            return .unsupportedSelector
+        }
+        return .failed(TunnelManagerError.providerSessionUnavailable)
     }
 
     /// Upgrades the group's selected member from "reachable" to "verified" by
@@ -533,7 +688,28 @@ extension TunnelManager {
         runToken: LatencyRunToken?,
         recordTimeoutOnFailure: Bool
     ) async -> Bool {
-        guard state == .connected, !isUIReviewMode else { return false }
+        if case .completed = await verifyMemberLatencyOutcome(
+            group: groupName,
+            member: memberName,
+            runToken: runToken,
+            recordTimeoutOnFailure: recordTimeoutOnFailure,
+            isolateToGroupOnActiveSweep: false
+        ) {
+            return true
+        }
+        return false
+    }
+
+    private func verifyMemberLatencyOutcome(
+        group groupName: String,
+        member memberName: String,
+        runToken: LatencyRunToken?,
+        recordTimeoutOnFailure: Bool,
+        isolateToGroupOnActiveSweep: Bool
+    ) async -> VerifiedLatencyOutcome {
+        guard state == .connected, !isUIReviewMode else {
+            return .failed(TunnelManagerError.providerSessionUnavailable)
+        }
         let timeoutMilliseconds = Self.effectiveUILatencyTimeoutMilliseconds
         let client = makeLatencyProbeProviderClient(
             timeoutMilliseconds: timeoutMilliseconds
@@ -545,26 +721,93 @@ extension TunnelManager {
                 timeoutMilliseconds: timeoutMilliseconds
             )
             if case .timedOut = measurement, !recordTimeoutOnFailure {
-                return true
+                return .completed
             }
-            recordLatency(
-                member: memberName,
-                measurement: measurement,
-                runToken: runToken,
-                force: true
-            )
+            if isolateToGroupOnActiveSweep {
+                recordSingleMemberLatency(
+                    member: memberName,
+                    measurement: measurement,
+                    group: groupName,
+                    runToken: runToken
+                )
+            } else {
+                recordLatency(
+                    member: memberName,
+                    measurement: measurement,
+                    runToken: runToken,
+                    force: true
+                )
+            }
             Self.runtimeLogger.info(
                 "stage=proxyLatency verified group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
             )
-            return true
+            return .completed
         } catch {
             // When upgrading an offline reachability number, a failed
             // verification leaves the reachability number alone.
             Self.runtimeLogger.error(
                 "stage=proxyLatency verifyFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) error=\(String(reflecting: error), privacy: .public)"
             )
-            return false
+            if Self.isUnsupportedSelectorLatencyError(error) {
+                return .unsupportedSelector
+            }
+            return .failed(error)
         }
+    }
+
+    private func resolvedLatencyChainSelections(
+        for member: String,
+        existingSelections: [String: String]? = nil
+    ) -> (leaf: String, fallbackSelections: [String: String])? {
+        let groupsByName = Dictionary(
+            uniqueKeysWithValues: latencyGroupsSnapshot().map { ($0.name, $0) }
+        )
+        var current = member
+        var visited: Set<String> = [current]
+        var selections = existingSelections ?? latencySelectedMembers
+        while let group = groupsByName[current] {
+            let next = selections[current]
+                ?? group.members.first { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
+            guard let next, visited.insert(next).inserted else {
+                return nil
+            }
+            if selections[current] == nil {
+                selections[current] = next
+            }
+            current = next
+        }
+        return (current, selections)
+    }
+
+    private func resolvedOfflineProbeTargets(
+        for members: [String]
+    ) -> (leaves: [String], selections: [String: String]) {
+        let groupsByName = Dictionary(
+            uniqueKeysWithValues: latencyGroupsSnapshot().map { ($0.name, $0) }
+        )
+        var leaves: [String] = []
+        var seenLeaves: Set<String> = []
+        var selections = latencySelectedMembers
+
+        for member in members where !InitialProxySelectionPolicy.isSubscriptionMetadata(member) {
+            if groupsByName[member] != nil {
+                if let resolved = resolvedLatencyChainSelections(
+                    for: member,
+                    existingSelections: selections
+                ) {
+                    for (group, chosen) in resolved.fallbackSelections where selections[group] == nil {
+                        selections[group] = chosen
+                    }
+                    if !InitialProxySelectionPolicy.isSubscriptionMetadata(resolved.leaf),
+                       seenLeaves.insert(resolved.leaf).inserted {
+                        leaves.append(resolved.leaf)
+                    }
+                }
+            } else if seenLeaves.insert(member).inserted {
+                leaves.append(member)
+            }
+        }
+        return (leaves, selections)
     }
 
     func testSingleProxyLatency(group groupName: String, member memberName: String) async {
@@ -576,22 +819,22 @@ extension TunnelManager {
             return
         }
         let epoch = latencyRuntimeEpoch
-        let batchToken = UUID()
+        let currentSingleLatencyToken = UUID()
         let runToken = prepareLatencyIndex()
         memberLatencyRequests.insert(memberKey)
-        // Clear the member in every group that lists it, so all of its rows
-        // read as "testing" instead of one row testing while the others keep
-        // showing a number that is about to change.
-        let affected = latencyIndex.groups(containing: memberName)
-        for group in affected {
-            latencyIndex.clear(member: memberName, in: group)
-        }
-        publishLatency(groups: affected, force: true)
+        activeMemberLatencyTokens[memberKey] = currentSingleLatencyToken
+        // Clear only this group's row so a single-node test on GroupB/SharedNode
+        // never erases or corrupts an active group sweep running on GroupA.
+        latencyIndex.clear(member: memberName, in: groupName)
+        publishLatency(groups: [groupName], force: true)
         proxySelectionMessages[groupName] = nil
         defer {
-            activeLatencyRunTasks.removeValue(forKey: batchToken)
-            if latencyRuntimeEpoch == epoch {
-                memberLatencyRequests.remove(memberKey)
+            activeLatencyRunTasks.removeValue(forKey: currentSingleLatencyToken)
+            if activeMemberLatencyTokens[memberKey] == currentSingleLatencyToken {
+                activeMemberLatencyTokens.removeValue(forKey: memberKey)
+                if latencyRuntimeEpoch == epoch {
+                    memberLatencyRequests.remove(memberKey)
+                }
             }
         }
 
@@ -601,81 +844,99 @@ extension TunnelManager {
 
         let batchTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let isCurrentSingleProbe: () -> Bool = {
+                !Task.isCancelled
+                    && runToken == self.currentLatencyRunToken
+                    && self.latencyRuntimeEpoch == epoch
+                    && self.activeMemberLatencyTokens[memberKey] == currentSingleLatencyToken
+            }
+            let publishUpdatedGroups: ([String: String]) -> Void = { selections in
+                let aggregated = self.latencyIndex.aggregateChildGroups(selectedMembers: selections)
+                let nonSweepingGroups = self.latencyGroupsSnapshot()
+                    .map(\.name)
+                    .filter { $0 == groupName || !self.proxyLatencyRequests.contains($0) }
+                let dirty = aggregated.union([groupName]).intersection(Set(nonSweepingGroups))
+                self.publishLatency(groups: dirty, force: true)
+            }
+
             let measurement: ProxyLatencyMeasurement
             if self.isUIReviewMode {
                 try? await Task.sleep(nanoseconds: 120_000_000)
-                guard !Task.isCancelled, self.latencyRuntimeEpoch == epoch else { return }
+                guard !Task.isCancelled,
+                      self.latencyRuntimeEpoch == epoch,
+                      self.activeMemberLatencyTokens[memberKey] == currentSingleLatencyToken else { return }
                 measurement = memberName.uppercased() == "DIRECT"
                     ? .reachable(3)
                     : .reachable(36)
-                self.recordLatency(
+                self.recordSingleMemberLatency(
                     member: memberName,
                     measurement: measurement,
-                    runToken: runToken,
-                    force: true
+                    group: groupName,
+                    runToken: runToken
                 )
                 Self.runtimeLogger.info(
                     "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
                 )
-                guard runToken == self.currentLatencyRunToken, self.latencyRuntimeEpoch == epoch else { return }
-                self.latencyIndex.aggregateChildGroups(selectedMembers: self.latencySelectedMembers)
-                let allGroups = self.latencyGroupsSnapshot().map(\.name)
-                self.publishLatency(groups: allGroups, force: true)
+                guard isCurrentSingleProbe() else { return }
+                publishUpdatedGroups(self.latencySelectedMembers)
                 return
             }
 
             if self.state == .connected {
-                if await self.verifyMemberLatency(
+                switch await self.verifyMemberLatencyOutcome(
                     group: groupName,
                     member: memberName,
                     runToken: runToken,
-                    recordTimeoutOnFailure: true
+                    recordTimeoutOnFailure: true,
+                    isolateToGroupOnActiveSweep: true
                 ) {
-                    guard !Task.isCancelled,
-                          runToken == self.currentLatencyRunToken,
-                          self.latencyRuntimeEpoch == epoch else { return }
-                    self.latencyIndex.aggregateChildGroups(selectedMembers: self.latencySelectedMembers)
-                    let allGroups = self.latencyGroupsSnapshot().map(\.name)
-                    self.publishLatency(groups: allGroups, force: true)
+                case .completed:
+                    guard isCurrentSingleProbe() else { return }
+                    publishUpdatedGroups(self.latencySelectedMembers)
                     return
+                case let .failed(error):
+                    guard isCurrentSingleProbe() else { return }
+                    Self.runtimeLogger.error(
+                        "stage=proxyLatency singleMemberProviderFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) fallingBackToReachability=false error=\(String(reflecting: error), privacy: .public)"
+                    )
+                    self.proxySelectionMessages[groupName] = self.localizedLatencyProbeError(error)
+                    self.latencyIndex.clear(member: memberName, in: groupName)
+                    self.publishLatency(groups: [groupName], force: true)
+                    return
+                case .unsupportedSelector:
+                    guard isCurrentSingleProbe() else { return }
+                    Self.runtimeLogger.error(
+                        "stage=proxyLatency singleMemberProviderUnsupportedSelector group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) fallingBackToReachability=true"
+                    )
                 }
-                guard !Task.isCancelled,
-                      runToken == self.currentLatencyRunToken,
-                      self.latencyRuntimeEpoch == epoch else { return }
-                Self.runtimeLogger.error(
-                    "stage=proxyLatency singleMemberProviderFailed group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) fallingBackToReachability=true"
-                )
             }
 
-            guard !Task.isCancelled,
-                  runToken == self.currentLatencyRunToken,
-                  self.latencyRuntimeEpoch == epoch,
+            guard isCurrentSingleProbe(),
                   memberName.uppercased() != "DIRECT" else { return }
+            let resolvedChain = self.resolvedLatencyChainSelections(for: memberName)
+            let targetMember = resolvedChain?.leaf ?? memberName
+            guard targetMember.uppercased() != "DIRECT" else { return }
             let endpoints = self.activeProfile
                 .map { ProfileNamedEndpointInspector.inspect(yaml: self.effectiveProfileYAML(for: $0)) } ?? [:]
             measurement = await Self.probeDirectMemberLatency(
-                member: memberName,
+                member: targetMember,
                 endpoints: endpoints,
                 excludingVirtualInterfaces: self.shouldExcludeVirtualInterfaces
             )
-            guard !Task.isCancelled,
-                  runToken == self.currentLatencyRunToken,
-                  self.latencyRuntimeEpoch == epoch else { return }
-            self.recordLatency(
-                member: memberName,
+            guard isCurrentSingleProbe() else { return }
+            self.recordSingleMemberLatency(
+                member: targetMember,
                 measurement: measurement,
-                runToken: runToken,
-                force: true
+                group: groupName,
+                runToken: runToken
             )
             Self.runtimeLogger.info(
-                "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
+                "stage=proxyLatency memberSuccess group=\(groupName, privacy: .public) member=\(memberName, privacy: .public) target=\(targetMember, privacy: .public) delay=\(measurement.delayMilliseconds.map(String.init) ?? "timeout", privacy: .public)"
             )
 
-            self.latencyIndex.aggregateChildGroups(selectedMembers: self.latencySelectedMembers)
-            let allGroups = self.latencyGroupsSnapshot().map(\.name)
-            self.publishLatency(groups: allGroups, force: true)
+            publishUpdatedGroups(resolvedChain?.fallbackSelections ?? self.latencySelectedMembers)
         }
-        activeLatencyRunTasks[batchToken] = batchTask
+        activeLatencyRunTasks[currentSingleLatencyToken] = batchTask
         await withTaskCancellationHandler {
             await batchTask.value
         } onCancel: {

@@ -6,6 +6,37 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.3] - 2026-11-22
+
+### Fixed & Improved
+- **全应用 152 项 UI 与生命周期审计清零（`verify-mac-fixes-2` `152/152 PASS`、`0 FAIL`）**：
+  - **外壳、出口探测与连接生命周期**：重构 `TunnelManager+EgressProbe` 请求令牌（`activeEgressProbeID`）与 `withTaskCancellationHandler` 取消联动，切换节点、代理组或路由模式时自动作废旧出口探测，杜绝过期结论回写；阻止网络设置引导与授权完成前误切引擎/配置，授权完成后自动清除陈旧失败状态；卸载确认弹窗在用户取消前不再提前触发应用退出。
+  - **代理测速隔离与列表性能**：重构 `ProxyLatencyIndex`（O(1) `resultsByMember` 查找）与 `ProxiesPageView` 列布局（`LazyVStack`、`ActiveProxyGroupListModel` 与独立节点/分组观测），连接态单节点与整组测速按 `(memberName, in: groupName)` 严格隔离，IPC 失败不再假阳性回退本地 TCP；嵌套子组支持递归展开与结果向上聚合。
+  - **规则、应用分流与场景预设**：扩展 `RouteMatchEngine` 结构化评估支持 `PROCESS-NAME`、`PROCESS-PATH`、`NETWORK`、`DOMAIN-WILDCARD`、`DOMAIN-REGEX` 及尊重 `no-resolve` 的 `IP-ASN`；修复 `RulesPageView` 筛选期间误触发排序、支持一键清空筛选并滚动定位目标规则，统一规则校验与重载错误本地化；补充资源状态随活动配置实时刷新。
+  - **连接与 DNS 可信度及交互增强**：将 `ConnectionsPageView` 高频 `telemetry` 观察下沉至列表子视图并在主导航持有 `PageSessionDraftStore` 会话草稿；新增连接表 `Return`/`Delete`/`Cmd+C` 键盘操作、悬停行内关闭按钮与两行对称速率列；修复 `DNSRecentQueryStore` 超过 256 条关闭流后错删活跃流去重状态，并确保 `清除 DNS 记录` 不再把存量活跃流回灌进近期 DNS 历史。
+  - **导航转场、弹窗与全量多语言整合**：将 `ContentView` 主导航页切分至逐分支非对称转场过渡，替换 `ScenarioRulePresetRow` / `ApplicationRuleRow` 同步测量式 `Picker(.menu)` 为原生惰性 `Menu`；补齐导入导出密码窗校验提示、`ManualNodeEditorView`/`NativeProfileEditorView` 编译错误呈现，并将全应用词条统一纳入 `Localizable.xcstrings`（`2,242` 条目录键，`2,050` 条直接字面量键，含单复数与本地化格式化）。
+
+### Verification & Qualification
+- **TDD 与本机/远程 ARM64 全量测试**：
+  - `./scripts/test_fast_lane.sh` **14/14 PASS**（`80s`，`outputs/fast-lane-20261122T121143Z`）。
+  - 静态守卫（`verify_localizations.sh`、`verify_ui_design_tokens.sh`、`test_ui_design_token_guards.sh`、`test_ui_isolation_guards.sh`、`test_motion_guards.sh`、`test_telemetry_observation_scope.sh`）**6/6 PASS**。
+  - 全量 `./scripts/test.sh` 在构建 `2026112203` 最终源码树上于隔离 ARM64 VM（`remote-arm64-20261122T122958Z-fast`）与本机（最终 UI 代码）全数通过：`763` XCTest（含 `MacV313UIAuditKitTests`）、`144` Swift Testing（`22` suites）、`114` `TransparentProxySupportTests`、`29` `FlowCoreBridgeTests`、`46/46` `MacFuncLifecycleAndV3FixTests`、`MacUISmoothnessAndPolishTests`、`AppUpdateWindow` 13 阶段回归、500 轮双引擎泄漏检查（`max_rss_bytes=12812288`，`fd_growth <= 2`）、以及吞吐测试（`flow_engine_mibps=2901.442`、`packet_engine_mibps=3055.476`）。
+- **核心与协议对照门禁（`Core/Engine` `54d279cd81b91b23b64f7d57562ff6a4cc69235f` 零改动）**：
+  - 在 `Xcode 27.2` / `Apple clang 21.0.0` / `rustc 1.96.0` 冷清理重编后，双份核心静态库确定性校验位级一致（`libclashrs.a`: `6ba7019...`，`libclashrs-direct.a`: `806a68e...`），已同步至 `ProtocolCoreEvidence.json` 与 `ThirdPartyLicenses.json`；`verify_protocol_matrix.sh`（`protocols=16 interop_cases=34 independent_tests=10 uncovered_claims=0`）与 `verify_licenses.sh source`（`446` 组件）均 PASS。
+  - 默认指纹与 Chrome 指纹 12 协议互通门禁均 **11/11 suites PASS**（各 `68` 项互通 + `34` 项证书拒签，测试二进制 SHA-256 `7a5dd255246a4ed32ca2c5638429733656e235d5f8812153202256b74c31b77e`）；Chrome `real_site_tests` 9 站握手 `9/9` PASS，`crypto_cloudflare_ech_reports_encrypted_sni` 因本机链路公共 DoH（AliDNS `223.5.5.5:443` `TTL=5, AD=false`）与 Cloudflare `1.1.1.1`（`TTL=300, AD=true`）在 `colo=ICN` 的 ECH 公钥下发不一致触发环境例外，详见 `Docs/ReleaseExceptions/3.1.3.md`；`vm:macos27` 43 节点实网对照 `both_ok=41, mihomo_fail=1, both_fail=1, ours_missing=0, ours_fail=0`。
+- **完整默认并行隔离验收（`vm:macos27`，总耗时 `57m 48s`，Build `2026112203`）**：
+  - 6 维 Tart VM 矩阵：`160 PASS / 0 FAIL / 50 SKIP`（透明代理 5 大专项门禁各 `3/3 PASS`）。
+  - UI 卡顿与内存预算门禁（`300s / 300s`）：
+    - `showcase`（`n=420`）：切页 `p50=92.7 ms / p95=155.3 ms / max=199.0 ms`（优于 `3.1.2` 的 `p95=177.1 ms / max=201.3 ms`），内存 `median=79 MB / max=92 MB / growth=+1 MB`；
+    - `large`（`n=420`）：切页 `p50=96.3 ms / p95=155.4 ms / max=199.0 ms`（优于 `3.1.2` 的 `p95=176.6 ms / max=182.5 ms`），内存 `median=78 MB / max=91 MB / growth=+3 MB`。
+  - 公证稳定候选与双引擎运行时证据（App Notary ID `33612864-e991-4b07-b2da-81392caf2f6f`；候选 DMG Notary ID `281d0f4e-e8ab-4c52-b66d-d54156287ae1`）：
+    - TUN：`50s` 空闲复用 PASS、`2 MiB` 上传 `1.297710s`、3 轮 6 次网卡切换恢复 `1/1/1/2/3/2 s`；
+    - 透明代理：`50s` 空闲复用 PASS、`2 MiB` 上传 `1.126104s`、3 轮 6 次网卡切换恢复 `2/2/2/2/3/2 s`。
+
+### Distribution
+- `AetherRoute-3.1.3-build-2026112203-arm64.dmg`: `32,960,320` bytes, SHA-256 `a7586b2e2a92b108a796ba2333d1188787d0b19b10b80029659019b6735f165c`
+- Sparkle Ed25519 Signature: `Km+QImDFD39e7Zs+CB0DPCL+zhh7xXqA+l1Vmyj7eM0qOGLXI+0r+CzDJgwdzloR5Ql14qX0SpslDTbKr7P5Bg==`
+
 ## [3.1.2] - 2026-11-21
 
 ### Fixed

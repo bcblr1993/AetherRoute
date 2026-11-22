@@ -37,9 +37,11 @@ extension TunnelManager {
         case .manual: break
         case .fastest: return
         case .failover:
+            cancelEgressAvailabilityProbe()
             await setPreferredProxy(group: groupName, member: member)
             return
         }
+        cancelEgressAvailabilityProbe()
         await performProxySelectionRequest(
             group: groupName,
             requestedMember: member
@@ -396,6 +398,9 @@ extension TunnelManager {
               !(isPassiveSnapshot && proxySnapshotRefreshRequests.contains(groupName)) else {
             return
         }
+        if !isPassiveSnapshot {
+            cancelEgressAvailabilityProbe()
+        }
         if state != .connected {
             await performOfflineProxySelectionRequest(
                 group: group,
@@ -726,12 +731,13 @@ extension TunnelManager {
 
     var preferredManualProxyGroupForCycling:
         ProxyGroupConfigurationSummary? {
+        guard effectiveRoutingMode != .direct else { return nil }
         let isEligible: (ProxyGroupConfigurationSummary) -> Bool = { group in
             group.strategy.caseInsensitiveCompare("select") == .orderedSame
                 && group.members.filter({ !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }).count > 1
                 && !self.automaticProxySelectionGroups.contains(group.name)
         }
-        if routingMode == .global,
+        if effectiveRoutingMode == .global,
            let global = globalProxyGroup,
            isEligible(global) {
             return global
@@ -841,10 +847,12 @@ extension TunnelManager {
 
     func clearProxySelectionRuntimeState() {
         latencyRuntimeEpoch &+= 1
+        cancelEgressAvailabilityProbe()
         for (_, task) in activeLatencyRunTasks {
             task.cancel()
         }
         activeLatencyRunTasks.removeAll()
+        activeMemberLatencyTokens.removeAll()
         latencyFlushTask?.cancel()
         latencyFlushTask = nil
         for (_, task) in proxySelectionModeTasks {

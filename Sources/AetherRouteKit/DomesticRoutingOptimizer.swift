@@ -1548,6 +1548,37 @@ public enum DomesticRoutingOptimizer {
             }
         }
 
+        // 2.5. Explicit non-DIRECT rules in the input YAML (such as user-configured
+        //      Domestic & LAN scenario presets from ProfileOverrideCompiler) that target
+        //      a matcher covered by highPriorityBypassRules must take precedence over
+        //      automatic DIRECT bypasses.
+        if enableDomesticDirect {
+            let bypassKeys: Set<String> = {
+                var keys = Set<String>()
+                keys.formUnion(highPriorityBypassRules.compactMap { ruleMatcherKey($0) })
+                keys.insert("GEOIP,PRIVATE")
+                keys.insert("GEOIP,LAN")
+                keys.insert("GEOIP,CN")
+                keys.insert("GEOSITE,CN")
+                return keys
+            }()
+            for r in rawRules {
+                let norm = normalizedRuleString(r)
+                if norm.hasPrefix("MATCH,") || norm == "MATCH" || norm.hasPrefix("FINAL,") || norm == "FINAL" {
+                    continue
+                }
+                guard !seenNormalized.contains(norm),
+                      let key = ruleMatcherKey(r),
+                      bypassKeys.contains(key),
+                      let target = ruleTarget(r),
+                      target.caseInsensitiveCompare("DIRECT") != .orderedSame else {
+                    continue
+                }
+                newRules.append(r)
+                seenNormalized.insert(norm)
+            }
+        }
+
         // 3. High priority domestic / VPN bypass rules
         if enableDomesticDirect {
             for rule in highPriorityBypassRules {
@@ -1598,6 +1629,24 @@ public enum DomesticRoutingOptimizer {
             output.append("  - \(formatYAMLListScalar(r))")
         }
         return output
+    }
+
+    private static func ruleMatcherKey(_ rule: String) -> String? {
+        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("(") else { return nil }
+        let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+        guard parts.count >= 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return "\(parts[0]),\(parts[1])"
+    }
+
+    private static func ruleTarget(_ rule: String) -> String? {
+        let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("(") else { return nil }
+        let parts = trimmed.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard parts.count >= 3, !parts[2].isEmpty else { return nil }
+        return parts[2]
     }
 
     // MARK: - Utilities

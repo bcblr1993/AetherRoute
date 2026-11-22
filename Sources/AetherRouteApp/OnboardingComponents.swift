@@ -146,7 +146,7 @@ struct OnboardingPrimaryButton: View {
         .aetherButton(prominent: true)
         .controlSize(.extraLarge)
         .keyboardShortcut(.defaultAction)
-        .disabled(!isEnabled)
+        .disabled(!isEnabled || isWorking)
         .accessibilityIdentifier(identifier)
     }
 }
@@ -169,6 +169,7 @@ struct OnboardingCardRow: Identifiable {
     var detail: String?
     var detailIsError = false
     var accessory: Accessory = .none
+    var isAccessoryEnabled = true
 }
 
 /// The grouped card of a first-run page: rows separated by inset hairlines,
@@ -228,6 +229,7 @@ private struct OnboardingCardRowView: View {
 
     @ViewBuilder
     private var accessory: some View {
+        let shouldReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         switch row.accessory {
         case .none:
             EmptyView()
@@ -235,7 +237,7 @@ private struct OnboardingCardRowView: View {
             grantedCheckmark
                 .accessibilityLabel(AppLocalization.string("Ready"))
                 .accessibilityIdentifier("onboarding-row-\(row.id)-granted")
-                .transition(.scale.combined(with: .opacity))
+                .transition(shouldReduceMotion ? .opacity : .scale.combined(with: .opacity))
         case .waiting:
             ProgressView()
                 .controlSize(.small)
@@ -244,11 +246,13 @@ private struct OnboardingCardRowView: View {
             Button(title, action: perform)
                 .aetherButton(prominent: true)
                 .controlSize(.regular)
+                .disabled(!row.isAccessoryEnabled)
                 .accessibilityIdentifier(identifier)
         case let .retry(title, identifier, perform):
             Button(title, systemImage: "arrow.clockwise", action: perform)
                 .aetherButton()
                 .controlSize(.regular)
+                .disabled(!row.isAccessoryEnabled)
                 .accessibilityIdentifier(identifier)
         case .unavailable:
             Image(systemName: "exclamationmark.triangle.fill")
@@ -269,7 +273,7 @@ private struct OnboardingCardRowView: View {
             .font(.title2)
             .symbolRenderingMode(.palette)
             .foregroundStyle(Color(nsColor: .windowBackgroundColor), AetherReadableTint(color: .green))
-        if reduceMotion {
+        if reduceMotion || AetherVisual.isReduceMotionForced {
             icon
         } else {
             icon.symbolEffect(.bounce, value: true)
@@ -329,9 +333,11 @@ private struct OnboardingMiniWindow: View {
 
 /// Page 1: a window that stays on this Mac, between two quieter ones.
 struct OnboardingPrivacyIllustration: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hasAppeared = false
 
     var body: some View {
+        let shouldReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         ZStack {
             OnboardingMiniWindow()
                 .rotationEffect(.degrees(-8))
@@ -340,21 +346,23 @@ struct OnboardingPrivacyIllustration: View {
                 .rotationEffect(.degrees(8))
                 .offset(x: 96, y: AetherVisual.s2)
             OnboardingMiniWindow(symbol: "lock.shield.fill", isHighlighted: true, width: 156, height: 108)
-                .scaleEffect(hasAppeared ? 1 : 0.92)
+                .scaleEffect((hasAppeared || shouldReduceMotion) ? 1 : 0.92)
         }
         .frame(height: AetherVisual.onboardingIllustrationHeight)
-        .opacity(hasAppeared ? 1 : 0)
+        .opacity((hasAppeared || shouldReduceMotion) ? 1 : 0)
         .onAppear {
-            withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) { hasAppeared = true }
+            withAnimation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion)) { hasAppeared = true }
         }
     }
 }
 
 /// Page 2: AetherRoute between the two network engines it sets up.
 struct OnboardingNetworkIllustration: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hasAppeared = false
 
     var body: some View {
+        let shouldReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         HStack(spacing: -AetherVisual.s2) {
             AetherIconTile(symbol: "laptopcomputer", color: .gray, size: AetherVisual.sheetIconSize)
                 .rotationEffect(.degrees(-10))
@@ -362,25 +370,27 @@ struct OnboardingNetworkIllustration: View {
                 .rotationEffect(.degrees(-4))
             AetherRouteBrandTile(size: AetherVisual.brandHeroSize)
                 .zIndex(1)
-                .scaleEffect(hasAppeared ? 1 : 0.9)
+                .scaleEffect((hasAppeared || shouldReduceMotion) ? 1 : 0.9)
             AetherIconTile(symbol: "server.rack", color: .indigo, size: AetherVisual.heroTileSize)
                 .rotationEffect(.degrees(4))
             AetherIconTile(symbol: "globe", color: .teal, size: AetherVisual.sheetIconSize)
                 .rotationEffect(.degrees(10))
         }
         .frame(height: AetherVisual.onboardingIllustrationHeight)
-        .opacity(hasAppeared ? 1 : 0)
+        .opacity((hasAppeared || shouldReduceMotion) ? 1 : 0)
         .onAppear {
-            withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) { hasAppeared = true }
+            withAnimation(AetherVisual.animation(AetherVisual.panelSpring, reduceMotion: reduceMotion)) { hasAppeared = true }
         }
     }
 }
 
 /// Page 3: AetherRoute with a check, ready to go.
 struct OnboardingDoneIllustration: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hasAppeared = false
 
     var body: some View {
+        let shouldReduceMotion = reduceMotion || AetherVisual.isReduceMotionForced
         ZStack(alignment: .bottomTrailing) {
             AetherRouteBrandTile(size: AetherVisual.brandHeroSize)
             Image(systemName: "checkmark.circle.fill")
@@ -389,12 +399,12 @@ struct OnboardingDoneIllustration: View {
                 .foregroundStyle(Color(nsColor: .windowBackgroundColor), AetherReadableTint(color: .green))
                 .background(Color(nsColor: .windowBackgroundColor), in: Circle())
                 .offset(x: AetherVisual.s2, y: AetherVisual.s2)
-                .scaleEffect(hasAppeared ? 1 : 0.4)
-                .opacity(hasAppeared ? 1 : 0)
+                .scaleEffect((hasAppeared || shouldReduceMotion) ? 1 : 0.4)
+                .opacity((hasAppeared || shouldReduceMotion) ? 1 : 0)
         }
         .frame(height: AetherVisual.onboardingIllustrationHeight)
         .onAppear {
-            withAnimation(AetherVisual.animation(AetherVisual.panelSpring.delay(0.15))) { hasAppeared = true }
+            withAnimation(AetherVisual.animation(AetherVisual.panelSpring.delay(0.15), reduceMotion: reduceMotion)) { hasAppeared = true }
         }
     }
 }

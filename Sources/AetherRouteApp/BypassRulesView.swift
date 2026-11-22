@@ -25,6 +25,7 @@ struct BypassRulesSection: View {
                     .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                     .focused($isInputFocused)
+                    .disabled(!tunnel.canModifyBypassPolicy || isAddingRule)
                     .onSubmit(addRule)
                     .accessibilityLabel(AppLocalization.string("Bypass destination"))
                     .accessibilityIdentifier("bypass-rule-field")
@@ -41,6 +42,13 @@ struct BypassRulesSection: View {
                         || isAddingRule
                 )
                 .accessibilityIdentifier("add-bypass-rule")
+            }
+
+            if !tunnel.canModifyBypassPolicy, let lockReason = tunnel.profileEditLockReason {
+                Text(lockReason)
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let message = tunnel.bypassPolicyMessage {
@@ -98,14 +106,14 @@ struct BypassRulesSection: View {
                 .buttonStyle(.link)
                 // The footer's secondary style otherwise paints the link
                 // gray, so it read as one more line of footnote text.
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(AetherReadableTint(color: .accentColor))
             }
             .font(.caption)
             .foregroundStyle(AetherVisual.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
         }
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.bypassPolicy.rules.count)
-        .animation(AetherVisual.animation(AetherVisual.quickFade), value: tunnel.bypassPolicyMessage)
+        .aetherAnimation(AetherVisual.gentleSpring, value: tunnel.bypassPolicy.rules.count)
+        .aetherAnimation(AetherVisual.quickFade, value: tunnel.bypassPolicyMessage)
     }
 
     @ViewBuilder
@@ -134,12 +142,19 @@ struct BypassRulesSection: View {
     }
 
     private func addRule() {
-        let submittedRule = newRule
+        let submittedRule = newRule.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !submittedRule.isEmpty,
+              tunnel.canModifyBypassPolicy,
+              !isAddingRule else {
+            return
+        }
         isAddingRule = true
         Task {
             defer { isAddingRule = false }
             guard await tunnel.addBypassRule(submittedRule) else { return }
-            if newRule == submittedRule { newRule = "" }
+            if newRule.trimmingCharacters(in: .whitespacesAndNewlines) == submittedRule {
+                newRule = ""
+            }
             isInputFocused = true
         }
     }
@@ -180,10 +195,7 @@ private struct BypassRuleRowView: View {
             .disabled(!canModify || removingRuleID != nil)
             .help(AppLocalization.string("Remove bypass rule"))
             .accessibilityLabel(
-                String.localizedStringWithFormat(
-                    AppLocalization.string("Remove %@"),
-                    rule.value
-                )
+                AppLocalization.format("Remove %@", rule.value)
             )
         }
     }

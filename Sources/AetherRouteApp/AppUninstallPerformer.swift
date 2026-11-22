@@ -28,7 +28,7 @@ final class AppUninstallPerformer: UninstallStepPerforming {
         let outcome: UninstallStepOutcome
         switch step {
         case .disconnect:
-            await tunnel.tearDownForUninstall()
+            await tunnel.prepareForUninstall()
             outcome = .completed
         case .removeNetworkConfigurations:
             outcome = await removeNetworkConfigurations()
@@ -45,6 +45,12 @@ final class AppUninstallPerformer: UninstallStepPerforming {
             "stage=uninstall step=\(String(describing: step), privacy: .public) outcome=\(String(describing: outcome), privacy: .public)"
         )
         return outcome
+    }
+
+    /// Marks the tunnel runtime for irreversible process exit only once uninstall
+    /// steps have succeeded or the user explicitly confirms moving the app to Trash.
+    func finalizeTearDownForConfirmedExit() async {
+        await tunnel.tearDownForUninstall()
     }
 
     /// Both kinds, enabled or not: the transparent proxy's configuration is

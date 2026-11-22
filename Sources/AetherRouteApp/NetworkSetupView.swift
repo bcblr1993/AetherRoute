@@ -14,6 +14,7 @@ struct NetworkSetupView: View {
     var onClose: (() -> Void)?
     /// Page 3: everything is granted and the first run is about to end.
     @State private var showsCompletion = false
+    @State private var isFinishing = false
 
     var body: some View {
         ZStack {
@@ -25,13 +26,18 @@ struct NetworkSetupView: View {
                     .transition(.opacity.combined(with: .move(edge: .leading)))
             }
         }
-        .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: tunnel.networkSetupStates)
-        .animation(AetherVisual.animation(AetherVisual.panelSpring), value: showsCompletion)
+        .aetherAnimation(AetherVisual.gentleSpring, value: tunnel.networkSetupStates)
+        .aetherAnimation(AetherVisual.panelSpring, value: showsCompletion)
         .task { await tunnel.refreshNetworkSetupStatus() }
         // Switching the extension on happens in System Settings; coming back
         // re-reads what was granted.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await tunnel.refreshNetworkSetupStatus() }
+        }
+        .onChange(of: tunnel.networkSetupStates) { _, _ in
+            if showsCompletion && !NetworkSetupProgress.canFinish(states) {
+                showsCompletion = false
+            }
         }
     }
 
@@ -54,6 +60,7 @@ struct NetworkSetupView: View {
             OnboardingNetworkIllustration()
         } content: {
             OnboardingCard(rows: tunnel.networkSetupEngines.map(engineRow))
+                .disabled(isFinishing)
         } actions: {
             HStack(spacing: AetherVisual.s3) {
                 if !isOnboarding, let onClose {
@@ -61,15 +68,26 @@ struct NetworkSetupView: View {
                         .aetherButton()
                         .controlSize(.extraLarge)
                         .keyboardShortcut(.cancelAction)
+                        .disabled(isFinishing)
                 }
-                OnboardingPrimaryButton(
-                    title: primaryTitle,
-                    isWorking: primaryAction == .waiting,
-                    isEnabled: primaryAction != .waiting && primaryAction != .restartRequired,
-                    identifier: "network-setup-primary",
-                    action: performPrimaryAction
-                )
+                permissionsPrimaryButton
             }
+        }
+    }
+
+    @ViewBuilder
+    private var permissionsPrimaryButton: some View {
+        let button = OnboardingPrimaryButton(
+            title: primaryTitle,
+            isWorking: primaryAction == .waiting || isFinishing,
+            isEnabled: !isFinishing && primaryAction != .waiting && primaryAction != .restartRequired,
+            identifier: "network-setup-primary",
+            action: performPrimaryAction
+        )
+        if primaryAction == .finish {
+            button
+        } else {
+            button.disabled(tunnel.isRunningNetworkSetup)
         }
     }
 
@@ -79,12 +97,14 @@ struct NetworkSetupView: View {
         let detail: String
         var isError = false
         let accessory: OnboardingCardRow.Accessory
+        var isAccessoryEnabled = true
         switch state {
         case .checking, .installingExtension:
             detail = mode.localizedDetail
             accessory = .waiting
         case .pending:
             detail = mode.localizedDetail
+            isAccessoryEnabled = !tunnel.isRunningNetworkSetup
             accessory = .action(
                 title: AppLocalization.string("Allow"),
                 identifier: "network-setup-allow-\(mode.rawValue)",
@@ -109,6 +129,7 @@ struct NetworkSetupView: View {
         case let .failed(reason, isRetryable):
             detail = reason
             isError = true
+            isAccessoryEnabled = !tunnel.isRunningNetworkSetup
             accessory = isRetryable
                 ? .retry(
                     title: AppLocalization.string("Retry"),
@@ -123,25 +144,34 @@ struct NetworkSetupView: View {
             title: mode.localizedTitle,
             detail: detail,
             detailIsError: isError,
-            accessory: accessory
+            accessory: accessory,
+            isAccessoryEnabled: isAccessoryEnabled
         )
     }
 
     private func performPrimaryAction() {
-        Task {
-            switch primaryAction {
-            case .start, .retry:
-                await tunnel.runNetworkSetup()
-            case .finish:
-                if isOnboarding {
-                    showsCompletion = true
-                } else {
-                    await tunnel.finishNetworkSetup()
-                    onClose?()
-                }
-            case .waiting, .restartRequired:
-                break
+        guard !isFinishing else { return }
+        switch primaryAction {
+        case .start, .retry:
+            Task { await tunnel.runNetworkSetup() }
+        case .finish:
+            if isOnboarding {
+                showsCompletion = true
+            } else {
+                finishSetup()
             }
+        case .waiting, .restartRequired:
+            break
+        }
+    }
+
+    private func finishSetup() {
+        guard !isFinishing, NetworkSetupProgress.canFinish(states) else { return }
+        isFinishing = true
+        Task {
+            defer { isFinishing = false }
+            await tunnel.finishNetworkSetup()
+            onClose?()
         }
     }
 
@@ -179,8 +209,8 @@ struct NetworkSetupView: View {
         if tunnel.networkSetupStates[blocked] == .rebootRequired {
             return AppLocalization.string("macOS finishes installing the extension after a restart. Open AetherRoute again afterwards to continue.")
         }
-        return String.localizedStringWithFormat(
-            AppLocalization.string("%@ is not available on this Mac. You can still use the other engine."),
+        return AppLocalization.format(
+            "%@ is not available on this Mac. You can still use the other engine.",
             blocked.localizedTitle
         )
     }
@@ -199,13 +229,23 @@ struct NetworkSetupView: View {
         } content: {
             OnboardingCard(rows: completionRows)
         } actions: {
-            OnboardingPrimaryButton(
-                title: AppLocalization.string("Start Using AetherRoute"),
-                identifier: "onboarding-start-using",
-                action: {
-                    Task { await tunnel.finishNetworkSetup() }
+            HStack(spacing: AetherVisual.s3) {
+                Button(AppLocalization.string("Back")) {
+                    showsCompletion = false
                 }
-            )
+                .aetherButton()
+                .controlSize(.extraLarge)
+                .disabled(isFinishing)
+                .accessibilityIdentifier("onboarding-back")
+
+                OnboardingPrimaryButton(
+                    title: AppLocalization.string("Start Using AetherRoute"),
+                    isWorking: isFinishing,
+                    isEnabled: !isFinishing && NetworkSetupProgress.canFinish(states),
+                    identifier: "onboarding-start-using",
+                    action: finishSetup
+                )
+            }
         }
     }
 

@@ -1,62 +1,84 @@
 import AetherRouteKit
+import Network
 import SwiftUI
 
 struct DNSView: View {
+    @Environment(\.pageSessionDrafts) private var environmentDrafts
+
+    var body: some View {
+        if let drafts = environmentDrafts?.dns {
+            DNSContentView(drafts: drafts)
+        } else {
+            DNSStandaloneView()
+        }
+    }
+}
+
+private struct DNSStandaloneView: View {
+    @StateObject private var fallbackDrafts = DNSPageDraftState()
+
+    var body: some View {
+        DNSContentView(drafts: fallbackDrafts)
+    }
+}
+
+private struct DNSContentView: View {
     @EnvironmentObject private var tunnel: TunnelManager
-    @State private var showsAdvancedDNS = false
+    @ObservedObject var drafts: DNSPageDraftState
     @State private var tailscale = TailscalePresence.absent
-    @State private var newHostDomain = ""
-    @State private var newHostIP = ""
-    @State private var hostOverrideErrorMessage: String?
-    @State private var lookupQuery = ""
-    @State private var lookupReport: DNSLookupReport?
-    @State private var fakeIPReverseLookup: FakeIPReverseLookupState?
+    @State private var tailscaleMonitorTask: Task<Void, Never>?
+    @State private var isSavingCustomHosts = false
     @State private var isRunningLookup = false
-    @State private var hasAttemptedLookup = false
-    @State private var isClearingDNSCache = false
-    @State private var dnsCacheClearStatus: String?
-    @State private var diagnosticReport: NetworkDiagnosticReport?
+    @State private var lookupTask: Task<Void, Never>?
     @State private var isRunningDiagnostics = false
+    @State private var diagnosticsTask: Task<Void, Never>?
 
     var body: some View {
         Group {
             if let summary = tunnel.activeProfileSummary {
-                ScrollView {
-                    // Plain VStack (matching RulesPageView 1.7.1) to prevent LazyVStack
-                    // width/constraint invalidation loops inside NavigationSplitView.
-                    VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
-                        AetherPageHeader(.dns)
-                        if tailscale.isRunning {
-                            TailscaleCoexistenceNote(presence: tailscale)
-                        }
-                        if usesAutomaticTUNDNS(summary.dns) {
-#if AETHERROUTE_INDEPENDENT
-                            automaticTUNDNSCard(summary.dns)
-                            tunAdjustmentsSection(summary.dns)
-#endif
-                        } else if summary.dns.isPresent {
-                            configuredContent(summary.dns)
-                        } else {
-                            systemResolverContent
-                        }
-                        dnsLookupSection(summary: summary)
-                        RecentDNSQueriesCard(
-                            viewModel: tunnel.dnsQueriesViewModel,
-                            telemetry: tunnel.telemetryViewModel,
-                            onSelectDomain: { domain in
-                                lookupQuery = domain
-                                runDNSLookup(summary: summary)
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        // Plain VStack (matching RulesPageView 1.7.1) to prevent LazyVStack
+                        // width/constraint invalidation loops inside NavigationSplitView.
+                        VStack(alignment: .leading, spacing: AetherVisual.sectionSpacing) {
+                            AetherPageHeader(.dns)
+                            if tailscale.isRunning {
+                                TailscaleCoexistenceNote(presence: tailscale)
                             }
-                        )
-                        .environmentObject(tunnel)
-                        RouteSimulatorSection()
-                        networkDiagnosticSection(summary: summary)
-                        customHostsSection
+                            if usesAutomaticTUNDNS(summary.dns) {
+#if AETHERROUTE_INDEPENDENT
+                                automaticTUNDNSCard(summary.dns)
+                                tunAdjustmentsSection(summary.dns)
+#endif
+                            } else if summary.dns.isPresent {
+                                configuredContent(summary.dns)
+                            } else {
+                                systemResolverContent
+                            }
+                            dnsLookupSection(summary: summary)
+                                .id("dns-lookup-section")
+                            RecentDNSQueriesCard(
+                                viewModel: tunnel.dnsQueriesViewModel,
+                                telemetry: tunnel.telemetryViewModel,
+                                selectedFilter: $drafts.recentQueryFilter,
+                                onSelectDomain: { domain in
+                                    drafts.lookupQuery = domain
+                                    withAnimation(AetherVisual.animation(AetherVisual.panelSpring)) {
+                                        scrollProxy.scrollTo("dns-lookup-section", anchor: .top)
+                                    }
+                                    runDNSLookup(summary: summary)
+                                }
+                            )
+                            .environmentObject(tunnel)
+                            RouteSimulatorSection(drafts: drafts)
+                            networkDiagnosticSection(summary: summary)
+                            customHostsSection
+                        }
+                        .aetherPageContent(.wide)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(AppLocalization.string("DNS configuration details"))
+                        .accessibilityIdentifier("dns-page-content")
                     }
-                    .aetherPageContent(.wide)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel(AppLocalization.string("DNS configuration details"))
-                    .accessibilityIdentifier("dns-page-content")
                 }
             } else {
                 ScrollView {
@@ -73,11 +95,84 @@ struct DNSView: View {
             }
         }
         .accessibilityIdentifier("dns-page")
-        // Read when the page appears; reading interfaces is cheap.
-        .task {
-            tailscale = Self.reviewTailscale ?? TailscalePresence.current()
+        .onChange(of: tunnel.activeProfileID) { _, _ in
+            resetTransientState()
+        }
+        .onAppear {
+            startTailscalePathMonitor()
+        }
+        .task(id: tunnel.activeProfileID) {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             tunnel.syncRecentDNSQueriesFromTelemetry()
         }
+        .onDisappear {
+            stopTailscalePathMonitor()
+            cancelRunningTasks()
+        }
+    }
+
+    private func startTailscalePathMonitor() {
+        if let review = Self.reviewTailscale {
+            tailscale = review
+            return
+        }
+        tailscaleMonitorTask?.cancel()
+        tailscaleMonitorTask = Task {
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            let initial = await Task.detached(priority: .utility) {
+                TailscalePresence.current()
+            }.value
+            guard !Task.isCancelled else { return }
+            if initial != tailscale {
+                tailscale = initial
+            }
+            let stream = AsyncStream<Void> { continuation in
+                let monitor = NWPathMonitor()
+                monitor.pathUpdateHandler = { _ in
+                    continuation.yield()
+                }
+                continuation.onTermination = { _ in
+                    monitor.cancel()
+                }
+                monitor.start(
+                    queue: DispatchQueue(
+                        label: "com.aetherroute.dns.tailscale-path-monitor",
+                        qos: .utility
+                    )
+                )
+            }
+            for await _ in stream {
+                guard !Task.isCancelled else { break }
+                let latest = await Task.detached(priority: .utility) {
+                    TailscalePresence.current()
+                }.value
+                guard !Task.isCancelled else { break }
+                if latest != tailscale {
+                    tailscale = latest
+                }
+            }
+        }
+    }
+
+    private func stopTailscalePathMonitor() {
+        tailscaleMonitorTask?.cancel()
+        tailscaleMonitorTask = nil
+    }
+
+    private func cancelRunningTasks() {
+        lookupTask?.cancel()
+        lookupTask = nil
+        diagnosticsTask?.cancel()
+        diagnosticsTask = nil
+        isRunningLookup = false
+        isRunningDiagnostics = false
+    }
+
+    private func resetTransientState() {
+        cancelRunningTasks()
+        drafts.resetForProfileChange()
     }
 
     /// Screenshot review can show the note without Tailscale installed.
@@ -178,11 +273,11 @@ struct DNSView: View {
         return VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(AetherVisual.animation(AetherVisual.disclosure)) {
-                    showsAdvancedDNS.toggle()
+                    drafts.showsAdvancedDNS.toggle()
                 }
             } label: {
                 HStack(spacing: AetherVisual.s2) {
-                    AetherDisclosureChevron(isExpanded: showsAdvancedDNS)
+                    AetherDisclosureChevron(isExpanded: drafts.showsAdvancedDNS)
                     Text(AppLocalization.string("Details"))
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
@@ -201,13 +296,13 @@ struct DNSView: View {
             }
             .buttonStyle(.plain)
             .accessibilityValue(
-                showsAdvancedDNS
+                drafts.showsAdvancedDNS
                     ? AppLocalization.string("Expanded")
                     : AppLocalization.string("Collapsed")
             )
             .accessibilityIdentifier("dns-details-disclosure")
 
-            if showsAdvancedDNS {
+            if drafts.showsAdvancedDNS {
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 260), spacing: AetherVisual.s4, alignment: .top)],
                     alignment: .leading,
@@ -241,9 +336,9 @@ struct DNSView: View {
                 }
                 Spacer(minLength: AetherVisual.s2)
                 Text(
-                    String.localizedStringWithFormat(
-                        AppLocalization.string("%lld total"),
-                        totalResolverCount(dns)
+                    AppLocalization.format(
+                        "%lld total",
+                        Int64(totalResolverCount(dns))
                     )
                 )
                 .font(.caption.monospacedDigit().weight(.semibold))
@@ -344,7 +439,7 @@ struct DNSView: View {
                     systemImage: "rectangle.3.group.bubble"
                 )
                 .font(.caption.weight(.medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(AetherReadableTint(color: .accentColor))
                 .padding(.horizontal, AetherVisual.pillHorizontalPadding)
                 .padding(.vertical, AetherVisual.pillVerticalPadding)
                 .background(
@@ -582,10 +677,19 @@ struct DNSView: View {
                     .foregroundStyle(AetherVisual.secondaryText)
             }
 
-            // Saving this card's own change locks it for a moment; that is
-            // not a lock the person needs explained.
-            if !tunnel.isUpdatingDNSRuntimePolicy,
-               let reason = tunnel.profileEditLockReason {
+            if tunnel.isUpdatingDNSRuntimePolicy {
+                Divider().padding(.horizontal, AetherVisual.s4)
+                HStack(spacing: AetherVisual.s2) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(AppLocalization.string("Applying DNS policy…"))
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AetherVisual.s4)
+                .padding(.vertical, AetherVisual.s3)
+            } else if let reason = tunnel.profileEditLockReason {
                 Divider().padding(.horizontal, AetherVisual.s4)
                 Label(reason, systemImage: "lock")
                     .font(.caption)
@@ -618,15 +722,16 @@ struct DNSView: View {
                 Label(
                     message,
                     systemImage: tunnel.dnsRuntimePolicyMessageIsError
-                        ? "exclamationmark.triangle.fill"
+                        ? "exclamationmark.circle.fill"
                         : "checkmark.circle.fill"
                 )
                 .font(.subheadline)
                 .foregroundStyle(
                     AetherReadableTint(
-                        color: tunnel.dnsRuntimePolicyMessageIsError ? .orange : .accentColor
+                        color: tunnel.dnsRuntimePolicyMessageIsError ? .red : .green
                     )
                 )
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(AetherVisual.s4)
                 .transition(AetherVisual.insertion)
@@ -712,7 +817,7 @@ struct DNSView: View {
     /// "Follow profile (Fake-IP)": the menu never hides what following the
     /// profile actually means.
     private func followProfileTitle(_ value: String) -> String {
-        String.localizedStringWithFormat(AppLocalization.string("Follow profile (%@)"), value)
+        AppLocalization.format("Follow profile (%@)", value)
     }
 
     private func onOffTitle(_ isOn: Bool) -> String {
@@ -747,17 +852,17 @@ struct DNSView: View {
 
     private var systemResolverContent: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s4) {
-            Label(AppLocalization.string("System resolver"), systemImage: "macbook.and.iphone")
+            Label(AppLocalization.string("System resolver"), systemImage: "desktopcomputer")
                 .font(.headline)
             Text(AppLocalization.string("The active profile has no DNS section. The core therefore uses the system resolver behavior available to the selected network engine."))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Label(
-                AppLocalization.string("No resolver address or browsing-domain value is collected for this screen."),
+                AppLocalization.string("No DNS queries or resolver details leave this Mac."),
                 systemImage: "hand.raised.fill"
             )
             .font(.subheadline)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(AetherReadableTint(color: .accentColor))
         }
         .padding(AetherVisual.cardPadding)
         .aetherPanel()
@@ -767,6 +872,8 @@ struct DNSView: View {
 
     private var customHostsSection: some View {
         let mappings = tunnel.activeProfileOverrides.customHosts
+        let perProfileIDs = Set(mappings.map(\.id))
+        let inheritedHosts = tunnel.effectiveCustomHosts.filter { !perProfileIDs.contains($0.id) }
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(
                 title: AppLocalization.string("Custom host mappings"),
@@ -776,37 +883,55 @@ struct DNSView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: AetherVisual.s2) {
                     TextField(
-                        AppLocalization.string("Domain (e.g. nas.local, *.dev.internal)"),
-                        text: $newHostDomain
+                        AppLocalization.string("Domain (e.g. nas.local, *.dev.internal, +.corp.example)"),
+                        text: $drafts.newHostDomain
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.callout.monospaced())
-                    .onSubmit { addCustomHost() }
+                    .onSubmit {
+                        guard !drafts.newHostDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                              !drafts.newHostIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                              !isSavingCustomHosts else { return }
+                        addCustomHost()
+                    }
+                    .disabled(isSavingCustomHosts)
                     .accessibilityIdentifier("dns-custom-host-domain-field")
 
                     TextField(
                         AppLocalization.string("IPv4 or IPv6 address"),
-                        text: $newHostIP
+                        text: $drafts.newHostIP
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.callout.monospaced())
-                    .frame(maxWidth: 180)
-                    .onSubmit { addCustomHost() }
+                    .frame(minWidth: 150, maxWidth: 240)
+                    .onSubmit {
+                        guard !drafts.newHostDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                              !drafts.newHostIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                              !isSavingCustomHosts else { return }
+                        addCustomHost()
+                    }
+                    .disabled(isSavingCustomHosts)
                     .accessibilityIdentifier("dns-custom-host-ip-field")
 
-                    Button(AppLocalization.string("Add Host")) {
+                    Button {
                         addCustomHost()
+                    } label: {
+                        AetherProgressButtonLabel(
+                            AppLocalization.string("Add Host"),
+                            isWorking: isSavingCustomHosts && drafts.editingHostID == nil
+                        )
                     }
                     .aetherButton(prominent: true)
                     .disabled(
-                        newHostDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || newHostIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        isSavingCustomHosts
+                            || drafts.newHostDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || drafts.newHostIP.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     )
                     .accessibilityIdentifier("dns-custom-host-add-button")
                 }
                 .padding(AetherVisual.s4)
 
-                if let hostOverrideErrorMessage {
+                if let hostOverrideErrorMessage = drafts.hostOverrideErrorMessage {
                     Divider().padding(.horizontal, AetherVisual.s4)
                     AetherInlineMessage(text: hostOverrideErrorMessage, isCompact: true)
                         .padding(.horizontal, AetherVisual.s4)
@@ -819,46 +944,122 @@ struct DNSView: View {
                         if index > 0 {
                             Divider().padding(.leading, AetherVisual.s4)
                         }
-                        HStack(spacing: AetherVisual.s3) {
-                            Toggle(
-                                isOn: Binding(
-                                    get: { mapping.isEnabled },
-                                    set: { isOn in
-                                        setCustomHostEnabled(id: mapping.id, isEnabled: isOn)
-                                    }
+                        if drafts.editingHostID == mapping.id {
+                            HStack(spacing: AetherVisual.s2) {
+                                TextField(
+                                    AppLocalization.string("Domain"),
+                                    text: $drafts.editingHostDomain
                                 )
-                            ) { EmptyView() }
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .labelsHidden()
-                            .accessibilityLabel(Text(verbatim: mapping.domain))
+                                .textFieldStyle(.roundedBorder)
+                                .font(.callout.monospaced())
 
+                                TextField(
+                                    AppLocalization.string("IPv4 or IPv6 address"),
+                                    text: $drafts.editingHostIP
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .font(.callout.monospaced())
+                                .frame(minWidth: 150, maxWidth: 220)
+
+                                Button(AppLocalization.string("Save")) {
+                                    saveEditedCustomHost(id: mapping.id)
+                                }
+                                .aetherButton(prominent: true)
+                                .controlSize(.small)
+                                .disabled(isSavingCustomHosts)
+
+                                Button(AppLocalization.string("Cancel"), role: .cancel) {
+                                    drafts.editingHostID = nil
+                                }
+                                .aetherButton()
+                                .controlSize(.small)
+                                .disabled(isSavingCustomHosts)
+                            }
+                            .frame(minHeight: AetherVisual.tableRowHeight)
+                            .padding(.horizontal, AetherVisual.s4)
+                            .padding(.vertical, AetherVisual.s1)
+                        } else {
+                            HStack(spacing: AetherVisual.s3) {
+                                Toggle(
+                                    isOn: Binding(
+                                        get: { mapping.isEnabled },
+                                        set: { isOn in
+                                            setCustomHostEnabled(id: mapping.id, isEnabled: isOn)
+                                        }
+                                    )
+                                ) { EmptyView() }
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                                .labelsHidden()
+                                .disabled(isSavingCustomHosts)
+                                .accessibilityLabel(Text(verbatim: mapping.domain))
+
+                                HStack(spacing: AetherVisual.s2) {
+                                    Text(verbatim: mapping.domain)
+                                        .font(.body.monospaced())
+                                        .lineLimit(1)
+                                    Image(systemName: "arrow.right")
+                                        .font(.caption)
+                                        .foregroundStyle(AetherVisual.secondaryText)
+                                        .accessibilityHidden(true)
+                                    Text(verbatim: mapping.ip)
+                                        .font(.callout.monospaced())
+                                        .foregroundStyle(AetherVisual.secondaryText)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: AetherVisual.s2)
+                                Button {
+                                    drafts.editingHostID = mapping.id
+                                    drafts.editingHostDomain = mapping.domain
+                                    drafts.editingHostIP = mapping.ip
+                                    drafts.hostOverrideErrorMessage = nil
+                                } label: {
+                                    AetherRowIconLabel(symbol: "pencil")
+                                }
+                                .buttonStyle(.aetherPressable)
+                                .disabled(isSavingCustomHosts)
+                                .help(AppLocalization.string("Edit"))
+                                .accessibilityLabel(AppLocalization.string("Edit"))
+
+                                Button(role: .destructive) {
+                                    removeCustomHost(id: mapping.id)
+                                } label: {
+                                    AetherRowIconLabel(symbol: "trash", tint: .red)
+                                }
+                                .buttonStyle(.aetherPressable)
+                                .disabled(isSavingCustomHosts)
+                                .help(AppLocalization.string("Delete"))
+                                .accessibilityLabel(AppLocalization.string("Delete"))
+                            }
+                            .frame(minHeight: AetherVisual.tableRowHeight)
+                            .padding(.horizontal, AetherVisual.s4)
+                        }
+                    }
+                }
+
+                if !inheritedHosts.isEmpty {
+                    Divider().padding(.horizontal, AetherVisual.s4)
+                    VStack(alignment: .leading, spacing: AetherVisual.s1) {
+                        Text(AppLocalization.string("Inherited global hosts"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AetherVisual.secondaryText)
+                        ForEach(inheritedHosts) { mapping in
                             HStack(spacing: AetherVisual.s2) {
                                 Text(verbatim: mapping.domain)
-                                    .font(.body.monospaced())
-                                    .lineLimit(1)
+                                    .font(.caption.monospaced())
                                 Image(systemName: "arrow.right")
-                                    .font(.caption)
+                                    .font(.caption2)
                                     .foregroundStyle(AetherVisual.secondaryText)
                                     .accessibilityHidden(true)
                                 Text(verbatim: mapping.ip)
-                                    .font(.callout.monospaced())
+                                    .font(.caption.monospaced())
                                     .foregroundStyle(AetherVisual.secondaryText)
-                                    .lineLimit(1)
                             }
-                            Spacer(minLength: AetherVisual.s2)
-                            Button(role: .destructive) {
-                                removeCustomHost(id: mapping.id)
-                            } label: {
-                                AetherRowIconLabel(symbol: "trash", tint: .red)
-                            }
-                            .buttonStyle(.aetherPressable)
-                            .help(AppLocalization.string("Delete"))
-                            .accessibilityLabel(AppLocalization.string("Delete"))
+                            .opacity(mapping.isEnabled ? 1.0 : 0.65)
                         }
-                        .frame(minHeight: AetherVisual.tableRowHeight)
-                        .padding(.horizontal, AetherVisual.s4)
                     }
+                    .padding(.horizontal, AetherVisual.s4)
+                    .padding(.vertical, AetherVisual.s3)
                 }
             }
             .aetherPanel()
@@ -868,45 +1069,96 @@ struct DNSView: View {
     }
 
     private func addCustomHost() {
+        guard !isSavingCustomHosts else { return }
         do {
             let entry = try CustomHostMapping(
-                domain: newHostDomain,
-                ip: newHostIP,
+                domain: drafts.newHostDomain,
+                ip: drafts.newHostIP,
                 isEnabled: true
             ).validated()
             var overrides = tunnel.activeProfileOverrides
             overrides.customHosts.append(entry)
             let validated = try overrides.validated()
-            hostOverrideErrorMessage = nil
-            newHostDomain = ""
-            newHostIP = ""
+            drafts.hostOverrideErrorMessage = nil
+            isSavingCustomHosts = true
             Task {
+                defer { isSavingCustomHosts = false }
                 let saved = await tunnel.setProfileOverrides(validated)
-                if !saved, let message = tunnel.profileMessage {
-                    hostOverrideErrorMessage = message
+                if saved {
+                    drafts.newHostDomain = ""
+                    drafts.newHostIP = ""
+                } else {
+                    drafts.hostOverrideErrorMessage = tunnel.profileMessage
+                        ?? AppLocalization.string("Could not save host mapping.")
                 }
             }
         } catch {
-            hostOverrideErrorMessage = error.overrideMessage
+            drafts.hostOverrideErrorMessage = error.overrideMessage
+        }
+    }
+
+    private func saveEditedCustomHost(id: UUID) {
+        guard !isSavingCustomHosts else { return }
+        do {
+            var overrides = tunnel.activeProfileOverrides
+            guard let index = overrides.customHosts.firstIndex(where: { $0.id == id }) else { return }
+            let updated = try CustomHostMapping(
+                id: id,
+                domain: drafts.editingHostDomain,
+                ip: drafts.editingHostIP,
+                isEnabled: overrides.customHosts[index].isEnabled
+            ).validated()
+            overrides.customHosts[index] = updated
+            let validated = try overrides.validated()
+            drafts.hostOverrideErrorMessage = nil
+            isSavingCustomHosts = true
+            Task {
+                defer { isSavingCustomHosts = false }
+                let saved = await tunnel.setProfileOverrides(validated)
+                if saved {
+                    drafts.editingHostID = nil
+                    drafts.editingHostDomain = ""
+                    drafts.editingHostIP = ""
+                } else {
+                    drafts.hostOverrideErrorMessage = tunnel.profileMessage
+                        ?? AppLocalization.string("Could not save host mapping.")
+                }
+            }
+        } catch {
+            drafts.hostOverrideErrorMessage = error.overrideMessage
         }
     }
 
     private func setCustomHostEnabled(id: UUID, isEnabled: Bool) {
+        guard !isSavingCustomHosts else { return }
         var overrides = tunnel.activeProfileOverrides
         guard let index = overrides.customHosts.firstIndex(where: { $0.id == id }) else { return }
         overrides.customHosts[index].isEnabled = isEnabled
-        hostOverrideErrorMessage = nil
+        drafts.hostOverrideErrorMessage = nil
+        isSavingCustomHosts = true
         Task {
-            _ = await tunnel.setProfileOverrides(overrides)
+            defer { isSavingCustomHosts = false }
+            let saved = await tunnel.setProfileOverrides(overrides)
+            if !saved {
+                drafts.hostOverrideErrorMessage = tunnel.profileMessage
+                    ?? AppLocalization.string("Could not update host mapping.")
+            }
         }
     }
 
     private func removeCustomHost(id: UUID) {
+        guard !isSavingCustomHosts else { return }
         var overrides = tunnel.activeProfileOverrides
         overrides.customHosts.removeAll { $0.id == id }
-        hostOverrideErrorMessage = nil
+        drafts.hostOverrideErrorMessage = nil
+        isSavingCustomHosts = true
         Task {
-            _ = await tunnel.setProfileOverrides(overrides)
+            defer { isSavingCustomHosts = false }
+            let saved = await tunnel.setProfileOverrides(overrides)
+            if !saved {
+                drafts.hostOverrideErrorMessage = tunnel.profileMessage
+                    ?? AppLocalization.string("Could not delete host mapping.")
+            }
         }
     }
 
@@ -915,18 +1167,14 @@ struct DNSView: View {
     private func dnsLookupSection(summary: ProfileConfigurationSummary) -> some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(title: AppLocalization.string("DNS lookup")) {
-                Button {
-                    clearDNSCacheAction()
-                } label: {
-                    AetherProgressButtonLabel(
-                        AppLocalization.string("Clear DNS Cache"),
-                        isWorking: isClearingDNSCache
-                    )
-                }
-                .aetherButton(prominent: false)
-                .controlSize(.small)
-                .disabled(isClearingDNSCache)
-                .accessibilityIdentifier("dns-clear-cache-button")
+                DNSLookupClearCacheButton(
+                    viewModel: tunnel.dnsQueriesViewModel,
+                    isConnected: tunnel.isConnected,
+                    hasLookupResult: drafts.lookupReport != nil
+                        || drafts.fakeIPReverseLookup != nil
+                        || drafts.simTraceResult != nil,
+                    onClear: clearDNSCacheAction
+                )
             }
 
             VStack(alignment: .leading, spacing: AetherVisual.s3) {
@@ -937,18 +1185,18 @@ struct DNSView: View {
                             .accessibilityHidden(true)
                         TextField(
                             AppLocalization.string("Enter a domain or Fake-IP (198.18.x.x) to inspect DNS and reverse lookup"),
-                            text: $lookupQuery
+                            text: $drafts.lookupQuery
                         )
                         .textFieldStyle(.plain)
                         .font(.body)
                         .onSubmit { runDNSLookup(summary: summary) }
                         .accessibilityIdentifier("dns-lookup-field")
-                        if !lookupQuery.isEmpty {
+                        if !drafts.lookupQuery.isEmpty {
                             Button {
-                                lookupQuery = ""
-                                lookupReport = nil
-                                fakeIPReverseLookup = nil
-                                hasAttemptedLookup = false
+                                drafts.lookupQuery = ""
+                                drafts.lookupReport = nil
+                                drafts.fakeIPReverseLookup = nil
+                                drafts.hasAttemptedLookup = false
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(AetherVisual.secondaryText)
@@ -971,24 +1219,18 @@ struct DNSView: View {
                     }
                     .aetherButton(prominent: true)
                     .controlSize(.large)
-                    .disabled(lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLookup)
+                    .disabled(drafts.lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunningLookup)
                     .accessibilityIdentifier("dns-lookup-button")
                 }
 
-                if let status = dnsCacheClearStatus {
-                    Label(status, systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(AetherReadableTint(color: .green))
-                        .transition(AetherVisual.insertion)
-                        .accessibilityIdentifier("dns-clear-cache-status")
-                }
+                DNSCacheClearStatusBanner(viewModel: tunnel.dnsQueriesViewModel)
 
-                if let reverseState = fakeIPReverseLookup {
+                if let reverseState = drafts.fakeIPReverseLookup {
                     fakeIPReverseLookupResultView(reverseState, summary: summary)
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("dns-fakeip-reverse-result")
                         .transition(AetherVisual.insertion)
-                } else if let report = lookupReport {
+                } else if let report = drafts.lookupReport {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         HStack(spacing: AetherVisual.s2) {
                             StatePill(
@@ -998,8 +1240,8 @@ struct DNSView: View {
                             )
                             if let hostIP = report.matchedCustomHostIP {
                                 Label(
-                                    String.localizedStringWithFormat(
-                                        AppLocalization.string("Hosts: %@ -> %@"),
+                                    AppLocalization.format(
+                                        "Hosts: %@ -> %@",
                                         report.normalizedHost,
                                         hostIP
                                     ),
@@ -1021,14 +1263,9 @@ struct DNSView: View {
                             }
                             Spacer(minLength: AetherVisual.s2)
                             if let ms = report.latencyMilliseconds {
-                                Text(
-                                    String.localizedStringWithFormat(
-                                        AppLocalization.string("%lld ms"),
-                                        Int64(ms)
-                                    )
-                                )
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(AetherVisual.secondaryText)
+                                Text(AppLocalization.format("%lld ms", Int64(ms)))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(AetherVisual.secondaryText)
                             }
                         }
 
@@ -1049,7 +1286,7 @@ struct DNSView: View {
                                         if DNSLookupInspector.isFakeIPAddress(address) {
                                             Text(AppLocalization.string("Fake-IP"))
                                                 .font(.caption2.weight(.semibold))
-                                                .foregroundStyle(Color.accentColor)
+                                                .foregroundStyle(AetherReadableTint(color: .accentColor))
                                                 .padding(.horizontal, AetherVisual.s1)
                                                 .padding(.vertical, AetherVisual.sMicro)
                                                 .background(
@@ -1071,7 +1308,7 @@ struct DNSView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("dns-lookup-result")
                     .transition(AetherVisual.insertion)
-                } else if hasAttemptedLookup && !isRunningLookup {
+                } else if drafts.hasAttemptedLookup && !isRunningLookup {
                     Label(
                         AppLocalization.string("Enter a valid domain name (such as example.com) or Fake-IP (198.18.x.x) to inspect DNS resolution."),
                         systemImage: "info.circle"
@@ -1085,7 +1322,7 @@ struct DNSView: View {
                             .foregroundStyle(AetherVisual.secondaryText)
                         ForEach(["google.com", "apple.com", "github.com", "bilibili.com"], id: \.self) { domain in
                             Button(domain) {
-                                lookupQuery = domain
+                                drafts.lookupQuery = domain
                                 runDNSLookup(summary: summary)
                             }
                             .buttonStyle(.aetherPressable)
@@ -1099,9 +1336,8 @@ struct DNSView: View {
             }
             .padding(AetherVisual.cardPadding)
             .aetherPanel()
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: lookupReport)
-            .animation(AetherVisual.animation(AetherVisual.gentleSpring), value: fakeIPReverseLookup)
-            .animation(AetherVisual.animation(AetherVisual.quickFade), value: dnsCacheClearStatus)
+            .aetherAnimation(AetherVisual.gentleSpring, value: drafts.lookupReport)
+            .aetherAnimation(AetherVisual.gentleSpring, value: drafts.fakeIPReverseLookup)
         }
     }
 
@@ -1133,7 +1369,7 @@ struct DNSView: View {
                         .textSelection(.enabled)
                     Spacer(minLength: AetherVisual.s2)
                     Button {
-                        lookupQuery = match.domain
+                        drafts.lookupQuery = match.domain
                         runDNSLookup(summary: summary)
                     } label: {
                         Text(AppLocalization.string("Resolve Domain"))
@@ -1157,14 +1393,16 @@ struct DNSView: View {
                             .foregroundStyle(AetherVisual.secondaryText)
                     }
                     if let target = match.record.matchedRouteTarget {
-                        Image(systemName: "arrow.right")
-                            .font(.caption2)
-                            .foregroundStyle(AetherVisual.secondaryText)
-                            .accessibilityHidden(true)
+                        if match.record.matchedRuleSummary != nil {
+                            Image(systemName: "arrow.right")
+                                .font(.caption2)
+                                .foregroundStyle(AetherVisual.secondaryText)
+                                .accessibilityHidden(true)
+                        }
                         RuleTargetLabel(target: target)
                     }
                     Spacer(minLength: AetherVisual.s2)
-                    Text(verbatim: Self.dnsTimestampFormatter.string(from: match.timestamp))
+                    Text(verbatim: AppLocalization.date(match.timestamp, date: .omitted, time: .standard))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(AetherVisual.secondaryText)
                 }
@@ -1200,45 +1438,48 @@ struct DNSView: View {
         }
     }
 
-    private static let dnsTimestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
-
     private func clearDNSCacheAction() {
-        guard !isClearingDNSCache else { return }
-        isClearingDNSCache = true
-        fakeIPReverseLookup = nil
+        guard !tunnel.dnsQueriesViewModel.isClearingCache else { return }
+        lookupTask?.cancel()
+        lookupTask = nil
+        isRunningLookup = false
+        drafts.lookupReport = nil
+        drafts.fakeIPReverseLookup = nil
+        drafts.hasAttemptedLookup = false
+        drafts.simTraceResult = nil
+        drafts.simValidationError = nil
         Task {
-            let status = await tunnel.clearDNSCache()
-            dnsCacheClearStatus = status
-            isClearingDNSCache = false
+            _ = await tunnel.clearDNSCache()
         }
     }
 
     private func runDNSLookup(summary: ProfileConfigurationSummary) {
-        let query = lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = drafts.lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
-        hasAttemptedLookup = true
-        dnsCacheClearStatus = nil
+        drafts.hasAttemptedLookup = true
 
         if let normalizedFakeIP = FakeIPAddressMatcher.normalizeFakeIP(query) {
-            lookupReport = nil
+            lookupTask?.cancel()
+            lookupTask = nil
+            drafts.lookupReport = nil
             isRunningLookup = false
             if let match = tunnel.reverseLookupFakeIP(normalizedFakeIP) {
-                fakeIPReverseLookup = .hit(match)
+                drafts.fakeIPReverseLookup = .hit(match)
             } else {
-                fakeIPReverseLookup = .miss(fakeIP: normalizedFakeIP)
+                drafts.fakeIPReverseLookup = .miss(fakeIP: normalizedFakeIP)
             }
             return
         }
 
-        fakeIPReverseLookup = nil
+        drafts.fakeIPReverseLookup = nil
         guard let normalized = DNSLookupInspector.normalizeHost(query) else {
-            lookupReport = nil
+            lookupTask?.cancel()
+            lookupTask = nil
+            drafts.lookupReport = nil
+            isRunningLookup = false
             return
         }
+        lookupTask?.cancel()
         isRunningLookup = true
         let customHosts = tunnel.effectiveCustomHosts
         let dnsModeOverride: DNSResolutionMode? = switch tunnel.dnsRuntimePolicy.resolutionMode {
@@ -1248,9 +1489,11 @@ struct DNSView: View {
         case .redirHost: .redirHost
         }
         let geoSiteData = tunnel.slicedGeoSiteData(for: summary)
+        let targetProfileID = tunnel.activeProfileID
 
-        Task {
+        lookupTask = Task {
             let resolved = await DNSLookupInspector.resolveSystemAddresses(for: normalized)
+            guard !Task.isCancelled else { return }
             let report = await Task.detached(priority: .userInitiated) {
                 DNSLookupInspector.evaluate(
                     query: normalized,
@@ -1262,7 +1505,11 @@ struct DNSView: View {
                     latencyMilliseconds: resolved.latencyMilliseconds
                 )
             }.value
-            lookupReport = report
+            guard !Task.isCancelled, tunnel.activeProfileID == targetProfileID else {
+                isRunningLookup = false
+                return
+            }
+            drafts.lookupReport = report
             if let report {
                 tunnel.recordDNSLookupReport(report)
             }
@@ -1285,20 +1532,19 @@ struct DNSView: View {
                     Button {
                         runNetworkDiagnostics(summary: summary)
                     } label: {
-                        HStack(spacing: AetherVisual.s1) {
-                            Image(systemName: "stethoscope")
-                            Text(
-                                isRunningDiagnostics
-                                    ? AppLocalization.string("Running diagnostics…")
-                                    : AppLocalization.string("Run Diagnostics")
-                            )
-                        }
+                        AetherProgressButtonLabel(
+                            isRunningDiagnostics
+                                ? AppLocalization.string("Running diagnostics…")
+                                : AppLocalization.string("Run Diagnostics"),
+                            systemImage: "stethoscope",
+                            isWorking: isRunningDiagnostics
+                        )
                     }
                     .aetherButton(prominent: true)
                     .disabled(isRunningDiagnostics)
                     .accessibilityIdentifier("run-network-diagnostics-button")
 
-                    if let report = diagnosticReport {
+                    if let report = drafts.diagnosticReport {
                         AetherCopyButton(
                             title: Text(AppLocalization.string("Copy diagnostic report")),
                             systemImage: "doc.on.doc"
@@ -1315,7 +1561,7 @@ struct DNSView: View {
 
                     Spacer(minLength: AetherVisual.s2)
 
-                    if let report = diagnosticReport {
+                    if let report = drafts.diagnosticReport {
                         Text(diagnosticStatusTitle(report.overallStatus))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(diagnosticStatusStyle(report.overallStatus))
@@ -1328,27 +1574,31 @@ struct DNSView: View {
                     }
                 }
 
-                if let report = diagnosticReport {
+                if let report = drafts.diagnosticReport {
                     Divider()
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         ForEach(report.checks) { check in
-                            HStack(spacing: AetherVisual.s2) {
+                            HStack(alignment: .top, spacing: AetherVisual.s2) {
                                 Image(systemName: diagnosticStatusSymbol(check.status))
                                     .foregroundStyle(diagnosticStatusStyle(check.status))
                                     .font(.callout)
-                                Text(diagnosticCheckTitle(check.kind))
-                                    .font(.callout.weight(.medium))
-                                    .foregroundStyle(.primary)
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: AetherVisual.sMicro) {
+                                    Text(diagnosticCheckTitle(check.kind))
+                                        .font(.callout.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                    if !check.detail.isEmpty {
+                                        Text(verbatim: check.detail)
+                                            .font(.caption)
+                                            .foregroundStyle(AetherVisual.secondaryText)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
                                 Spacer(minLength: AetherVisual.s2)
                                 if let ms = check.latencyMilliseconds {
-                                    Text(
-                                        String.localizedStringWithFormat(
-                                            AppLocalization.string("%lld ms"),
-                                            Int64(ms)
-                                        )
-                                    )
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(AetherVisual.secondaryText)
+                                    Text(AppLocalization.format("%lld ms", Int64(ms)))
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(AetherVisual.secondaryText)
                                 }
                                 Text(diagnosticStatusTitle(check.status))
                                     .font(.caption.weight(.semibold))
@@ -1367,7 +1617,9 @@ struct DNSView: View {
 
     private func runNetworkDiagnostics(summary: ProfileConfigurationSummary) {
         guard !isRunningDiagnostics else { return }
+        diagnosticsTask?.cancel()
         isRunningDiagnostics = true
+        let targetProfileID = tunnel.activeProfileID
         let isConnected = tunnel.isConnected
 #if AETHERROUTE_INDEPENDENT
         let engineMode = tunnel.networkEngineMode.rawValue
@@ -1380,17 +1632,18 @@ struct DNSView: View {
         let localProxyEnabled = false
         let localProxyPort = 7_890
 #endif
-        let routingMode = tunnel.routingMode.rawValue
+        let effectiveMode = tunnel.effectiveRoutingMode
+        let routingMode = effectiveMode.rawValue
         let dnsMode = summary.dns.mode.rawValue
         let nodeCount = summary.proxyCount
         let customProviders = tunnel.customRuleProviders
         let providerCount = summary.ruleProviderCount + customProviders.count
         let staleProviders = NetworkDiagnosticDoctor.countStaleRuleProviders(customProviders)
         let isUIReview = tunnel.isUIReviewMode
-        let shouldProbeProxy = isConnected && tunnel.routingMode != .direct
+        let shouldProbeProxy = isConnected && effectiveMode != .direct
         let rulesSnapshot = summary.allRules
 
-        Task {
+        diagnosticsTask = Task {
             let (loopbackEval, localListening) = await Task.detached(priority: .userInitiated) {
                 let loopback = RouteMatchEngine.evaluate(
                     destination: "localhost:8080",
@@ -1401,7 +1654,9 @@ struct DNSView: View {
                     : false
                 return (loopback, listening)
             }.value
+            guard !Task.isCancelled else { return }
             let dnsResolved = await DNSLookupInspector.resolveSystemAddresses(for: "www.apple.com")
+            guard !Task.isCancelled else { return }
             let domesticMs: Int?
             let proxyMs: Int?
             if isUIReview {
@@ -1418,6 +1673,10 @@ struct DNSView: View {
                     : nil
                 domesticMs = await domesticProbe
                 proxyMs = await proxyProbe
+            }
+            guard !Task.isCancelled, tunnel.activeProfileID == targetProfileID else {
+                isRunningDiagnostics = false
+                return
             }
             let snapshot = NetworkDiagnosticInputSnapshot(
                 isConnected: isConnected,
@@ -1436,7 +1695,7 @@ struct DNSView: View {
                 ruleProviderCount: providerCount,
                 staleRuleProviderCount: staleProviders
             )
-            diagnosticReport = NetworkDiagnosticDoctor.evaluate(snapshot: snapshot)
+            drafts.diagnosticReport = NetworkDiagnosticDoctor.evaluate(snapshot: snapshot)
             isRunningDiagnostics = false
         }
     }
@@ -1583,7 +1842,7 @@ struct DNSView: View {
 private struct ChangedSettingDot: View {
     var body: some View {
         Circle()
-            .fill(Color.accentColor)
+            .fill(AetherReadableTint(color: .accentColor))
             .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
             .accessibilityElement()
             .accessibilityLabel(AppLocalization.string("Changed"))
@@ -1654,7 +1913,7 @@ private struct TailscaleCoexistenceNote: View {
                     .font(.headline)
             } icon: {
                 Image(systemName: "point.3.filled.connected.trianglepath.dotted")
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(AetherReadableTint(color: .accentColor))
             }
             Text(AppLocalization.string("Addresses in your tailnet go straight to Tailscale. HTTPS sites still follow your rules by name, even when Tailscale's DNS answers first."))
                 .font(.callout)
@@ -1746,16 +2005,58 @@ private struct DNSSummaryStatsLayout: Layout {
     }
 }
 
+private struct DNSLookupClearCacheButton: View {
+    @ObservedObject var viewModel: DNSRecentQueriesViewModel
+    let isConnected: Bool
+    let hasLookupResult: Bool
+    let onClear: () -> Void
+
+    var body: some View {
+        Button {
+            onClear()
+        } label: {
+            AetherProgressButtonLabel(
+                AppLocalization.string("Clear DNS Log"),
+                isWorking: viewModel.isClearingCache
+            )
+        }
+        .aetherButton(prominent: false)
+        .controlSize(.small)
+        .disabled(
+            viewModel.isClearingCache
+                || (!isConnected && viewModel.store.isEmpty && !hasLookupResult)
+        )
+        .help(AppLocalization.string("Clears the recorded DNS query log, lookup output, and route trace results"))
+        .accessibilityIdentifier("dns-clear-cache-button")
+    }
+}
+
+private struct DNSCacheClearStatusBanner: View {
+    @ObservedObject var viewModel: DNSRecentQueriesViewModel
+
+    var body: some View {
+        if let status = viewModel.lastCacheClearStatus {
+            Label(
+                status,
+                systemImage: viewModel.lastCacheClearIsError
+                    ? "exclamationmark.triangle.fill"
+                    : "checkmark.circle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(AetherReadableTint(color: viewModel.lastCacheClearIsError ? .red : .green))
+            .fixedSize(horizontal: false, vertical: true)
+            .transition(AetherVisual.insertion)
+            .accessibilityIdentifier("dns-clear-cache-status")
+        }
+    }
+}
+
 private struct RouteSimulatorSection: View {
     @EnvironmentObject private var tunnel: TunnelManager
+    @ObservedObject var drafts: DNSPageDraftState
 
-    @State private var hostInput = ""
-    @State private var ipInput = ""
-    @State private var portInput = "443"
-    @State private var network: RouteTraceNetwork = .tcp
-    @State private var processPathInput = ""
     @State private var isSimulating = false
-    @State private var traceResult: RouteTraceResult?
+    @State private var simulationTask: Task<Void, Never>?
 
     var body: some View {
         FeatureSection(title: AppLocalization.string("Route & DNS Simulator")) {
@@ -1769,7 +2070,7 @@ private struct RouteSimulatorSection: View {
                 HStack(spacing: AetherVisual.s2) {
                     TextField(
                         AppLocalization.string("Domain or IP (e.g. api.openai.com)"),
-                        text: $hostInput
+                        text: $drafts.simHostInput
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.callout.monospaced())
@@ -1778,7 +2079,7 @@ private struct RouteSimulatorSection: View {
 
                     TextField(
                         AppLocalization.string("Port"),
-                        text: $portInput
+                        text: $drafts.simPortInput
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.callout.monospacedDigit())
@@ -1787,7 +2088,7 @@ private struct RouteSimulatorSection: View {
                     .accessibilityIdentifier("route-sim-port-field")
 
                     AetherSegmentedPicker(
-                        selection: $network,
+                        selection: $drafts.simNetwork,
                         options: [
                             .init(value: .tcp, title: "TCP"),
                             .init(value: .udp, title: "UDP"),
@@ -1799,14 +2100,10 @@ private struct RouteSimulatorSection: View {
                     .fixedSize()
                 }
 
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 200), spacing: AetherVisual.s2)],
-                    alignment: .leading,
-                    spacing: AetherVisual.s2
-                ) {
+                HStack(spacing: AetherVisual.s2) {
                     TextField(
                         AppLocalization.string("Optional IP override (for IP-ASN / IP-CIDR)"),
-                        text: $ipInput
+                        text: $drafts.simIPInput
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.caption.monospaced())
@@ -1815,7 +2112,7 @@ private struct RouteSimulatorSection: View {
 
                     TextField(
                         AppLocalization.string("Optional process path (e.g. /usr/bin/curl)"),
-                        text: $processPathInput
+                        text: $drafts.simProcessPathInput
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(.caption.monospaced())
@@ -1823,8 +2120,24 @@ private struct RouteSimulatorSection: View {
                     .accessibilityIdentifier("route-sim-process-field")
                 }
 
-                HStack {
+                if let validationError = drafts.simValidationError {
+                    AetherInlineMessage(text: validationError, kind: .failure, isCompact: true)
+                }
+
+                HStack(spacing: AetherVisual.s2) {
                     Spacer(minLength: 0)
+                    if drafts.simTraceResult != nil
+                        || !drafts.simHostInput.isEmpty
+                        || !drafts.simIPInput.isEmpty
+                        || !drafts.simProcessPathInput.isEmpty
+                        || drafts.simPortInput != "443" {
+                        Button(AppLocalization.string("Clear")) {
+                            clearSimulation()
+                        }
+                        .aetherButton()
+                        .disabled(isSimulating)
+                        .accessibilityIdentifier("route-sim-clear-button")
+                    }
                     Button {
                         runSimulation()
                     } label: {
@@ -1834,11 +2147,15 @@ private struct RouteSimulatorSection: View {
                         )
                     }
                     .aetherButton(prominent: true)
-                    .disabled(isSimulating || (hostInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && ipInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+                    .disabled(
+                        isSimulating
+                            || (drafts.simHostInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                && drafts.simIPInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    )
                     .accessibilityIdentifier("route-sim-run-button")
                 }
 
-                if let result = traceResult {
+                if let result = drafts.simTraceResult {
                     VStack(alignment: .leading, spacing: AetherVisual.s2) {
                         HStack(spacing: AetherVisual.s2) {
                             Text(
@@ -1871,29 +2188,33 @@ private struct RouteSimulatorSection: View {
                                 Text(AppLocalization.string("Outbound:"))
                                     .font(.caption)
                                     .foregroundStyle(AetherVisual.secondaryText)
-                                Text(verbatim: result.outboundChain.joined(separator: " → "))
+                                Text(verbatim: result.outboundChain.map(localizedPolicyOrOutbound).joined(separator: " → "))
                                     .font(.callout.weight(.medium))
                                     .textSelection(.enabled)
                             }
                         }
 
-                        HStack(spacing: AetherVisual.s3) {
+                        AetherFlowLayout(spacing: AetherVisual.s2) {
                             if let alias = result.resolvedHostAlias {
                                 Text(AppLocalization.format("Hosts: %@", alias))
                                     .font(.caption.monospaced())
                                     .foregroundStyle(AetherVisual.secondaryText)
                             }
 
-                            if !result.dnsAddresses.isEmpty {
-                                Text(verbatim: result.dnsAddresses.joined(separator: ", "))
+                            ForEach(result.dnsAddresses, id: \.self) { address in
+                                Text(verbatim: address)
                                     .font(.caption.monospaced())
                                     .foregroundStyle(AetherVisual.secondaryText)
+                                    .padding(.horizontal, AetherVisual.s1)
+                                    .padding(.vertical, AetherVisual.sMicro)
+                                    .background(AetherVisual.neutralFill, in: Capsule())
+                                    .textSelection(.enabled)
                             }
 
                             if result.isFakeIP {
                                 Text(AppLocalization.string("Fake-IP"))
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(AetherReadableTint(color: .accentColor))
                             }
 
                             if let ms = result.dnsLatencyMilliseconds {
@@ -1920,6 +2241,37 @@ private struct RouteSimulatorSection: View {
             .padding(AetherVisual.cardPadding)
             .aetherPanel()
         }
+        .onChange(of: tunnel.activeProfileID) { _, _ in
+            clearSimulation()
+        }
+        .onDisappear {
+            simulationTask?.cancel()
+            simulationTask = nil
+            isSimulating = false
+        }
+    }
+
+    private func clearSimulation() {
+        simulationTask?.cancel()
+        simulationTask = nil
+        isSimulating = false
+        drafts.simHostInput = ""
+        drafts.simIPInput = ""
+        drafts.simPortInput = "443"
+        drafts.simProcessPathInput = ""
+        drafts.simValidationError = nil
+        drafts.simTraceResult = nil
+    }
+
+    private func localizedPolicyOrOutbound(_ raw: String) -> String {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "DIRECT":
+            AppLocalization.string("Direct")
+        case "REJECT", "REJECT-DROP":
+            AppLocalization.string("Reject")
+        default:
+            raw
+        }
     }
 
     private func ruleSummaryText(_ result: RouteTraceResult) -> String {
@@ -1932,51 +2284,76 @@ private struct RouteSimulatorSection: View {
         } else {
             parts.append(result.matchedRuleKind)
         }
-        parts.append("→ \(result.targetOutbound)")
+        parts.append("→ \(localizedPolicyOrOutbound(result.targetOutbound))")
         return parts.joined(separator: " ")
     }
 
+    private static func isValidIPAddress(_ raw: String) -> Bool {
+        var v4 = in_addr()
+        var v6 = in6_addr()
+        return raw.withCString { cstr in
+            inet_pton(AF_INET, cstr, &v4) == 1 || inet_pton(AF_INET6, cstr, &v6) == 1
+        }
+    }
+
     private func runSimulation() {
-        let host = hostInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        let ip = ipInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let host = drafts.simHostInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ip = drafts.simIPInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty || !ip.isEmpty else { return }
-        let parsedPort = Int(portInput.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 443
-        let clampedPort = min(65_535, max(1, parsedPort))
-        let processPath = processPathInput.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let trimmedPort = drafts.simPortInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let port: Int
+        if trimmedPort.isEmpty {
+            port = 443
+        } else if let parsedPort = Int(trimmedPort), (1...65_535).contains(parsedPort) {
+            port = parsedPort
+        } else {
+            drafts.simValidationError = AppLocalization.string("Enter a valid port between 1 and 65535.")
+            return
+        }
+
+        if !ip.isEmpty, !Self.isValidIPAddress(ip) {
+            drafts.simValidationError = AppLocalization.string("Enter a valid IPv4 or IPv6 address.")
+            return
+        }
+
+        drafts.simValidationError = nil
+        let processPath = drafts.simProcessPathInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let request = RouteTraceRequest(
             host: host.isEmpty ? ip : host,
             ip: ip.isEmpty ? nil : ip,
-            port: clampedPort,
-            network: network,
+            port: port,
+            network: drafts.simNetwork,
             processPath: processPath.isEmpty ? nil : processPath
         )
+        simulationTask?.cancel()
         isSimulating = true
-        Task {
+        let targetProfileID = tunnel.activeProfileID
+        simulationTask = Task {
             let result = await tunnel.traceRoute(request)
-            traceResult = result
+            guard !Task.isCancelled, tunnel.activeProfileID == targetProfileID else {
+                isSimulating = false
+                return
+            }
+            drafts.simTraceResult = result
             isSimulating = false
         }
     }
 }
 
-private enum FakeIPReverseLookupState: Equatable {
+enum FakeIPReverseLookupState: Equatable {
     case hit(FakeIPReverseLookupMatch)
     case miss(fakeIP: String)
 }
 
 private struct RecentDNSQueriesCard: View {
     private static let listMaxHeight: CGFloat = 260
-    private static let timestampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
 
     @EnvironmentObject private var tunnel: TunnelManager
     @ObservedObject var viewModel: DNSRecentQueriesViewModel
     let telemetry: NetworkTelemetryViewModel
+    @Binding var selectedFilter: DNSRecentQueryFilter
     let onSelectDomain: (String) -> Void
-    @State private var selectedFilter: DNSRecentQueryFilter = .all
 
     private var filteredEntries: [DNSRecentQueryRecord] {
         viewModel.store.entries(matching: selectedFilter)
@@ -2035,8 +2412,11 @@ private struct RecentDNSQueriesCard: View {
         .aetherPanel()
     }
     .backgroundTelemetryDemand(source: "dns-recent-queries")
-    .onReceive(telemetry.$snapshot) { _ in
-        tunnel.syncRecentDNSQueriesFromTelemetry()
+    .onReceive(telemetry.$snapshot) { newSnapshot in
+        viewModel.ingestConnections(
+            newSnapshot.connections,
+            runtimePolicy: tunnel.dnsRuntimePolicy
+        )
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("dns-recent-queries-card")
@@ -2053,9 +2433,9 @@ private struct RecentDNSQueriesCard: View {
                     .font(.caption.weight(isSelected ? .semibold : .medium))
                 Text(verbatim: "\(count)")
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(AetherVisual.secondaryText))
+                    .foregroundStyle(isSelected ? AnyShapeStyle(AetherReadableTint(color: .accentColor)) : AnyShapeStyle(AetherVisual.secondaryText))
             }
-            .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+            .foregroundStyle(isSelected ? AnyShapeStyle(AetherReadableTint(color: .accentColor)) : AnyShapeStyle(Color.primary))
             .padding(.horizontal, AetherVisual.pillHorizontalPadding)
             .padding(.vertical, AetherVisual.pillVerticalPadding)
             .background(
@@ -2069,13 +2449,17 @@ private struct RecentDNSQueriesCard: View {
 
     private func queryRow(_ record: DNSRecentQueryRecord) -> some View {
         HStack(spacing: AetherVisual.s2) {
-            Text(verbatim: Self.timestampFormatter.string(from: record.timestamp))
+            Text(verbatim: AppLocalization.date(record.timestamp, date: .omitted, time: .standard))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(AetherVisual.secondaryText)
+                .lineLimit(1)
+                .fixedSize()
 
             Text(verbatim: record.queryType.rawValue)
                 .font(.caption2.monospaced().weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, AetherVisual.sMicro)
                 .background(
@@ -2093,14 +2477,16 @@ private struct RecentDNSQueriesCard: View {
                     .truncationMode(.middle)
             }
             .buttonStyle(.plain)
+            .help(AppLocalization.string("Resolve this domain above"))
+            .accessibilityHint(AppLocalization.string("Resolves this domain in the lookup panel above"))
 
             Image(systemName: "arrow.right")
                 .font(.caption2)
                 .foregroundStyle(AetherVisual.secondaryText)
                 .accessibilityHidden(true)
 
-            Text(verbatim: record.resolvedValue.isEmpty ? "—" : record.resolvedValue)
-                .font(.caption.monospaced())
+            Text(localizedResolvedValue(record))
+                .font(record.resolvedPolicyKind == nil ? .caption.monospaced() : .caption.weight(.semibold))
                 .foregroundStyle(kindTextStyle(record.kind))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -2116,9 +2502,10 @@ private struct RecentDNSQueriesCard: View {
                     .truncationMode(.head)
             }
 
-            Text(verbatim: record.upstreamLabel)
+            Text(AppLocalization.string(record.upstreamLabel))
                 .font(.caption2)
                 .foregroundStyle(kindTextStyle(record.kind))
+                .lineLimit(1)
                 .padding(.horizontal, AetherVisual.s1)
                 .padding(.vertical, AetherVisual.sMicro)
                 .background(
@@ -2127,9 +2514,11 @@ private struct RecentDNSQueriesCard: View {
                 )
 
             if let latencyMs = record.latencyMs {
-                Text(verbatim: "\(latencyMs) ms")
+                Text(AppLocalization.format("%lld ms", Int64(latencyMs)))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(AetherVisual.secondaryText)
+                    .lineLimit(1)
+                    .fixedSize()
             }
         }
         .padding(.horizontal, AetherVisual.s3)
@@ -2170,6 +2559,17 @@ private struct RecentDNSQueriesCard: View {
         case .direct: .teal
         case .rejected: .orange
         case .failed: .red
+        }
+    }
+
+    private func localizedResolvedValue(_ record: DNSRecentQueryRecord) -> String {
+        switch record.resolvedPolicyKind {
+        case .direct:
+            AppLocalization.string("Direct")
+        case .reject, .rejectDrop:
+            AppLocalization.string("Reject")
+        case nil:
+            record.resolvedValue.isEmpty ? "—" : record.resolvedValue
         }
     }
 

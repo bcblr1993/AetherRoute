@@ -51,16 +51,20 @@ extension TunnelManager {
             networkSetupStates[mode] = .checking
         }
         for mode in networkSetupEngines {
-            let current = networkSetupStates[mode]
-            if let current, !NetworkSetupProgress.shouldProbeOnRefresh(current) {
+            let stateBeforeAwait = networkSetupStates[mode]
+            if let stateBeforeAwait, !NetworkSetupProgress.shouldProbeOnRefresh(stateBeforeAwait) {
                 continue
             }
             let probe = await SystemExtensionStatusProbe.probe(
                 identifier: mode.providerBundleIdentifier
             )
             let hasConfiguration = ((try? await loadExistingManager(for: mode)) ?? nil) != nil
+            let latestState = networkSetupStates[mode]
+            if let latestState, !NetworkSetupProgress.shouldProbeOnRefresh(latestState) {
+                continue
+            }
             networkSetupStates[mode] = NetworkSetupProgress.refreshedState(
-                current: current,
+                current: latestState,
                 extension: probe,
                 hasConfiguration: hasConfiguration
             )
@@ -169,7 +173,16 @@ extension TunnelManager {
         }
         let wasGated = isNetworkSetupRequired
         isNetworkSetupRequired = false
+        networkEngineMessage = nil
+        networkEngineMessageIsError = false
+        networkEngineBlockedNeedsSetup = false
         guard !isUIReviewMode else { return }
+        systemExtensionApprovalRequired = false
+        systemExtensionActivator.cancelPendingActivation()
+        prepareTask?.cancel()
+        prepareTask = nil
+        isPreparing = false
+        prepareGeneration &+= 1
         userDefaults.set(true, forKey: Self.networkSetupCompletedKey)
         Self.runtimeLogger.info("stage=networkSetup finished firstRun=\(wasGated, privacy: .public)")
         // Re-setup from Overview follows a failed or withdrawn permission;

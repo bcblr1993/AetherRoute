@@ -117,11 +117,24 @@ public struct GlobalShortcutPreferences: Codable, Equatable, Sendable {
     }
 }
 
-public enum AppAutomationPreferencesError: Error, Equatable, Sendable {
+public enum AppAutomationPreferencesError: Error, LocalizedError, Equatable, Sendable {
     case unsupportedVersion
     case duplicateShortcut
     case invalidNetworkRule
     case tooManyNetworkRules
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedVersion:
+            "This automation preferences version is not supported."
+        case .duplicateShortcut:
+            "Each global shortcut must use a unique key combination."
+        case .invalidNetworkRule:
+            "The network automation rule is invalid."
+        case .tooManyNetworkRules:
+            "Too many network automation rules are configured."
+        }
+    }
 }
 
 public enum NetworkTriggerKind: String, CaseIterable, Codable, Equatable, Sendable {

@@ -353,66 +353,79 @@ public enum PortableProfileArchiveError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case let .archiveTooLarge(bytes):
-            String.localizedStringWithFormat(
-                String(localized: "The portable profile archive is too large (%lld bytes)."),
+            Self.localizedFormat(
+                "The portable profile archive is too large (%lld bytes).",
                 Int64(bytes)
             )
         case .authenticationFailed:
-            String(localized: "The password is incorrect or the portable archive was modified.")
+            Self.localizedString("The password is incorrect or the portable archive was modified.")
         case .emptyCatalog:
-            String(localized: "Add at least one profile before creating a portable archive.")
+            Self.localizedString("Add at least one profile before creating a portable archive.")
         case .encryptionFailed:
-            String(localized: "The portable profile archive could not be encrypted.")
+            Self.localizedString("The portable profile archive could not be encrypted.")
         case .envelopeEncodingFailed:
-            String(localized: "The portable profile archive could not be encoded.")
+            Self.localizedString("The portable profile archive could not be encoded.")
         case .invalidCatalog:
-            String(localized: "The portable archive contains an invalid profile library.")
+            Self.localizedString("The portable archive contains an invalid profile library.")
         case let .invalidIterationCount(iterations):
-            String.localizedStringWithFormat(
-                String(localized: "The portable archive uses an unsafe or unsupported key-derivation count (%lld)."),
+            Self.localizedFormat(
+                "The portable archive uses an unsafe or unsupported key-derivation count (%lld).",
                 Int64(iterations)
             )
         case let .keyDerivationFailed(status):
-            String.localizedStringWithFormat(
-                String(localized: "The portable archive key could not be derived (%lld)."),
+            Self.localizedFormat(
+                "The portable archive key could not be derived (%lld).",
                 Int64(status)
             )
         case .malformedEnvelope:
-            String(localized: "The selected file is not a valid AetherRoute portable archive.")
+            Self.localizedString("The selected file is not a valid AetherRoute portable archive.")
         case .passwordTooLong:
-            String(localized: "The archive password is too long.")
+            Self.localizedString("The archive password is too long.")
         case .payloadDecodingFailed:
-            String(localized: "The portable archive contents could not be decoded.")
+            Self.localizedString("The portable archive contents could not be decoded.")
         case .payloadEncodingFailed:
-            String(localized: "The profile library could not be prepared for export.")
+            Self.localizedString("The profile library could not be prepared for export.")
         case .randomGenerationFailed:
-            String(localized: "Secure random data could not be generated.")
+            Self.localizedString("Secure random data could not be generated.")
         case let .unsupportedCipher(cipher):
-            String.localizedStringWithFormat(
-                String(localized: "The portable archive cipher %@ is not supported."),
+            Self.localizedFormat(
+                "The portable archive cipher %@ is not supported.",
                 cipher
             )
         case let .unsupportedEnvelopeFormat(version):
-            String.localizedStringWithFormat(
-                String(localized: "The portable archive format version %lld is not supported."),
+            Self.localizedFormat(
+                "The portable archive format version %lld is not supported.",
                 Int64(version)
             )
         case let .unsupportedKDF(kdf):
-            String.localizedStringWithFormat(
-                String(localized: "The portable archive key-derivation method %@ is not supported."),
+            Self.localizedFormat(
+                "The portable archive key-derivation method %@ is not supported.",
                 kdf
             )
         case let .unsupportedPayloadFormat(version):
-            String.localizedStringWithFormat(
-                String(localized: "The portable profile payload version %lld is not supported."),
+            Self.localizedFormat(
+                "The portable profile payload version %lld is not supported.",
                 Int64(version)
             )
         case let .weakPassword(minimum):
-            String.localizedStringWithFormat(
-                String(localized: "Use a password with at least %lld characters."),
+            Self.localizedFormat(
+                "Use a password with at least %lld characters.",
                 Int64(minimum)
             )
         }
+    }
+
+    private static func localizedString(_ key: String.LocalizationValue) -> String {
+        String(localized: key, locale: AppLocalizationLocaleBridge.currentLocale)
+    }
+
+    private static func localizedFormat(
+        _ key: String.LocalizationValue,
+        _ arguments: any CVarArg...
+    ) -> String {
+        let locale = AppLocalizationLocaleBridge.currentLocale
+        let format = String(localized: key, locale: locale)
+        return String(format: format, locale: locale, arguments: arguments)
     }
 }
 

@@ -1,15 +1,19 @@
 import AetherRouteKit
 import AppKit
+import Combine
 import Darwin
 import OSLog
 import SwiftUI
 
 @MainActor
-final class AppWindowManager: NSObject, NSWindowDelegate {
+final class AppWindowManager: NSObject, ObservableObject, NSWindowDelegate {
     static let shared = AppWindowManager()
     private static let logger = AppLog.logger(category: AppLog.Category.appLifecycle)
+    static let settingsNavigationNotification = Notification.Name("com.aetherroute.desktop.navigate-to-settings")
 
     private(set) weak var mainWindow: NSWindow?
+    private weak var forwardedDelegate: (any NSWindowDelegate)?
+    @Published private(set) var pendingSettingsTab: String?
     var isTerminating = false
     var openWindowAction: (() -> Void)?
 
@@ -17,10 +21,24 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
         super.init()
     }
 
+    func requestSettingsTab(_ tabIdentifier: String) {
+        pendingSettingsTab = tabIdentifier
+        NotificationCenter.default.post(name: Self.settingsNavigationNotification, object: tabIdentifier)
+    }
+
+    @discardableResult
+    func consumePendingSettingsTab() -> String? {
+        defer { pendingSettingsTab = nil }
+        return pendingSettingsTab
+    }
+
     func registerMainWindow(_ window: NSWindow) {
         guard mainWindow !== window else { return }
         mainWindow = window
         window.isReleasedWhenClosed = false
+        if let existing = window.delegate, existing !== self {
+            forwardedDelegate = existing
+        }
         window.delegate = self
         Self.logger.info(
             "MainWindow registered with AppWindowManager: windowNumber=\(window.windowNumber)"
@@ -90,9 +108,34 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
 
     // MARK: - NSWindowDelegate
 
+    private struct ForwardingBox: @unchecked Sendable {
+        let target: AnyObject?
+    }
+
+    nonisolated override func responds(to aSelector: Selector!) -> Bool {
+        if super.responds(to: aSelector) {
+            return true
+        }
+        guard Thread.isMainThread else { return false }
+        return MainActor.assumeIsolated {
+            forwardedDelegate?.responds(to: aSelector) ?? false
+        }
+    }
+
+    nonisolated override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        guard Thread.isMainThread else { return nil }
+        let boxed: ForwardingBox = MainActor.assumeIsolated {
+            if let forwardedDelegate, forwardedDelegate.responds(to: aSelector) {
+                return ForwardingBox(target: forwardedDelegate)
+            }
+            return ForwardingBox(target: nil)
+        }
+        return boxed.target
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if isTerminating {
-            return true
+            return forwardedDelegate?.windowShouldClose?(sender) ?? true
         }
         sender.orderOut(nil)
         trimMemoryFootprint()
@@ -100,6 +143,7 @@ final class AppWindowManager: NSObject, NSWindowDelegate {
     }
 
     func windowDidMiniaturize(_ notification: Notification) {
+        forwardedDelegate?.windowDidMiniaturize?(notification)
         trimMemoryFootprint()
     }
 

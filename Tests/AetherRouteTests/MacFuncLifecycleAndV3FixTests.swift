@@ -357,6 +357,25 @@ enum MacFuncLifecycleAndV3FixTests {
             ("testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected", testLoadDiagnosticLogLinesFallsBackToCachedExtensionLogWhenDisconnected),
             ("testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover", testProfileSubscriptionDirectBypassTimeoutEnablesFastFailover),
             ("testLatestEgressReportForCurrentNodeDoesNotLeakPreviousNodeReport", testLatestEgressReportForCurrentNodeDoesNotLeakPreviousNodeReport),
+            // MARK: v3.1.3 Pre-Fix (RED) UI Audit Runtime & State Contracts
+            ("testV313_SHELL03_NetworkSetupRequiredBlocksRoutingEngineAndProfileChanges", testV313_SHELL03_NetworkSetupRequiredBlocksRoutingEngineAndProfileChanges),
+            ("testV313_SHELL12_SYS03_FinishNetworkSetupClearsStaleEngineErrorState", testV313_SHELL12_SYS03_FinishNetworkSetupClearsStaleEngineErrorState),
+            ("testV313_MENU15_NEWV102_MENU08_CompactStatusTitleAndDetailForLicenseRequired", testV313_MENU15_NEWV102_MENU08_CompactStatusTitleAndDetailForLicenseRequired),
+            ("testV313_NEWV101_PreferredManualProxyGroupForCyclingReturnsNilInDirectMode", testV313_NEWV101_PreferredManualProxyGroupForCyclingReturnsNilInDirectMode),
+            ("testV313_PROXY05_SetPreferredProxyDoesNotMutateWhenEditIsDisallowed", testV313_PROXY05_SetPreferredProxyDoesNotMutateWhenEditIsDisallowed),
+            ("testV313_PROXY15_SingleNodeFastestGroupCanRevertToManual", testV313_PROXY15_SingleNodeFastestGroupCanRevertToManual),
+            ("testV313_PROF03_CanRefreshAnySubscriptionIsFalseWhileRefreshing", testV313_PROF03_CanRefreshAnySubscriptionIsFalseWhileRefreshing),
+            ("testV313_RULE15_SourceAppDirectoryIconFallsBackToBundleIdentifierWhenPathMissing", testV313_RULE15_SourceAppDirectoryIconFallsBackToBundleIdentifierWhenPathMissing),
+            ("testV313_SYS06_LANProxyServerControllerStopClearsStaleStatusMessage", testV313_SYS06_LANProxyServerControllerStopClearsStaleStatusMessage),
+            // MARK: v3.1.4 Remediation Runtime & Behavioral Contracts
+            ("testV314_SHELL09_EgressProbeCancelledOnProxyAndModeChanges", testV314_SHELL09_EgressProbeCancelledOnProxyAndModeChanges),
+            ("testV314_MENU12_SubscriptionAttentionRequiresAuthorizedNotificationPermission", testV314_MENU12_SubscriptionAttentionRequiresAuthorizedNotificationPermission),
+            ("testV314_MENU19_AppLanguageControllerUpdatesLocaleBridgeAndSparkleFormat", testV314_MENU19_AppLanguageControllerUpdatesLocaleBridgeAndSparkleFormat),
+            ("testV314_PROXY09_ConnectedIPCFailureSkipsTCPFallbackAndCrossGroupIsolation", testV314_PROXY09_ConnectedIPCFailureSkipsTCPFallbackAndCrossGroupIsolation),
+            ("testV314_RULE10_RULE11_RULE14_CustomRuleGuardsLocalizationAndResourceRefresh", testV314_RULE10_RULE11_RULE14_CustomRuleGuardsLocalizationAndResourceRefresh),
+            ("testV314_CONNDNS08_ClearDNSCacheSuppressesActiveFlowsAndReportsTruthfulErrors", testV314_CONNDNS08_ClearDNSCacheSuppressesActiveFlowsAndReportsTruthfulErrors),
+            ("testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization", testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization),
+            ("testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites", testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites),
         ]
 
         var passed = 0
@@ -1756,6 +1775,662 @@ enum MacFuncLifecycleAndV3FixTests {
         try expect(
             tunnel.latestEgressReportForCurrentNode() == nil,
             "Switching to an unprobed node Singapore Edge must NOT display previous node Tokyo Direct's egress report"
+        )
+    }
+
+    // MARK: - v3.1.3 Pre-Fix (RED) UI Audit Runtime & State Contracts
+
+    @MainActor
+    private static func testV313_SHELL03_NetworkSetupRequiredBlocksRoutingEngineAndProfileChanges() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        tunnel.isNetworkSetupRequired = true
+
+        try expect(
+            !tunnel.canChangeRoutingMode,
+            "SHELL-03: canChangeRoutingMode must be false while isNetworkSetupRequired is true"
+        )
+        try expect(
+            !tunnel.canChangeNetworkEngine,
+            "SHELL-03: canChangeNetworkEngine must be false while isNetworkSetupRequired is true"
+        )
+        try expect(
+            !tunnel.canActivateProfile,
+            "SHELL-03: canActivateProfile must be false while isNetworkSetupRequired is true"
+        )
+    }
+
+    @MainActor
+    private static func testV313_SHELL12_SYS03_FinishNetworkSetupClearsStaleEngineErrorState() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        tunnel.isNetworkSetupRequired = true
+        tunnel.networkSetupStates = [
+            .tun: .ready,
+            .transparent: .ready,
+        ]
+        tunnel.networkEngineMessage = "Grant permission in Network Setup before switching."
+        tunnel.networkEngineMessageIsError = true
+        tunnel.networkEngineBlockedNeedsSetup = true
+
+        await tunnel.finishNetworkSetup()
+
+        try expect(
+            !tunnel.isNetworkSetupRequired,
+            "Expected finishNetworkSetup to clear isNetworkSetupRequired"
+        )
+        try expect(
+            tunnel.networkEngineMessage == nil,
+            "SHELL-12 / SYS-03: finishNetworkSetup must clear stale networkEngineMessage (got: \(String(describing: tunnel.networkEngineMessage)))"
+        )
+        try expect(
+            !tunnel.networkEngineMessageIsError,
+            "SHELL-12 / SYS-03: finishNetworkSetup must reset networkEngineMessageIsError"
+        )
+        try expect(
+            !tunnel.networkEngineBlockedNeedsSetup,
+            "SHELL-12 / SYS-03: finishNetworkSetup must reset networkEngineBlockedNeedsSetup"
+        )
+    }
+
+    @MainActor
+    private static func testV313_MENU15_NEWV102_MENU08_CompactStatusTitleAndDetailForLicenseRequired() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        tunnel.distributionConnectionAccess = .activationRequired
+
+        try expect(
+            tunnel.compactStatusTitle == tunnel.statusTitle,
+            "MENU-15 / NEW-V1-02: compactStatusTitle must surface license-required state (\(tunnel.statusTitle)), got \(tunnel.compactStatusTitle)"
+        )
+        try expect(
+            tunnel.compactStatusTitle != AppLocalization.string("Not connected"),
+            "MENU-15 / NEW-V1-02: compactStatusTitle must not report Not connected while activation is required"
+        )
+        try expect(
+            !tunnel.statusDetail.contains("License & Updates") && !tunnel.statusDetail.contains("许可与更新"),
+            "MENU-08 / SHELL-18: statusDetail must reference Settings > About rather than obsolete License & Updates tab, got: \(tunnel.statusDetail)"
+        )
+    }
+
+    @MainActor
+    private static func testV313_NEWV101_PreferredManualProxyGroupForCyclingReturnsNilInDirectMode() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "connected")
+        defer { cleanupDefaults(suiteName) }
+
+        await tunnel.setRoutingMode(.direct)
+        try expect(
+            tunnel.sessionRoutingMode == .direct || tunnel.routingMode == .direct,
+            "Expected direct routing mode in review state"
+        )
+        try expect(
+            tunnel.preferredManualProxyGroupForCycling == nil,
+            "NEW-V1-01: preferredManualProxyGroupForCycling must return nil when effective routing mode is .direct, got \(String(describing: tunnel.preferredManualProxyGroupForCycling?.name))"
+        )
+    }
+
+    @MainActor
+    private static func testV313_PROXY05_SetPreferredProxyDoesNotMutateWhenEditIsDisallowed() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        let selectYAML = """
+        proxies:
+          - {name: EdgeA, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: secret}
+          - {name: EdgeB, type: ss, server: 2.2.2.2, port: 443, cipher: aes-128-gcm, password: secret}
+        proxy-groups:
+          - {name: FailoverSelect, type: select, proxies: [EdgeA, EdgeB]}
+        rules:
+          - MATCH,FailoverSelect
+        """
+        let profile = ActiveProfile(name: "SelectProfile", yaml: selectYAML, importedAt: .now)
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.refreshActiveProfileSummary()
+
+        await tunnel.setProxySelectionMode(group: "FailoverSelect", mode: .failover)
+        let originalPreferred = tunnel.preferredProxyMembers["FailoverSelect"]
+
+        tunnel.isSwitchingNetworkEngine = true
+        await tunnel.setPreferredProxy(group: "FailoverSelect", member: "EdgeB")
+
+        try expect(
+            tunnel.preferredProxyMembers["FailoverSelect"] == originalPreferred,
+            "PROXY-05: setPreferredProxy must not mutate preferredProxyMembers before checking whether proxy selection edits are permitted (expected \(String(describing: originalPreferred)), got \(String(describing: tunnel.preferredProxyMembers["FailoverSelect"])))"
+        )
+    }
+
+    @MainActor
+    private static func testV313_PROXY15_SingleNodeFastestGroupCanRevertToManual() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        let soloYAML = """
+        proxies:
+          - {name: SoloEdge, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: secret}
+        proxy-groups:
+          - {name: SoloGroup, type: select, proxies: [SoloEdge]}
+        rules:
+          - MATCH,SoloGroup
+        """
+        let soloProfile = ActiveProfile(name: "SoloProfile", yaml: soloYAML, importedAt: .now)
+        let managed = ManagedProfile(profile: soloProfile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.refreshActiveProfileSummary()
+
+        tunnel.proxySelectionModes["SoloGroup"] = .fastest
+        await tunnel.setProxySelectionMode(group: "SoloGroup", mode: .manual)
+
+        try expect(
+            tunnel.proxySelectionMode(for: "SoloGroup") == .manual,
+            "PROXY-15: A 1-node select group stuck in .fastest mode must be allowed to revert to .manual, got \(tunnel.proxySelectionMode(for: "SoloGroup"))"
+        )
+    }
+
+    @MainActor
+    private static func testV313_PROF03_CanRefreshAnySubscriptionIsFalseWhileRefreshing() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        tunnel.isRefreshingSubscription = true
+        try expect(
+            !tunnel.canRefreshAnySubscription,
+            "PROF-03: canRefreshAnySubscription must be false while isRefreshingSubscription is true"
+        )
+    }
+
+    @MainActor
+    private static func testV313_RULE15_SourceAppDirectoryIconFallsBackToBundleIdentifierWhenPathMissing() async throws {
+        let bundleID = "com.apple.TextEdit"
+        guard let realAppURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            return
+        }
+        let rule = CustomRule.application(
+            bundleIdentifier: bundleID,
+            bundlePath: "/nonexistent/moved/\(UUID().uuidString)/TextEdit.app",
+            displayName: "TextEdit",
+            target: .direct
+        )
+        guard let match = rule?.applicationMatch else {
+            throw TestFailure(message: "Failed to build ApplicationRuleMatch fixture")
+        }
+
+        let resolvedIcon = SourceAppDirectory.shared.icon(forMatch: match)
+        let realIcon = NSWorkspace.shared.icon(forFile: realAppURL.path)
+
+        try expect(
+            resolvedIcon.tiffRepresentation == realIcon.tiffRepresentation,
+            "RULE-15: SourceAppDirectory.icon(forMatch:) must fall back to NSWorkspace.urlForApplication(withBundleIdentifier:) when bundlePath does not exist on disk."
+        )
+    }
+
+    @MainActor
+    private static func testV313_SYS06_LANProxyServerControllerStopClearsStaleStatusMessage() async throws {
+        let blocker = try LoopbackTCPServer()
+        defer { blocker.stop() }
+        let conflictPort = Int(blocker.port)
+
+        let controller = LANProxyServerController.shared
+        defer { controller.stop() }
+
+        controller.start(httpPort: conflictPort, socksPort: conflictPort, loopbackOnly: true)
+        try await Task.sleep(for: .milliseconds(80))
+        try expect(
+            controller.statusMessage != nil,
+            "Expected conflict port listener failure to populate LANProxyServerController.statusMessage"
+        )
+
+        controller.stop()
+        try expect(
+            controller.statusMessage == nil,
+            "SYS-06: LANProxyServerController.stop() must clear stale statusMessage when stopped cleanly, got: \(String(describing: controller.statusMessage))"
+        )
+    }
+
+    @MainActor
+    private static func testV314_SHELL09_EgressProbeCancelledOnProxyAndModeChanges() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: "connected")
+        defer { cleanupDefaults(suiteName) }
+
+        await tunnel.setRoutingMode(.rule)
+        tunnel.egressProbeStore.beginProbe()
+        try expect(tunnel.egressProbeStore.isProbing, "Expected egress probe to enter probing state")
+
+        await tunnel.selectProxy(group: "Balanced", member: "Singapore Edge")
+        try expect(
+            !tunnel.egressProbeStore.isProbing,
+            "SHELL-09: selectProxy must cancel active egress availability probe"
+        )
+
+        tunnel.egressProbeStore.beginProbe()
+        await tunnel.setRoutingMode(.global)
+        try expect(
+            !tunnel.egressProbeStore.isProbing,
+            "SHELL-09: setRoutingMode must cancel active egress availability probe"
+        )
+
+        tunnel.egressProbeStore.beginProbe()
+        await tunnel.selectGlobalOutlet("Tokyo Direct")
+        try expect(
+            !tunnel.egressProbeStore.isProbing,
+            "SHELL-09: selectGlobalOutlet must cancel active egress availability probe"
+        )
+    }
+
+    @MainActor
+    private static func testV314_MENU12_SubscriptionAttentionRequiresAuthorizedNotificationPermission() async throws {
+        let (tunnel, defaults, suiteName) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suiteName) }
+
+        defaults.set(true, forKey: "AetherRoute.SubscriptionNotificationsEnabled")
+        let distribution = IndependentDistributionController()
+        let automation = AppAutomationController(
+            tunnel: tunnel,
+            distribution: distribution,
+            environment: [:],
+            userDefaults: defaults,
+            notificationCenter: nil
+        )
+        _ = automation
+
+        let expiredUsage = SubscriptionUsage(
+            uploadBytes: 1_000,
+            downloadBytes: 2_000,
+            totalBytes: 10_000,
+            expiresAt: Date(timeIntervalSinceNow: -3_600),
+            reportedAt: Date()
+        )
+        let sub = try ProfileSubscription(
+            url: URL(string: "https://example.com/sub.yaml")!,
+            usage: expiredUsage
+        )
+        let yaml = """
+        proxies:
+          - {name: EdgeA, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: secret}
+        proxy-groups:
+          - {name: Proxy, type: select, proxies: [EdgeA]}
+        rules:
+          - MATCH,Proxy
+        """
+        let profile = ActiveProfile(
+            name: "ExpiredSub",
+            yaml: yaml,
+            importedAt: Date(),
+            subscription: sub
+        )
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        try await Task.sleep(for: .milliseconds(60))
+
+        try expect(
+            defaults.dictionary(forKey: "AetherRoute.SubscriptionAlertLastSent") == nil,
+            "MENU-12: Subscription alert history must not be written when notificationPermission != .authorized"
+        )
+
+        let startup = AppStartupController(environment: [:])
+        startup.refreshStatus()
+    }
+
+    @MainActor
+    private static func testV314_MENU19_AppLanguageControllerUpdatesLocaleBridgeAndSparkleFormat() async throws {
+        let suiteName = "com.aetherroute.macfunc.lang.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            AppLocalization.configure(.system)
+            cleanupDefaults(suiteName)
+        }
+
+        let controller = AppLanguageController(store: AppLanguagePreferenceStore(defaults: defaults))
+        controller.select(.simplifiedChinese)
+        try expect(
+            AppLocalizationLocaleBridge.currentLocale.identifier == "zh-Hans",
+            "MENU-19: Expected AppLocalizationLocaleBridge to track zh-Hans, got \(AppLocalizationLocaleBridge.currentLocale.identifier)"
+        )
+        controller.select(.english)
+        try expect(
+            AppLocalizationLocaleBridge.currentLocale.identifier == "en",
+            "MENU-19: Expected AppLocalizationLocaleBridge to track en, got \(AppLocalizationLocaleBridge.currentLocale.identifier)"
+        )
+
+        let formatted = AppLocalization.format(
+            "Version %@ is ready to install. Click to view release notes and update.",
+            "3.1.4"
+        )
+        try expect(
+            formatted.contains("3.1.4"),
+            "MENU-19: AppLocalization.format dropped version argument: \(formatted)"
+        )
+
+        let sparkle = SparkleUpdaterController(
+            updaterController: nil,
+            startUpdater: false,
+            userDefaults: defaults
+        )
+        _ = sparkle
+    }
+
+    @MainActor
+    private static func testV314_PROXY09_ConnectedIPCFailureSkipsTCPFallbackAndCrossGroupIsolation() async throws {
+        let server = try LoopbackTCPServer()
+        defer { server.stop() }
+
+        let (tunnel, defaults, suiteName) = makeTestTunnel(reviewState: nil)
+        defer {
+            LANProxyServerController.shared.stop()
+            cleanupDefaults(suiteName)
+        }
+        PrivacyConsentStore(defaults: defaults).acceptCurrentDisclosure()
+
+        let yaml = """
+        proxies:
+          - {name: SharedNode, type: trojan, server: 127.0.0.1, port: \(server.port)}
+          - {name: OtherNode, type: trojan, server: 127.0.0.1, port: \(server.port)}
+        proxy-groups:
+          - {name: GroupA, type: select, proxies: [SharedNode, OtherNode]}
+          - {name: GroupB, type: select, proxies: [SharedNode]}
+          - {name: ChildGroup, type: select, proxies: [SharedNode]}
+          - {name: ParentGroup, type: select, proxies: [ChildGroup]}
+        rules:
+          - MATCH,ParentGroup
+        """
+        let profile = ActiveProfile(
+            name: "LatencyIsolationProfile",
+            yaml: yaml,
+            importedAt: Date(timeIntervalSince1970: 1_775_000_000)
+        )
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.refreshActiveProfileSummary()
+
+        // 1. Connected IPC failure (manager == nil -> providerSessionUnavailable) must NOT silently fall back to TCP reachability
+        tunnel.state = .connected
+        await tunnel.testProxyLatency(group: "GroupA")
+        try expect(
+            server.acceptedCount == 0,
+            "PROXY-09: Connected testProxyLatency fell back to bare TCP reachability (\(server.acceptedCount) socket(s)) on IPC failure"
+        )
+        try expect(
+            tunnel.proxySelectionMessages["GroupA"] != nil,
+            "PROXY-09: Connected IPC failure must surface localized proxySelectionMessages"
+        )
+        try expect(
+            tunnel.proxyLatencies["GroupA"] == nil,
+            "PROXY-09: Connected IPC failure must leave group unmeasured instead of publishing stale/TCP numbers"
+        )
+
+        await tunnel.testSingleProxyLatency(group: "GroupB", member: "SharedNode")
+        try expect(
+            server.acceptedCount == 0,
+            "PROXY-09: Connected testSingleProxyLatency fell back to bare TCP reachability on IPC failure"
+        )
+        try expect(
+            tunnel.proxySelectionMessages["GroupB"] != nil,
+            "PROXY-09: Connected single-node IPC failure must surface proxySelectionMessages"
+        )
+
+        // 2. Offline testProxyLatency must expand nested ChildGroup -> SharedNode and aggregate result back to ParentGroup
+        tunnel.state = .disconnected
+        await tunnel.testProxyLatency(group: "ParentGroup")
+        try expect(
+            server.acceptedCount >= 1,
+            "PROXY-09: Offline testProxyLatency skipped nested child strategy group leaf"
+        )
+        let parentChildDelay = tunnel.proxyLatencies["ParentGroup"]?.results
+            .first(where: { $0.member == "ChildGroup" })?
+            .delayMilliseconds
+        try expect(
+            parentChildDelay != nil,
+            "PROXY-09: Expected ParentGroup -> ChildGroup latency to aggregate from resolved offline leaf"
+        )
+
+        // 3. Cross-group single-member vs sweep isolation: memberLatencyRequests on GroupB must protect GroupB from GroupA sweep recordLatency,
+        //    and single-node probe on GroupB must not wipe GroupA's active sweep measurement.
+        let token = tunnel.prepareLatencyIndex()
+        tunnel.recordLatency(member: "SharedNode", measurement: .verified(42), runToken: token, force: true)
+        tunnel.proxyLatencyRequests.insert("GroupA")
+        tunnel.memberLatencyRequests.insert("GroupB:SharedNode")
+        tunnel.recordLatency(member: "SharedNode", measurement: .verified(99), runToken: token, force: true)
+        tunnel.memberLatencyRequests.remove("GroupB:SharedNode")
+        tunnel.proxyLatencyRequests.remove("GroupA")
+
+        let groupAShared = tunnel.proxyLatencies["GroupA"]?.resultsByMember["SharedNode"]?.delayMilliseconds
+        let groupBShared = tunnel.proxyLatencies["GroupB"]?.resultsByMember["SharedNode"]?.delayMilliseconds
+        try expect(
+            groupAShared == 99 && groupBShared == 42,
+            "PROXY-09: recordLatency failed to isolate active memberLatencyRequests (GroupA=\(String(describing: groupAShared)), GroupB=\(String(describing: groupBShared)))"
+        )
+    }
+
+    @MainActor
+    private static func testV314_RULE10_RULE11_RULE14_CustomRuleGuardsLocalizationAndResourceRefresh() async throws {
+        let tempSupport = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MacFuncRule14-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempSupport, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempSupport) }
+
+        let suiteName = "com.aetherroute.macfunc.rules.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { cleanupDefaults(suiteName) }
+
+        let tunnel = TunnelManager(
+            environment: [:],
+            privacyConsentStore: PrivacyConsentStore(defaults: defaults),
+            routingModePreferenceStore: RoutingModePreferenceStore(defaults: defaults),
+            connectionIntentStore: ConnectionIntentStore(defaults: defaults),
+            systemProxyConfigurator: SystemProxyConfigurator(executor: MockNetworkSetupExecutor(), defaults: defaults),
+            userDefaults: defaults,
+            routingResourceStoreFactory: {
+                RoutingResourceStore(applicationSupportDirectory: tempSupport)
+            }
+        )
+        defer { LANProxyServerController.shared.stop() }
+
+        let sampleRule = CustomRule(kind: .domainSuffix, value: "example.com", target: .direct)
+
+        // RULE-10: importCustomRulesBatch rejects before consent, while transitioning, and while updating
+        let withoutConsent = await tunnel.importCustomRulesBatch([sampleRule])
+        try expect(!withoutConsent, "RULE-10: importCustomRulesBatch must reject before privacy consent")
+
+        PrivacyConsentStore(defaults: defaults).acceptCurrentDisclosure()
+        tunnel.hasAcceptedPrivacyDisclosure = true
+        tunnel.isUpdatingCustomRules = true
+        let whileUpdating = await tunnel.importCustomRulesBatch([sampleRule])
+        tunnel.isUpdatingCustomRules = false
+        try expect(
+            !whileUpdating && tunnel.customRuleMessageIsError,
+            "RULE-10: importCustomRulesBatch must reject while isUpdatingCustomRules is true"
+        )
+
+        // RULE-11: localizedCustomRuleError & localizedCustomRuleValidationIssue
+        let tooManyMsg = tunnel.localizedCustomRuleError(CustomRuleStoreError.tooManyRules(550))
+        let parseMsg = tunnel.localizedCustomRuleError(CustomRuleParseError.insufficientComponents)
+        let cidrMsg = tunnel.localizedCustomRuleValidationIssue(.ipv4CIDRHostBitsNonZero("10.0.0.0", 24))
+        try expect(
+            !tooManyMsg.isEmpty && !parseMsg.isEmpty && cidrMsg.contains("10.0.0.0/24"),
+            "RULE-11: Unexpected localized custom rule error output: \(tooManyMsg) | \(parseMsg) | \(cidrMsg)"
+        )
+
+        // RULE-14: refreshActiveProfileSummary refreshes routingResourceStatuses instead of leaving GeoIP/GeoSite empty/stale
+        let geoYAML = """
+        proxies:
+          - {name: Edge, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: p}
+        proxy-groups:
+          - {name: Proxy, type: select, proxies: [Edge]}
+        rules:
+          - GEOIP,CN,DIRECT,no-resolve
+          - MATCH,Proxy
+        """
+        let profile = ActiveProfile(name: "GeoProfile", yaml: geoYAML, importedAt: Date())
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.routingResourceStatuses = [:]
+        tunnel.refreshActiveProfileSummary()
+        try await Task.sleep(for: .milliseconds(80))
+        try expect(
+            tunnel.routingResourceStatuses[.countryMMDB] != nil,
+            "RULE-14: refreshActiveProfileSummary() did not trigger refreshRoutingResourceStatuses() for GEOIP rule"
+        )
+    }
+
+    @MainActor
+    private static func testV314_CONNDNS08_ClearDNSCacheSuppressesActiveFlowsAndReportsTruthfulErrors() async throws {
+        let activeFlow = ConnectionTelemetry(
+            transport: .tcp,
+            destination: "suppressed.example.com",
+            destinationPort: 443,
+            uploadTotal: 100,
+            downloadTotal: 200,
+            startedAtUnixMilliseconds: 1_700_000_500_000,
+            rule: "DOMAIN",
+            rulePayload: "suppressed.example.com",
+            proxyChain: "DIRECT",
+            dnsDurationMilliseconds: 6,
+            connectDurationMilliseconds: 11
+        )
+        let snapshot = NetworkTelemetrySnapshot(
+            uploadBytesPerSecond: 0,
+            downloadBytesPerSecond: 0,
+            uploadTotal: 100,
+            downloadTotal: 200,
+            memoryBytes: 1_024,
+            connections: [activeFlow]
+        )
+
+        // 1. Disconnected clear
+        let (reviewTunnel, _, suite1) = makeTestTunnel(reviewState: "disconnected")
+        defer { cleanupDefaults(suite1) }
+        reviewTunnel.publishTelemetry(snapshot)
+        reviewTunnel.syncRecentDNSQueriesFromTelemetry()
+        try expect(reviewTunnel.dnsQueriesViewModel.store.count == 1, "Expected 1 ingested DNS query before clear")
+
+        let disconnectedStatus = await reviewTunnel.clearDNSCache()
+        try expect(
+            disconnectedStatus == AppLocalization.string("Cleared local DNS log and Fake-IP lookup history.")
+                && !reviewTunnel.dnsQueriesViewModel.lastCacheClearIsError
+                && reviewTunnel.dnsQueriesViewModel.store.isEmpty,
+            "CONNDNS-08: Unexpected disconnected clearDNSCache result: \(disconnectedStatus)"
+        )
+        reviewTunnel.syncRecentDNSQueriesFromTelemetry()
+        try expect(
+            reviewTunnel.dnsQueriesViewModel.store.isEmpty,
+            "CONNDNS-08: Disconnected clearDNSCache failed to suppress already-active telemetry flow"
+        )
+
+        // 2. Connected IPC failure -> error banner + still suppresses active flow
+        let (liveTunnel, defaults2, suite2) = makeTestTunnel(reviewState: nil)
+        defer {
+            LANProxyServerController.shared.stop()
+            cleanupDefaults(suite2)
+        }
+        PrivacyConsentStore(defaults: defaults2).acceptCurrentDisclosure()
+        liveTunnel.publishTelemetry(snapshot)
+        liveTunnel.syncRecentDNSQueriesFromTelemetry()
+        try expect(liveTunnel.dnsQueriesViewModel.store.count == 1, "Expected 1 ingested DNS query before connected clear")
+
+        liveTunnel.state = .connected
+        let failedStatus = await liveTunnel.clearDNSCache()
+        try expect(
+            failedStatus == AppLocalization.string("Cleared local DNS log and Fake-IP lookup history, but could not refresh the live session.")
+                && liveTunnel.dnsQueriesViewModel.lastCacheClearIsError
+                && liveTunnel.dnsQueriesViewModel.store.isEmpty,
+            "CONNDNS-08: Connected IPC failure must report truthful error status and clear local store, got: \(failedStatus)"
+        )
+        liveTunnel.syncRecentDNSQueriesFromTelemetry()
+        try expect(
+            liveTunnel.dnsQueriesViewModel.store.isEmpty,
+            "CONNDNS-08: Failed live clearDNSCache still must suppress pre-clear active flows"
+        )
+    }
+
+    @MainActor
+    private static func testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization() async throws {
+        let portInUse = LANProxyStatusFailure(port: 7_890, error: NWError.posix(.EADDRINUSE))
+        let permDenied = LANProxyStatusFailure(
+            port: 80,
+            error: NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+        )
+        let handshake = LANProxyStatusFailure(port: 0, error: LANProxyError.invalidHandshake)
+        let invalidPort = LANProxyStatusFailure(port: 0, error: LANProxyError.invalidPort(0))
+        let remoteFailed = LANProxyStatusFailure(port: 0, error: LANProxyError.remoteConnectionFailed("reset"))
+
+        try expect(portInUse.kind == .portInUse(7_890), "Expected .portInUse(7890)")
+        try expect(permDenied.kind == .permissionDenied(80), "Expected .permissionDenied(80)")
+        try expect(handshake.kind == .invalidHandshake, "Expected .invalidHandshake")
+        try expect(invalidPort.kind == .invalidPort(0), "Expected .invalidPort(0)")
+        try expect(remoteFailed.kind == .remoteConnectionFailed("reset"), "Expected .remoteConnectionFailed")
+
+        for failure in [portInUse, permDenied, handshake, invalidPort, remoteFailed] {
+            let text = TunnelManager.localizedLANProxyStatusFailure(failure)
+            try expect(!text.isEmpty, "SYS-10: Empty localized LAN failure message for \(failure)")
+        }
+        try expect(
+            TunnelManager.localizedLANProxyStatusFailure(portInUse).contains("7890"),
+            "SYS-10: Port-in-use failure must include port 7890"
+        )
+
+        let blocker = try LoopbackTCPServer()
+        defer { blocker.stop() }
+        let conflictPort = Int(blocker.port)
+        let controller = LANProxyServerController.shared
+        defer { controller.stop() }
+
+        controller.start(httpPort: conflictPort, socksPort: conflictPort, loopbackOnly: true)
+        try await Task.sleep(for: .milliseconds(80))
+        try expect(
+            controller.statusFailure == LANProxyStatusFailure(port: conflictPort, error: NWError.posix(.EADDRINUSE)),
+            "SYS-10: Expected live listener conflict to populate statusFailure=.portInUse(\(conflictPort)), got \(String(describing: controller.statusFailure))"
+        )
+        controller.stop()
+        try expect(controller.statusFailure == nil, "SYS-10: stop() must clear statusFailure")
+    }
+
+    @MainActor
+    private static func testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites() async throws {
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: nil)
+        defer {
+            LANProxyServerController.shared.stop()
+            cleanupDefaults(suiteName)
+        }
+
+        let groupNames = (1...10).map { "Group\($0)" }
+        let groupsYAML = groupNames
+            .map { "  - {name: \($0), type: select, proxies: [SharedEdge]}" }
+            .joined(separator: "\n")
+        let yaml = """
+        proxies:
+          - {name: SharedEdge, type: ss, server: 1.1.1.1, port: 443, cipher: aes-128-gcm, password: secret}
+        proxy-groups:
+        \(groupsYAML)
+        rules:
+          - MATCH,Group1
+        """
+        let profile = ActiveProfile(name: "TenGroups", yaml: yaml, importedAt: Date())
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.refreshActiveProfileSummary()
+
+        let token = tunnel.prepareLatencyIndex()
+        tunnel.recordLatency(member: "SharedEdge", measurement: .verified(28), runToken: token, force: false)
+
+        var emissions = 0
+        let sub = tunnel.latencyStore.objectWillChange.sink { _ in
+            emissions += 1
+        }
+        defer { sub.cancel() }
+
+        tunnel.flushPendingLatency()
+        try expect(
+            groupNames.allSatisfy {
+                tunnel.proxyLatencies[$0] != nil && tunnel.latencyMeasuredAt[$0] != nil
+            },
+            "SYS-14: Expected all 10 dirty groups flushed (got latencies=\(tunnel.proxyLatencies.count), dates=\(tunnel.latencyMeasuredAt.count))"
+        )
+        try expect(
+            emissions <= 2,
+            "SYS-14: Expected at most 2 latencyStore.objectWillChange emissions for 10-group flush (1 per dictionary), got \(emissions)"
         )
     }
 }

@@ -922,7 +922,17 @@ private actor CloudSyncWorker {
         )
     }
 
+    private func ensureCloudAvailable() throws {
+        if kvStore is NSUbiquitousKeyValueStore, FileManager.default.ubiquityIdentityToken == nil {
+            throw CloudSyncError.cloudUnavailable
+        }
+        guard kvStore.synchronize() else {
+            throw CloudSyncError.cloudUnavailable
+        }
+    }
+
     func performSync(lastSyncedAt: Date?) async throws -> SyncOutcome {
+        try ensureCloudAvailable()
         _ = resolveDeviceNameIfNeeded()
         let catalogStore = try injectedCatalogStore ?? ProfileCatalogStore.applicationGroup()
         let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
@@ -930,7 +940,9 @@ private actor CloudSyncWorker {
 
         let (updatedProviders, updatedUserRules) = await syncRuleProvidersAndUserRules()
 
-        kvStore.synchronize()
+        guard kvStore.synchronize() else {
+            throw CloudSyncError.cloudUnavailable
+        }
         if let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
            let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) {
             let lastLocalMillis: UInt64
@@ -1021,8 +1033,11 @@ private actor CloudSyncWorker {
     }
 
     func performForcePull() async throws -> SyncOutcome {
+        try ensureCloudAvailable()
         _ = resolveDeviceNameIfNeeded()
-        kvStore.synchronize()
+        guard kvStore.synchronize() else {
+            throw CloudSyncError.cloudUnavailable
+        }
         guard let remoteData = kvStore.data(forKey: CloudSyncPayload.storageKey),
               let remotePayload = try? JSONDecoder().decode(CloudSyncPayload.self, from: remoteData) else {
             return SyncOutcome(
@@ -1065,6 +1080,7 @@ private actor CloudSyncWorker {
     }
 
     func performForcePush() async throws -> SyncOutcome {
+        try ensureCloudAvailable()
         _ = resolveDeviceNameIfNeeded()
         if !(await ruleProviderEngine.allProviders().isEmpty),
            let pushKey = (try? resolveEncryptionKeyForPush().key),
@@ -1074,7 +1090,9 @@ private actor CloudSyncWorker {
            ),
            totalKVSBytesWouldFit(writing: localRulePayload, forKey: RuleProviderSyncPayload.storageKey) {
             kvStore.set(localRulePayload, forKey: RuleProviderSyncPayload.storageKey)
-            kvStore.synchronize()
+            guard kvStore.synchronize() else {
+                throw CloudSyncError.cloudUnavailable
+            }
         }
         pushLocalUserRulesToCloudIfAvailable()
 
@@ -1082,6 +1100,7 @@ private actor CloudSyncWorker {
         let localCatalog = (try? catalogStore.loadOrMigrate()) ?? ProfileCatalog()
         let localTombstones = catalogStore.loadDeletedProfiles()
         guard !localCatalog.profiles.isEmpty || !localTombstones.isEmpty else {
+            try ensureCloudAvailable()
             return SyncOutcome(
                 didSync: false,
                 status: .nothingToUpload,
@@ -1310,7 +1329,9 @@ private actor CloudSyncWorker {
            kvStore.data(forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey) != nil {
             kvStore.set(nil, forKey: ProfileCloudSyncManager.cloudSyncMasterKeyStorageKey)
         }
-        kvStore.synchronize()
+        guard kvStore.synchronize() else {
+            throw CloudSyncError.cloudUnavailable
+        }
     }
 
     private func applyRemotePayload(

@@ -9,6 +9,7 @@ import OSLog
 final class DNSRecentQueriesViewModel: ObservableObject {
     @Published private(set) var store = DNSRecentQueryStore()
     @Published private(set) var lastCacheClearStatus: String?
+    @Published private(set) var lastCacheClearIsError = false
     @Published private(set) var isClearingCache = false
 
     @discardableResult
@@ -17,6 +18,7 @@ final class DNSRecentQueriesViewModel: ObservableObject {
         runtimePolicy: DNSRuntimePolicy?
     ) -> DNSRecentQueryRecord {
         lastCacheClearStatus = nil
+        lastCacheClearIsError = false
         return store.recordLookupReport(report, runtimePolicy: runtimePolicy)
     }
 
@@ -40,9 +42,14 @@ final class DNSRecentQueriesViewModel: ObservableObject {
         isClearingCache = clearing
     }
 
-    func clearAll(statusMessage: String) {
-        store.clearAll()
+    func clearAll(
+        statusMessage: String,
+        isError: Bool = false,
+        suppressingConnections: [ConnectionTelemetry] = []
+    ) {
+        store.clear(suppressingActiveConnections: suppressingConnections)
         lastCacheClearStatus = statusMessage
+        lastCacheClearIsError = isError
     }
 }
 
@@ -102,24 +109,76 @@ extension TunnelManager {
         return dnsQueriesViewModel.reverseLookup(fakeIP: fakeIP)
     }
 
-    /// Clears the in-app DNS query log and Fake-IP reverse lookup table, and when
-    /// connected performs a reconnect-free telemetry refresh.
+    /// Clears the in-app DNS query log and Fake-IP reverse lookup table while
+    /// suppressing already-active flows from bouncing back into the cleared log.
+    /// The extension's internal DNS resolver cache resets on reconnect.
     @discardableResult
     func clearDNSCache() async -> String {
         let viewModel = dnsQueriesViewModel
         viewModel.setClearing(true)
         defer { viewModel.setClearing(false) }
 
+        let preClearConnections = telemetryViewModel.snapshot.connections
         let status: String
         if state == .connected && !isUIReviewMode {
-            viewModel.clearAll(
-                statusMessage: AppLocalization.string("Cleared DNS query history and Fake-IP reverse cache; refreshed live session without reconnecting.")
+            let successMessage = AppLocalization.string(
+                "Cleared local DNS log and Fake-IP lookup history; extension DNS cache resets on reconnect."
             )
-            await refreshTelemetry()
-            status = viewModel.lastCacheClearStatus ?? ""
+            viewModel.clearAll(
+                statusMessage: successMessage,
+                isError: false,
+                suppressingConnections: preClearConnections
+            )
+            do {
+                let client = ProxySelectionProviderClient { [weak self] data in
+                    guard let self else {
+                        throw TunnelManagerError.providerSessionUnavailable
+                    }
+                    return try await self.sendProviderMessage(data)
+                }
+                let requestedLimit = effectiveTelemetryConnectionLimit
+                let wireLimit = min(
+                    requestedLimit,
+                    UInt16(clamping: NetworkTelemetryCodec.maximumConnections)
+                )
+                let rawSnapshot = try await client.telemetry(
+                    maximumConnections: wireLimit
+                )
+                let now = Date()
+                let resolvedSnapshot = telemetryRateSampler.resolve(
+                    snapshot: rawSnapshot,
+                    at: now
+                )
+                viewModel.clearAll(
+                    statusMessage: successMessage,
+                    isError: false,
+                    suppressingConnections: preClearConnections + resolvedSnapshot.connections
+                )
+                publishTelemetry(
+                    resolvedSnapshot,
+                    requestedConnectionLimit: requestedLimit,
+                    at: now
+                )
+                status = successMessage
+            } catch {
+                let errorMessage = AppLocalization.string(
+                    "Cleared local DNS log and Fake-IP lookup history, but could not refresh the live session."
+                )
+                viewModel.clearAll(
+                    statusMessage: errorMessage,
+                    isError: true,
+                    suppressingConnections: preClearConnections
+                )
+                status = errorMessage
+                Self.runtimeLogger.error("stage=clearDNSCache ipcRefreshFailed error=\(String(reflecting: error), privacy: .public)")
+            }
         } else {
-            status = AppLocalization.string("Cleared DNS query history and Fake-IP reverse cache.")
-            viewModel.clearAll(statusMessage: status)
+            status = AppLocalization.string("Cleared local DNS log and Fake-IP lookup history.")
+            viewModel.clearAll(
+                statusMessage: status,
+                isError: false,
+                suppressingConnections: preClearConnections
+            )
         }
 
         Self.runtimeLogger.info("stage=clearDNSCache connected=\(self.state == .connected, privacy: .public)")

@@ -67,13 +67,26 @@ enum ProxyPageNodeOrder {
             // 默认模式下绝对保留配置原始顺序，不发生任何位置重排与跳动
             return members
         case .latency:
-            return members.sorted { lhs, rhs in
-                latencyRank(lhs) < latencyRank(rhs)
-            }
+            return members.enumerated()
+                .sorted { lhs, rhs in
+                    let lhsRank = latencyRank(lhs.element)
+                    let rhsRank = latencyRank(rhs.element)
+                    if lhsRank != rhsRank {
+                        return lhsRank < rhsRank
+                    }
+                    return lhs.offset < rhs.offset
+                }
+                .map(\.element)
         case .name:
-            return members.sorted { lhs, rhs in
-                lhs.localizedStandardCompare(rhs) == .orderedAscending
-            }
+            return members.enumerated()
+                .sorted { lhs, rhs in
+                    let cmp = lhs.element.localizedStandardCompare(rhs.element)
+                    if cmp != .orderedSame {
+                        return cmp == .orderedAscending
+                    }
+                    return lhs.offset < rhs.offset
+                }
+                .map(\.element)
         }
     }
 

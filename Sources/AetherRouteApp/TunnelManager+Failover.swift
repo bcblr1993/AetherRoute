@@ -119,10 +119,11 @@ extension TunnelManager {
         group groupName: String,
         mode: ProxySelectionMode
     ) async {
+        guard !isTransitioning, !isSwitchingNetworkEngine else { return }
         guard let group = activeProfileSummary?.proxyGroups.first(where: {
             $0.name == groupName
                 && $0.strategy.caseInsensitiveCompare("select") == .orderedSame
-        }), group.memberCount > 1 else { return }
+        }), mode == .manual || group.memberCount > 1 else { return }
         let yaml = activeProfile?.yaml
         guard yaml != nil || isUIReviewMode else { return }
 
@@ -268,7 +269,8 @@ extension TunnelManager {
     /// A node picked by the person in failover mode becomes the preferred
     /// node, and the group moves to it.
     func setPreferredProxy(group groupName: String, member: String) async {
-        guard proxySelectionMode(for: groupName) == .failover else { return }
+        let canEdit = !isTransitioning && !isSwitchingNetworkEngine && hasAcceptedPrivacyDisclosure
+        guard canEdit, proxySelectionMode(for: groupName) == .failover else { return }
         preferredProxyMembers[groupName] = member
         persistPreferredProxy(group: groupName, member: member)
         failoverRecoveryTracker.reset(group: groupName)

@@ -132,12 +132,12 @@ public struct LocalProxySettings: Codable, Equatable, Sendable {
     /// A copy-friendly configuration guide for devices in the same local network.
     public func lanConfigurationGuide(lanIP: String) -> String {
         """
-        【AetherRoute 局域网共享代理】
-        请在同一 Wi-Fi 下将设备的代理设置为：
-        • 代理类型：HTTP / 网页代理（手动）
-        • 服务器/主机名：\(lanIP)
-        • 端口：\(httpPort)
-        （SOCKS5 专用端口：\(socksPort)）
+        [AetherRoute LAN Shared Proxy]
+        Configure proxy settings on devices on the same Wi-Fi network:
+        • Proxy Type: HTTP / Web Proxy (Manual)
+        • Server / Hostname: \(lanIP)
+        • Port: \(httpPort)
+        (SOCKS5 Port: \(socksPort))
         """
     }
 

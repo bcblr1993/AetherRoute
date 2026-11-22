@@ -21,6 +21,23 @@ jq -e '
     .localizations["zh-Hans"].stringUnit.state == "translated"
     and (.localizations["zh-Hans"].stringUnit.value | length > 0)
   ] | all)
+  and ([.strings[] |
+    (.localizations.en.variations.plural? // null) as $p
+    | ($p == null) or (
+      ($p.one.stringUnit.state == "translated")
+      and (($p.one.stringUnit.value | length) > 0)
+      and ($p.other.stringUnit.state == "translated")
+      and (($p.other.stringUnit.value | length) > 0)
+    )
+  ] | all)
+  and ([.strings[] |
+    (.localizations.en.substitutions? // {}) | to_entries | map(
+      (.value.variations.plural.one.stringUnit.state == "translated")
+      and ((.value.variations.plural.one.stringUnit.value | length) > 0)
+      and (.value.variations.plural.other.stringUnit.state == "translated")
+      and ((.value.variations.plural.other.stringUnit.value | length) > 0)
+    ) | all
+  ] | all)
   and ([.strings[] | .extractionState? != "stale"] | all)
 ' "$CATALOG" >/dev/null || fail "catalog contains stale or untranslated entries"
 
@@ -51,10 +68,14 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 if xcrun --find xcstringstool >/dev/null 2>&1; then
-  mkdir -p "$TEMP_DIR/extracted" "$TEMP_DIR/compiled"
+  mkdir -p "$TEMP_DIR/extracted" "$TEMP_DIR/compiled-zh" "$TEMP_DIR/compiled-en"
   xcrun xcstringstool compile "$CATALOG" \
-    --output-directory "$TEMP_DIR/compiled" \
+    --output-directory "$TEMP_DIR/compiled-zh" \
     --language zh-Hans \
+    --serialization-format text >/dev/null
+  xcrun xcstringstool compile "$CATALOG" \
+    --output-directory "$TEMP_DIR/compiled-en" \
+    --language en \
     --serialization-format text >/dev/null
 
   # AppLanguageController deliberately resolves a previously extracted
@@ -130,6 +151,30 @@ PY
 if rg -n 'aetherBilingualText\(|AppLocalization\.inline\(' "$ROOT/Sources/AetherRouteApp" >/dev/null; then
   fail "legacy inline bilingual helpers are forbidden; use Localizable.xcstrings via AppLocalization.string/format"
 fi
+
+if rg -n -U 'String\.localizedStringWithFormat\(\s*AppLocalization\.string\(' "$ROOT/Sources/AetherRouteApp" >/dev/null; then
+  fail "String.localizedStringWithFormat(AppLocalization.string(...)) drops plural rules and uses system Locale; use AppLocalization.format instead"
+fi
+
+for target_dir in \
+  "$ROOT/Sources/AetherRouteApp" \
+  "$ROOT/Sources/AetherRoutePacketTunnel" \
+  "$ROOT/Sources/AetherRouteTransparentProxy"
+do
+  for lang in en zh-Hans; do
+    info_strings="$target_dir/$lang.lproj/InfoPlist.strings"
+    test -f "$info_strings" || fail "missing InfoPlist.strings: $info_strings"
+    plutil -lint "$info_strings" >/dev/null || fail "invalid InfoPlist.strings syntax: $info_strings"
+    grep -Fq '"NSSystemExtensionUsageDescription"' "$info_strings" \
+      || fail "NSSystemExtensionUsageDescription missing from $info_strings"
+  done
+done
+
+for lang in en zh-Hans; do
+  app_info_strings="$ROOT/Sources/AetherRouteApp/$lang.lproj/InfoPlist.strings"
+  grep -Fq '"NSLocalNetworkUsageDescription"' "$app_info_strings" \
+    || fail "NSLocalNetworkUsageDescription missing from $app_info_strings"
+done
 
 count=$(jq '.strings | length' "$CATALOG")
 printf 'Localization catalog verified: %s keys, en + zh-Hans\n' "$count"

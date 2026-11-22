@@ -61,6 +61,7 @@ final class AppAutomationController: ObservableObject {
     private var privacyObservation: AnyCancellable?
     private var subscriptionObservation: AnyCancellable?
     private var proxySwitchObservation: AnyCancellable?
+    nonisolated(unsafe) private var appBecomeActiveObserver: (any NSObjectProtocol)?
     private var licenseRefreshTask: Task<Void, Never>?
     private var networkEnvironmentTask: Task<Void, Never>?
     private(set) var lastEvaluatedEnvironment: NetworkEnvironmentSnapshot?
@@ -168,10 +169,22 @@ final class AppAutomationController: ObservableObject {
         applyGlobalShortcuts()
         refreshCurrentNetworkEnvironment()
         updateNetworkEnvironmentMonitoring()
+        appBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.refreshNotificationAuthorization()
+            }
+        }
         Task { await refreshNotificationAuthorization() }
     }
 
     deinit {
+        if let appBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(appBecomeActiveObserver)
+        }
         licenseRefreshTask?.cancel()
         networkEnvironmentTask?.cancel()
     }
@@ -214,7 +227,7 @@ final class AppAutomationController: ObservableObject {
             }
             return persistAndApplyNetworkAutomation(updated, evaluateImmediately: true)
         } catch {
-            networkAutomationMessage = error.localizedDescription
+            networkAutomationMessage = localizedAutomationError(error)
             return false
         }
     }
@@ -248,8 +261,24 @@ final class AppAutomationController: ObservableObject {
             }
             return true
         } catch {
-            networkAutomationMessage = error.localizedDescription
+            networkAutomationMessage = localizedAutomationError(error)
             return false
+        }
+    }
+
+    private func localizedAutomationError(_ error: Error) -> String {
+        guard let prefError = error as? AppAutomationPreferencesError else {
+            return error.localizedDescription
+        }
+        switch prefError {
+        case .unsupportedVersion:
+            return AppLocalization.string("This automation preferences version is not supported.")
+        case .duplicateShortcut:
+            return AppLocalization.string("Each global shortcut must use a unique key combination.")
+        case .invalidNetworkRule:
+            return AppLocalization.string("The network automation rule is invalid.")
+        case .tooManyNetworkRules:
+            return AppLocalization.string("Too many network automation rules are configured.")
         }
     }
 
@@ -347,7 +376,11 @@ final class AppAutomationController: ObservableObject {
             granted = try await notificationCenter.requestAuthorization(
                 options: [.alert, .sound]
             )
-            notificationPermission = granted ? .authorized : .denied
+            if granted {
+                notificationPermission = .authorized
+            } else {
+                disableAllNotificationTogglesForDeniedPermission()
+            }
         } catch {
             granted = false
             notificationPermission = .unavailable
@@ -383,7 +416,11 @@ final class AppAutomationController: ObservableObject {
             granted = try await notificationCenter.requestAuthorization(
                 options: [.alert, .sound]
             )
-            notificationPermission = granted ? .authorized : .denied
+            if granted {
+                notificationPermission = .authorized
+            } else {
+                disableAllNotificationTogglesForDeniedPermission()
+            }
         } catch {
             granted = false
             notificationPermission = .unavailable
@@ -418,6 +455,7 @@ final class AppAutomationController: ObservableObject {
 
     private func notifyIfSubscriptionNeedsAttention(_ usage: SubscriptionUsage?) {
         guard subscriptionNotificationsEnabled, !isUIReviewMode,
+              notificationPermission == .authorized,
               let profileID = tunnel.activeProfileID else { return }
         let alert = SubscriptionUsageAlert.evaluate(usage, now: .now)
         let kind: String
@@ -487,7 +525,11 @@ final class AppAutomationController: ObservableObject {
                 options: [.alert, .sound]
             )
             notificationsEnabled = granted
-            notificationPermission = granted ? .authorized : .denied
+            if granted {
+                notificationPermission = .authorized
+            } else {
+                disableAllNotificationTogglesForDeniedPermission()
+            }
             userDefaults.set(granted, forKey: Self.notificationsPreferenceKey)
         } catch {
             notificationsEnabled = false
@@ -567,17 +609,33 @@ final class AppAutomationController: ObservableObject {
         let settings = await notificationCenter.notificationSettings()
         switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral:
+            let wasAuthorized = (notificationPermission == .authorized)
             notificationPermission = .authorized
-        case .denied:
-            notificationPermission = .denied
-            if notificationsEnabled {
-                notificationsEnabled = false
-                userDefaults.set(false, forKey: Self.notificationsPreferenceKey)
+            if !wasAuthorized, subscriptionNotificationsEnabled {
+                notifyIfSubscriptionNeedsAttention(tunnel.effectiveActiveSubscriptionUsage)
             }
+        case .denied:
+            disableAllNotificationTogglesForDeniedPermission()
         case .notDetermined:
             notificationPermission = .notRequested
         @unknown default:
             notificationPermission = .unavailable
+        }
+    }
+
+    private func disableAllNotificationTogglesForDeniedPermission() {
+        notificationPermission = .denied
+        if notificationsEnabled {
+            notificationsEnabled = false
+            userDefaults.set(false, forKey: Self.notificationsPreferenceKey)
+        }
+        if subscriptionNotificationsEnabled {
+            subscriptionNotificationsEnabled = false
+            userDefaults.set(false, forKey: Self.subscriptionNotificationsPreferenceKey)
+        }
+        if proxySwitchNotificationsEnabled {
+            proxySwitchNotificationsEnabled = false
+            userDefaults.set(false, forKey: Self.proxySwitchNotificationsPreferenceKey)
         }
     }
 

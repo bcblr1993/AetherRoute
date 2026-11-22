@@ -115,6 +115,10 @@ public struct ConnectivityDiagnosticReport: Sendable, Equatable {
 public final class ConnectivityDiagnosticsEngine: ObservableObject {
     @Published public private(set) var isRunning: Bool = false
     @Published public private(set) var currentStage: Int = 0 // 0: idle, 1: tunnel, 2: dns, 3: domestic, 4: proxy, 5: completed
+    @Published public private(set) var tunnelResult: TunnelDiagnosticResult?
+    @Published public private(set) var dnsResult: DNSDiagnosticResult?
+    @Published public private(set) var domesticResult: DomesticDiagnosticResult?
+    @Published public private(set) var proxyResult: ProxyDiagnosticResult?
     @Published public private(set) var report: ConnectivityDiagnosticReport?
 
     private final class MetricsDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
@@ -138,6 +142,11 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
 
     public init() {}
 
+    public func cancel() {
+        isRunning = false
+        currentStage = 0
+    }
+
     public func runDiagnostics(
         isConnected: Bool,
         isConnecting: Bool,
@@ -147,7 +156,15 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
     ) async {
         guard !isRunning else { return }
         isRunning = true
+        self.report = nil
+        self.tunnelResult = nil
+        self.dnsResult = nil
+        self.domesticResult = nil
+        self.proxyResult = nil
         currentStage = 1
+        defer {
+            isRunning = false
+        }
         let startTime = CFAbsoluteTimeGetCurrent()
 
         let tunnelResult = inspectTunnel(
@@ -157,15 +174,27 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
             activeNodeName: activeNodeName,
             protocolName: protocolName
         )
+        guard !Task.isCancelled else { currentStage = 0; return }
+        self.tunnelResult = tunnelResult
         currentStage = 2
 
         let dnsResult = await inspectDNS(domain: "www.google.com")
+        guard !Task.isCancelled else { currentStage = 0; return }
+        self.dnsResult = dnsResult
         currentStage = 3
 
-        let domesticResult = await inspectDomestic(targetURL: "https://connect.rom.miui.com/generate_204")
+        let domesticResult = await inspectDomestic(
+            targetURL: "https://connect.rom.miui.com/generate_204",
+            isConnected: isConnected,
+            routingMode: routingMode
+        )
+        guard !Task.isCancelled else { currentStage = 0; return }
+        self.domesticResult = domesticResult
         currentStage = 4
 
         let proxyResult = await inspectProxy(targetURL: "https://www.google.com/generate_204")
+        guard !Task.isCancelled else { currentStage = 0; return }
+        self.proxyResult = proxyResult
         currentStage = 5
 
         let totalDuration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0
@@ -188,7 +217,6 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
         )
 
         self.report = finalReport
-        self.isRunning = false
     }
 
     private func inspectTunnel(
@@ -283,7 +311,20 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
         return (hostOrder & 0xFFFE0000) == 0xC6120000
     }
 
-    private func inspectDomestic(targetURL: String) async -> DomesticDiagnosticResult {
+    private func inspectDomestic(
+        targetURL: String,
+        isConnected: Bool,
+        routingMode: RoutingMode
+    ) async -> DomesticDiagnosticResult {
+        if isConnected && routingMode == .global {
+            return DomesticDiagnosticResult(
+                targetURL: targetURL,
+                httpCode: nil,
+                latencyMs: 0,
+                status: .warning,
+                detail: AppLocalization.string("Skipped in Global mode (all traffic routes through proxy)")
+            )
+        }
         guard let url = URL(string: targetURL) else {
             return DomesticDiagnosticResult(
                 targetURL: targetURL,
@@ -317,7 +358,9 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
                 httpCode: statusCode,
                 latencyMs: latencyMs,
                 status: passed ? .passed : .warning,
-                detail: "HTTP \(statusCode) · \(String(format: "%.0f ms", latencyMs))"
+                detail: AppLocalization.format("HTTP %lld", Int64(statusCode))
+                    + " · "
+                    + AppLocalization.format("%.0f ms", latencyMs)
             )
         } catch {
             let latencyMs = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
@@ -326,7 +369,7 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
                 httpCode: nil,
                 latencyMs: latencyMs,
                 status: .failed,
-                detail: AppLocalization.string("Direct connection failed: ") + error.localizedDescription
+                detail: AppLocalization.format("Direct connection failed (%@)", error.localizedDescription)
             )
         }
     }
@@ -404,7 +447,7 @@ public final class ConnectivityDiagnosticsEngine: ObservableObject {
                 tlsMs: nil,
                 totalMs: totalMs,
                 status: .failed,
-                detail: AppLocalization.string("Proxy probe failed: ") + error.localizedDescription
+                detail: AppLocalization.format("Proxy probe failed (%@)", error.localizedDescription)
             )
         }
     }
@@ -460,25 +503,42 @@ struct DiagnosticReportDocument: FileDocument {
     }
 }
 
+enum SupportDiagnosticsSheet: Identifiable {
+    case inventory
+    case logs
+
+    var id: Self { self }
+}
+
+@MainActor
+final class SupportDiagnosticsPresentationState: ObservableObject {
+    @Published var document: DiagnosticReportDocument?
+    @Published var isExporterPresented = false
+    @Published var statusMessage: String?
+    @Published var statusIsError = false
+    @Published var activeSheet: SupportDiagnosticsSheet?
+}
+
 struct SupportDiagnosticsView: View {
     @EnvironmentObject private var tunnel: TunnelManager
     @StateObject private var diagnosticsEngine = ConnectivityDiagnosticsEngine()
-    @State private var document: DiagnosticReportDocument?
-    @State private var isExporterPresented = false
-    @State private var statusMessage: String?
-    @State private var statusIsError = false
+    @StateObject private var ownedModalState = SupportDiagnosticsPresentationState()
+    var externalModalState: SupportDiagnosticsPresentationState? = nil
     @State private var isCreatingReport = false
-    @State private var isInventoryPresented = false
-    @State private var isLogViewerPresented = false
+    @State private var diagnosticsTask: Task<Void, Never>?
 
     /// Embedded in the Privacy & Diagnostics settings page, which owns the
-    /// scroll view and page margins.
+    /// scroll view, page margins, and root modal/exporter presentation.
     var isEmbedded = false
+
+    private var modalState: SupportDiagnosticsPresentationState {
+        externalModalState ?? ownedModalState
+    }
 
     var body: some View {
         if isEmbedded {
             settingsFormSections
-                .modifier(reportExporter)
+                .onDisappear { cancelDiagnostics() }
         } else {
             ScrollView {
                 diagnosticsContent
@@ -488,6 +548,23 @@ struct SupportDiagnosticsView: View {
                     .frame(maxWidth: AetherVisual.formMaxWidth)
                     .frame(maxWidth: .infinity)
             }
+            .modifier(reportExporter(for: modalState))
+            .sheet(
+                item: Binding(
+                    get: { modalState.activeSheet },
+                    set: { modalState.activeSheet = $0 }
+                )
+            ) { sheet in
+                switch sheet {
+                case .inventory:
+                    ProxyInventorySheet()
+                        .environmentObject(tunnel)
+                case .logs:
+                    DiagnosticLogViewer()
+                        .environmentObject(tunnel)
+                }
+            }
+            .onDisappear { cancelDiagnostics() }
         }
     }
 
@@ -532,15 +609,15 @@ struct SupportDiagnosticsView: View {
                 .padding(AetherVisual.cardPadding)
                 .aetherPanel()
 
-                if let statusMessage {
+                if let statusMessage = modalState.statusMessage {
                     Label(
                         statusMessage,
-                        systemImage: statusIsError
+                        systemImage: modalState.statusIsError
                             ? "exclamationmark.triangle.fill"
                             : "checkmark.circle.fill"
                     )
                     .font(.callout)
-                    .foregroundStyle(AetherReadableTint(color: statusIsError ? .red : .green))
+                    .foregroundStyle(AetherReadableTint(color: modalState.statusIsError ? .red : .green))
                     .accessibilityIdentifier("diagnostics-status")
                 }
 
@@ -568,16 +645,19 @@ struct SupportDiagnosticsView: View {
                     ]
                 )
             }
-        .modifier(reportExporter)
     }
 
-    private var reportExporter: DiagnosticReportExporter {
+    static var defaultReportFilename: String {
+        let day = Date.now.formatted(
+            .iso8601.year().month().day().dateSeparator(.dash)
+        )
+        return "AetherRoute-Diagnostics-" + day
+    }
+
+    private func reportExporter(for state: SupportDiagnosticsPresentationState) -> DiagnosticReportExporter {
         DiagnosticReportExporter(
-            isPresented: $isExporterPresented,
-            document: $document,
-            statusMessage: $statusMessage,
-            statusIsError: $statusIsError,
-            defaultFilename: Self.defaultFilename
+            state: state,
+            defaultFilename: Self.defaultReportFilename
         )
     }
 
@@ -621,7 +701,14 @@ struct SupportDiagnosticsView: View {
                 }
                 Spacer(minLength: AetherVisual.s2)
                 if diagnosticsEngine.isRunning {
-                    ProgressView().controlSize(.small)
+                    HStack(spacing: AetherVisual.s2) {
+                        ProgressView().controlSize(.small)
+                        Button(AppLocalization.string("Cancel")) {
+                            cancelDiagnostics()
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                    }
                 } else {
                     Button(
                         diagnosticsEngine.report == nil
@@ -653,13 +740,9 @@ struct SupportDiagnosticsView: View {
                     }
                     Spacer(minLength: AetherVisual.s2)
                     Button(AppLocalization.string("Show…")) {
-                        isInventoryPresented = true
+                        modalState.activeSheet = .inventory
                     }
                     .accessibilityIdentifier("show-node-inventory")
-                }
-                .sheet(isPresented: $isInventoryPresented) {
-                    ProxyInventorySheet()
-                        .environmentObject(tunnel)
                 }
             }
             HStack(spacing: AetherVisual.s3) {
@@ -672,13 +755,9 @@ struct SupportDiagnosticsView: View {
                 }
                 Spacer(minLength: AetherVisual.s2)
                 Button(AppLocalization.string("View Logs…")) {
-                    isLogViewerPresented = true
+                    modalState.activeSheet = .logs
                 }
                 .accessibilityIdentifier("view-logs")
-            }
-            .sheet(isPresented: $isLogViewerPresented) {
-                DiagnosticLogViewer()
-                    .environmentObject(tunnel)
             }
         } header: {
             Text(AppLocalization.string("Diagnostics"))
@@ -702,12 +781,12 @@ struct SupportDiagnosticsView: View {
                 .disabled(isCreatingReport)
                 .accessibilityIdentifier("export-diagnostics")
             }
-            if let statusMessage {
+            if let statusMessage = modalState.statusMessage {
                 Label(
                     statusMessage,
-                    systemImage: statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+                    systemImage: modalState.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
                 )
-                .foregroundStyle(AetherReadableTint(color: statusIsError ? .red : .green))
+                .foregroundStyle(AetherReadableTint(color: modalState.statusIsError ? .red : .green))
                 .accessibilityIdentifier("diagnostics-status")
             }
             DisclosureGroup(AppLocalization.string("What the report contains")) {
@@ -746,33 +825,38 @@ struct SupportDiagnosticsView: View {
 
     @ViewBuilder
     private var stageRows: some View {
+        let tunnelRes = diagnosticsEngine.report?.tunnel ?? diagnosticsEngine.tunnelResult
+        let dnsRes = diagnosticsEngine.report?.dns ?? diagnosticsEngine.dnsResult
+        let domesticRes = diagnosticsEngine.report?.domestic ?? diagnosticsEngine.domesticResult
+        let proxyRes = diagnosticsEngine.report?.proxy ?? diagnosticsEngine.proxyResult
+
         stageRow(
             index: 1,
             title: AppLocalization.string("Tunnel & Node"),
             symbol: "network",
-            status: stageStatus(stageIndex: 1, resultStatus: diagnosticsEngine.report?.tunnel.status),
-            detail: diagnosticsEngine.report?.tunnel.detail ?? (diagnosticsEngine.currentStage == 1 ? AppLocalization.string("Inspecting tunnel adapter and active profile...") : AppLocalization.string("Pending"))
+            status: stageStatus(stageIndex: 1, resultStatus: tunnelRes?.status),
+            detail: tunnelRes?.detail ?? (diagnosticsEngine.currentStage == 1 ? AppLocalization.string("Inspecting tunnel adapter and active profile...") : AppLocalization.string("Pending"))
         )
         stageRow(
             index: 2,
             title: AppLocalization.string("DNS & Fake-IP"),
             symbol: "wand.and.stars",
-            status: stageStatus(stageIndex: 2, resultStatus: diagnosticsEngine.report?.dns.status),
-            detail: diagnosticsEngine.report?.dns.detail ?? (diagnosticsEngine.currentStage == 2 ? AppLocalization.string("Testing Fake-IP pool (198.18.0.0/15) resolution...") : AppLocalization.string("Pending"))
+            status: stageStatus(stageIndex: 2, resultStatus: dnsRes?.status),
+            detail: dnsRes?.detail ?? (diagnosticsEngine.currentStage == 2 ? AppLocalization.string("Testing Fake-IP pool (198.18.0.0/15) resolution...") : AppLocalization.string("Pending"))
         )
         stageRow(
             index: 3,
             title: AppLocalization.string("Domestic Direct"),
             symbol: "bolt.fill",
-            status: stageStatus(stageIndex: 3, resultStatus: diagnosticsEngine.report?.domestic.status),
-            detail: diagnosticsEngine.report?.domestic.detail ?? (diagnosticsEngine.currentStage == 3 ? AppLocalization.string("Probing domestic high-speed connectivity endpoint...") : AppLocalization.string("Pending"))
+            status: stageStatus(stageIndex: 3, resultStatus: domesticRes?.status),
+            detail: domesticRes?.detail ?? (diagnosticsEngine.currentStage == 3 ? AppLocalization.string("Probing domestic high-speed connectivity endpoint...") : AppLocalization.string("Pending"))
         )
         stageRow(
             index: 4,
             title: AppLocalization.string("Outbound Proxy Path"),
             symbol: "globe.americas.fill",
-            status: stageStatus(stageIndex: 4, resultStatus: diagnosticsEngine.report?.proxy.status),
-            detail: diagnosticsEngine.report?.proxy.detail ?? (diagnosticsEngine.currentStage == 4 ? AppLocalization.string("Testing proxy node TCP connect and TLS handshake...") : AppLocalization.string("Pending"))
+            status: stageStatus(stageIndex: 4, resultStatus: proxyRes?.status),
+            detail: proxyRes?.detail ?? (diagnosticsEngine.currentStage == 4 ? AppLocalization.string("Testing proxy node TCP connect and TLS handshake...") : AppLocalization.string("Pending"))
         )
     }
 
@@ -802,6 +886,11 @@ struct SupportDiagnosticsView: View {
                         Text(AppLocalization.string("Diagnosing..."))
                             .font(.subheadline)
                             .foregroundStyle(AetherVisual.secondaryText)
+                        Button(AppLocalization.string("Cancel")) {
+                            cancelDiagnostics()
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
                     }
                     .padding(.horizontal, AetherVisual.s2)
                 } else if diagnosticsEngine.report != nil {
@@ -867,37 +956,7 @@ struct SupportDiagnosticsView: View {
                 Divider()
 
                 VStack(spacing: AetherVisual.s3) {
-                    stageRow(
-                        index: 1,
-                        title: AppLocalization.string("Tunnel & Node"),
-                        symbol: "network",
-                        status: stageStatus(stageIndex: 1, resultStatus: diagnosticsEngine.report?.tunnel.status),
-                        detail: diagnosticsEngine.report?.tunnel.detail ?? (diagnosticsEngine.currentStage == 1 ? AppLocalization.string("Inspecting tunnel adapter and active profile...") : AppLocalization.string("Pending"))
-                    )
-
-                    stageRow(
-                        index: 2,
-                        title: AppLocalization.string("DNS & Fake-IP"),
-                        symbol: "wand.and.stars",
-                        status: stageStatus(stageIndex: 2, resultStatus: diagnosticsEngine.report?.dns.status),
-                        detail: diagnosticsEngine.report?.dns.detail ?? (diagnosticsEngine.currentStage == 2 ? AppLocalization.string("Testing Fake-IP pool (198.18.0.0/15) resolution...") : AppLocalization.string("Pending"))
-                    )
-
-                    stageRow(
-                        index: 3,
-                        title: AppLocalization.string("Domestic Direct"),
-                        symbol: "bolt.fill",
-                        status: stageStatus(stageIndex: 3, resultStatus: diagnosticsEngine.report?.domestic.status),
-                        detail: diagnosticsEngine.report?.domestic.detail ?? (diagnosticsEngine.currentStage == 3 ? AppLocalization.string("Probing domestic high-speed connectivity endpoint...") : AppLocalization.string("Pending"))
-                    )
-
-                    stageRow(
-                        index: 4,
-                        title: AppLocalization.string("Outbound Proxy Path"),
-                        symbol: "globe.americas.fill",
-                        status: stageStatus(stageIndex: 4, resultStatus: diagnosticsEngine.report?.proxy.status),
-                        detail: diagnosticsEngine.report?.proxy.detail ?? (diagnosticsEngine.currentStage == 4 ? AppLocalization.string("Testing proxy node TCP connect and TLS handshake...") : AppLocalization.string("Pending"))
-                    )
+                    stageRows
                 }
 
                 // Verdict Banner
@@ -1017,7 +1076,7 @@ struct SupportDiagnosticsView: View {
                     .font(.body.weight(.bold))
                     .foregroundStyle(foregroundStyle)
                 Spacer()
-                Text(String(format: "%.0f ms", report.totalDurationMs))
+                Text(AppLocalization.format("%.0f ms", report.totalDurationMs))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(AetherVisual.secondaryText)
             }
@@ -1032,11 +1091,16 @@ struct SupportDiagnosticsView: View {
     }
 
     private func triggerDiagnostics() {
+        let routingMode = tunnel.effectiveRoutingMode
         var activeNode: String?
         var protocolName: String?
-        if let summary = tunnel.activeProfileSummary,
-           let primaryGroup = summary.proxyGroups.first(where: { $0.strategy.lowercased() == "select" }) ?? summary.proxyGroups.first {
-            activeNode = tunnel.proxySelections[primaryGroup.name]?.selectedMember
+        if let summary = tunnel.activeProfileSummary, routingMode != .direct {
+            if routingMode == .global {
+                activeNode = tunnel.proxySelections["GLOBAL"]?.selectedMember
+                    ?? TunnelManager.resolvedGlobalTargetMember(in: summary)
+            } else if let primaryGroup = tunnel.resolvedPrimaryRoutingGroup() {
+                activeNode = tunnel.proxySelections[primaryGroup.name]?.selectedMember
+            }
             if let node = activeNode {
                 protocolName = summary.proxies.first(where: { $0.name == node })?.protocolName
             }
@@ -1044,9 +1108,9 @@ struct SupportDiagnosticsView: View {
 
         let isConnected = tunnel.isConnected
         let isConnecting = (tunnel.state == .connecting)
-        let routingMode = tunnel.routingMode
 
-        Task {
+        diagnosticsTask?.cancel()
+        diagnosticsTask = Task { @MainActor in
             await diagnosticsEngine.runDiagnostics(
                 isConnected: isConnected,
                 isConnecting: isConnecting,
@@ -1054,7 +1118,14 @@ struct SupportDiagnosticsView: View {
                 activeNodeName: activeNode,
                 protocolName: protocolName
             )
+            diagnosticsTask = nil
         }
+    }
+
+    private func cancelDiagnostics() {
+        diagnosticsTask?.cancel()
+        diagnosticsTask = nil
+        diagnosticsEngine.cancel()
     }
 
     // MARK: - Support Report Details
@@ -1093,18 +1164,18 @@ struct SupportDiagnosticsView: View {
         isCreatingReport = true
         defer { isCreatingReport = false }
         do {
-            document = DiagnosticReportDocument(
+            modalState.document = DiagnosticReportDocument(
                 data: try await tunnel.makeDiagnosticReport()
             )
-            statusMessage = nil
-            statusIsError = false
-            isExporterPresented = true
+            modalState.statusMessage = nil
+            modalState.statusIsError = false
+            modalState.isExporterPresented = true
         } catch {
-            document = nil
-            statusMessage = AppLocalization.string(
+            modalState.document = nil
+            modalState.statusMessage = AppLocalization.string(
                 "The diagnostic report could not be created."
             )
-            statusIsError = true
+            modalState.statusIsError = true
         }
     }
 
@@ -1122,7 +1193,11 @@ private struct DiagnosticItemLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: AetherVisual.s2) {
             configuration.icon
-                .foregroundStyle(tint)
+                .foregroundStyle(
+                    tint == .secondary
+                        ? AnyShapeStyle(AetherVisual.secondaryText)
+                        : AnyShapeStyle(AetherReadableTint(color: tint))
+                )
             configuration.title
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -1131,29 +1206,26 @@ private struct DiagnosticItemLabelStyle: LabelStyle {
     }
 }
 
-private struct DiagnosticReportExporter: ViewModifier {
-    @Binding var isPresented: Bool
-    @Binding var document: DiagnosticReportDocument?
-    @Binding var statusMessage: String?
-    @Binding var statusIsError: Bool
+struct DiagnosticReportExporter: ViewModifier {
+    @ObservedObject var state: SupportDiagnosticsPresentationState
     let defaultFilename: String
 
     func body(content: Content) -> some View {
         content.fileExporter(
-            isPresented: $isPresented,
-            document: document,
+            isPresented: $state.isExporterPresented,
+            document: state.document,
             contentType: .json,
             defaultFilename: defaultFilename
         ) { result in
             switch result {
             case .success:
-                statusMessage = AppLocalization.string("Diagnostic report saved.")
-                statusIsError = false
+                state.statusMessage = AppLocalization.string("Diagnostic report saved.")
+                state.statusIsError = false
             case .failure:
-                statusMessage = AppLocalization.string("The diagnostic report could not be saved.")
-                statusIsError = true
+                state.statusMessage = AppLocalization.string("The diagnostic report could not be saved.")
+                state.statusIsError = true
             }
-            document = nil
+            state.document = nil
         }
     }
 }

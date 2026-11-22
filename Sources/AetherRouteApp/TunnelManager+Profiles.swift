@@ -47,10 +47,8 @@ extension TunnelManager {
                 } else {
                     // The profile works; only nodes pinned to these CA files
                     // will refuse to connect, so say which and how to fix it.
-                    profileMessage = String.localizedStringWithFormat(
-                        AppLocalization.string(
-                            "Profile imported, but AetherRoute could not read the CA file %@. Nodes that use it will not connect; paste the certificate into ca-str instead."
-                        ),
+                    profileMessage = AppLocalization.format(
+                        "Profile imported, but AetherRoute could not read the CA file %@. Nodes that use it will not connect; paste the certificate into ca-str instead.",
                         unreadable.joined(separator: ", ")
                     )
                     profileMessageIsError = true
@@ -72,7 +70,8 @@ extension TunnelManager {
 
     @discardableResult
     func createNativeProfile(node: AetherNode) async -> Bool {
-        guard ensurePrivacyConsent(), canImportOrAddProfile else {
+        guard ensurePrivacyConsent() else { return false }
+        guard canImportOrAddProfile else {
             profileMessage = AppLocalization.string(
                 "Wait for current profile operations to finish before adding node."
             )
@@ -83,8 +82,8 @@ extension TunnelManager {
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         do {
-            let profileName = String.localizedStringWithFormat(
-                AppLocalization.string("%@ · Manual"),
+            let profileName = AppLocalization.format(
+                "%@ · Manual",
                 node.name
             )
             let shouldActivate = !isEnabled || activeProfileID == nil
@@ -120,7 +119,7 @@ extension TunnelManager {
             return true
         } catch {
             diagnosticEvents.record(.profileOperationFailed)
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return false
         }
@@ -128,8 +127,9 @@ extension TunnelManager {
 
     @discardableResult
     func updateNativeProfile(id: UUID, nodes: [AetherNode]) async -> Bool {
-        guard ensurePrivacyConsent(), canModifyProfile(id: id) else {
-            profileMessage = AppLocalization.string(
+        guard ensurePrivacyConsent() else { return false }
+        guard canModifyProfile(id: id) else {
+            profileMessage = profileEditLockReason ?? AppLocalization.string(
                 "Stop the secure connection before changing profiles."
             )
             profileMessageIsError = true
@@ -191,7 +191,7 @@ extension TunnelManager {
             return true
         } catch {
             diagnosticEvents.record(.profileOperationFailed)
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return false
         }
@@ -222,7 +222,7 @@ extension TunnelManager {
             profileMessageIsError = false
             return archive
         } catch {
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return nil
         }
@@ -233,8 +233,9 @@ extension TunnelManager {
         from url: URL,
         password: String
     ) async -> Bool {
-        guard ensurePrivacyConsent(), canModifyProfiles else {
-            profileMessage = AppLocalization.string(
+        guard ensurePrivacyConsent() else { return false }
+        guard canModifyProfiles else {
+            profileMessage = profileEditLockReason ?? AppLocalization.string(
                 "Stop the secure connection before changing profiles."
             )
             profileMessageIsError = true
@@ -285,7 +286,7 @@ extension TunnelManager {
             profileMessageIsError = false
             return true
         } catch {
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return false
         }
@@ -328,8 +329,9 @@ extension TunnelManager {
 
     @discardableResult
     func addBypassRule(_ input: String) async -> Bool {
-        guard ensurePrivacyConsent(), canModifyBypassPolicy else {
-            bypassPolicyMessage = AppLocalization.string(
+        guard ensurePrivacyConsent() else { return false }
+        guard canModifyBypassPolicy else {
+            bypassPolicyMessage = profileEditLockReason ?? AppLocalization.string(
                 "Disconnect before changing bypass rules."
             )
             bypassPolicyMessageIsError = true
@@ -344,15 +346,16 @@ extension TunnelManager {
             bypassPolicyMessageIsError = false
             return true
         } catch {
-            bypassPolicyMessage = error.localizedDescription
+            bypassPolicyMessage = localizedProfileOperationError(error)
             bypassPolicyMessageIsError = true
             return false
         }
     }
 
     func removeBypassRule(id: UUID) async {
-        guard ensurePrivacyConsent(), canModifyBypassPolicy else {
-            bypassPolicyMessage = AppLocalization.string(
+        guard ensurePrivacyConsent() else { return }
+        guard canModifyBypassPolicy else {
+            bypassPolicyMessage = profileEditLockReason ?? AppLocalization.string(
                 "Disconnect before changing bypass rules."
             )
             bypassPolicyMessageIsError = true
@@ -365,7 +368,7 @@ extension TunnelManager {
             bypassPolicyMessage = AppLocalization.string("Bypass rule removed.")
             bypassPolicyMessageIsError = false
         } catch {
-            bypassPolicyMessage = error.localizedDescription
+            bypassPolicyMessage = localizedProfileOperationError(error)
             bypassPolicyMessageIsError = true
         }
     }
@@ -392,7 +395,8 @@ extension TunnelManager {
 
     @discardableResult
     func addSubscription(urlText: String) async -> Bool {
-        guard ensurePrivacyConsent(), canImportOrAddProfile else {
+        guard ensurePrivacyConsent() else { return false }
+        guard canImportOrAddProfile else {
             profileMessage = AppLocalization.string(
                 "Wait for current profile operations to finish before adding subscription."
             )
@@ -685,7 +689,7 @@ extension TunnelManager {
             } else if isApplicationTerminating || userIntentEpoch != intentEpoch {
                 return
             } else {
-                profileMessage = error.localizedDescription
+                profileMessage = localizedConnectionError(error).localizedDescription
             }
             profileMessageIsError = true
         }
@@ -862,7 +866,14 @@ extension TunnelManager {
 
     @discardableResult
     func renameProfile(id: UUID, name: String) async -> Bool {
-        guard canModifyProfile(id: id) else { return false }
+        guard ensurePrivacyConsent() else { return false }
+        guard canModifyProfile(id: id) else {
+            profileMessage = profileEditLockReason ?? AppLocalization.string(
+                "Stop the secure connection before changing profiles."
+            )
+            profileMessageIsError = true
+            return false
+        }
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
         if isUIReviewMode {
@@ -906,7 +917,7 @@ extension TunnelManager {
             profileMessageIsError = false
             return true
         } catch {
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
             return false
         }
@@ -917,6 +928,7 @@ extension TunnelManager {
         interval: TimeInterval?,
         followProvider: Bool = false
     ) async {
+        guard ensurePrivacyConsent() else { return }
         guard canModifyProfile(id: id) || canRefreshAnySubscription,
               let index = profiles.firstIndex(where: { $0.id == id }),
               let sub = profiles[index].profile.subscription else { return }
@@ -959,13 +971,20 @@ extension TunnelManager {
             profileMessage = AppLocalization.string("Auto-update interval updated.")
             profileMessageIsError = false
         } catch {
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
         }
     }
 
     func removeProfile(id: UUID) async {
-        guard canModifyProfile(id: id) else { return }
+        guard ensurePrivacyConsent() else { return }
+        guard canModifyProfile(id: id) else {
+            profileMessage = profileEditLockReason ?? AppLocalization.string(
+                "Stop the secure connection before changing profiles."
+            )
+            profileMessageIsError = true
+            return
+        }
         let removedProfile = profiles.first(where: { $0.id == id })?.profile
         isUpdatingProfiles = true
         defer { isUpdatingProfiles = false }
@@ -1001,7 +1020,7 @@ extension TunnelManager {
             profileMessage = AppLocalization.string("Profile removed.")
             profileMessageIsError = false
         } catch {
-            profileMessage = error.localizedDescription
+            profileMessage = localizedProfileOperationError(error)
             profileMessageIsError = true
         }
     }
@@ -1307,6 +1326,117 @@ extension TunnelManager {
         if let compilerError = error as? AetherNodeProfileCompilerError {
             return compilerError.localizedAppDescription
         }
+        if let catalogError = error as? ProfileCatalogStoreError {
+            switch catalogError {
+            case .activeMirrorWriteFailed:
+                return AppLocalization.string("The active profile could not be synchronized with the network extension. No profile switch was completed.")
+            case .activeProfileNotFound:
+                return AppLocalization.string("The encrypted profile catalog does not contain its active profile.")
+            case .cannotRemoveActiveProfile:
+                return AppLocalization.string("Activate another profile before removing this one.")
+            case .duplicateIdentifier:
+                return AppLocalization.string("The encrypted profile catalog contains duplicate identifiers.")
+            case .emptyName:
+                return AppLocalization.string("Enter a profile name.")
+            case let .encryptedCatalogTooLarge(bytes):
+                return AppLocalization.format("The encrypted profile catalog is too large (%lld bytes).", Int64(clamping: bytes))
+            case .invalidMergeSpec:
+                return AppLocalization.string("Select at least two source profiles with valid nodes to create a merged profile.")
+            case .nativeProfileMismatch:
+                return AppLocalization.string("The native node document does not match its compiled core profile.")
+            case .notMergedProfile:
+                return AppLocalization.string("Only merged profiles can be rebuilt from source subscriptions.")
+            case .notNativeProfile:
+                return AppLocalization.string("Only AetherRoute-native profiles can be edited as nodes.")
+            case let .profileLimitReached(limit):
+                return AppLocalization.format("The profile limit (%lld) has been reached.", Int64(clamping: limit))
+            case .profileNotFound:
+                return AppLocalization.string("The selected profile no longer exists.")
+            case .transactionRecoveryFailed:
+                return AppLocalization.string("The profile switch could not be rolled back. Restart AetherRoute to repair the active profile mirror before connecting.")
+            case let .unsupportedFormat(version):
+                return AppLocalization.format("The profile catalog format version %lld is not supported.", Int64(clamping: version))
+            }
+        }
+        if let archiveError = error as? PortableProfileArchiveError {
+            switch archiveError {
+            case let .archiveTooLarge(bytes):
+                return AppLocalization.format("The portable profile archive is too large (%lld bytes).", Int64(clamping: bytes))
+            case .authenticationFailed:
+                return AppLocalization.string("The password is incorrect or the portable archive was modified.")
+            case .emptyCatalog:
+                return AppLocalization.string("Add at least one profile before creating a portable archive.")
+            case .encryptionFailed:
+                return AppLocalization.string("The portable profile archive could not be encrypted.")
+            case .envelopeEncodingFailed:
+                return AppLocalization.string("The portable profile archive could not be encoded.")
+            case .invalidCatalog:
+                return AppLocalization.string("The portable archive contains an invalid profile library.")
+            case let .invalidIterationCount(iterations):
+                return AppLocalization.format("The portable archive uses an unsafe or unsupported key-derivation count (%lld).", Int64(clamping: iterations))
+            case let .keyDerivationFailed(status):
+                return AppLocalization.format("The portable archive key could not be derived (%lld).", Int64(clamping: status))
+            case .malformedEnvelope:
+                return AppLocalization.string("The selected file is not a valid AetherRoute portable archive.")
+            case .passwordTooLong:
+                return AppLocalization.string("The archive password is too long.")
+            case .payloadDecodingFailed:
+                return AppLocalization.string("The portable archive contents could not be decoded.")
+            case .payloadEncodingFailed:
+                return AppLocalization.string("The profile library could not be prepared for export.")
+            case .randomGenerationFailed:
+                return AppLocalization.string("Secure random data could not be generated.")
+            case let .unsupportedCipher(cipher):
+                return AppLocalization.format("The portable archive cipher %@ is not supported.", cipher)
+            case let .unsupportedEnvelopeFormat(version):
+                return AppLocalization.format("The portable archive format version %lld is not supported.", Int64(clamping: version))
+            case let .unsupportedKDF(kdf):
+                return AppLocalization.format("The portable archive key-derivation method %@ is not supported.", kdf)
+            case let .unsupportedPayloadFormat(version):
+                return AppLocalization.format("The portable profile payload version %lld is not supported.", Int64(clamping: version))
+            case let .weakPassword(minimum):
+                return AppLocalization.format("Use a password with at least %lld characters.", Int64(clamping: minimum))
+            }
+        }
+        if let bypassError = error as? BypassPolicyError {
+            switch bypassError {
+            case .appGroupUnavailable:
+                return AppLocalization.string("The shared App Group container is unavailable.")
+            case .authenticationFailed:
+                return AppLocalization.string("The saved bypass policy could not be authenticated.")
+            case .decodingFailed, .malformedEnvelope:
+                return AppLocalization.string("The saved bypass policy is malformed.")
+            case .duplicateRule:
+                return AppLocalization.string("This bypass rule already exists.")
+            case .encodingFailed, .encryptionFailed:
+                return AppLocalization.string("The bypass policy could not be saved securely.")
+            case let .encryptedFileTooLarge(size):
+                return AppLocalization.format("The encrypted bypass policy is too large (%lld bytes).", Int64(clamping: size))
+            case .invalidCIDR:
+                return AppLocalization.string("Enter a valid IPv4 or IPv6 CIDR. Default-route bypasses are not allowed.")
+            case .invalidDomain:
+                return AppLocalization.string("Enter a valid ASCII domain suffix, such as example.com.")
+            case let .invalidKeyLength(length):
+                return AppLocalization.format("The bypass policy key has an invalid length (%lld bytes).", Int64(clamping: length))
+            case let .tooManyRules(count):
+                return AppLocalization.format("The bypass policy contains too many rules (%lld).", Int64(clamping: count))
+            case .unsupportedAlgorithm:
+                return AppLocalization.string("The bypass policy encryption algorithm is not supported.")
+            case let .unsupportedFormat(version):
+                return AppLocalization.format("The bypass policy format version %lld is not supported.", Int64(clamping: version))
+            case .unsupportedKeyID:
+                return AppLocalization.string("The bypass policy key identifier is not supported.")
+            }
+        }
+        if error is ActiveProfileStoreError
+            || error is ProfileKeyStoreError
+            || error is KeychainAccessGroupResolutionError
+            || error is RoutingResourceError
+            || error is ProxySelectionProviderClientError
+            || error is CustomRuleGeoSiteError
+            || error is BundledRoutingResourceError {
+            return localizedConnectionError(error).localizedDescription
+        }
         guard let issue = ProfileOperationIssue(error) else {
             return AppLocalization.string(
                 "The profile operation could not be completed."
@@ -1334,13 +1464,13 @@ extension TunnelManager {
                 "The subscription provider redirected too many times."
             )
         case let .subscriptionResponseTooLarge(bytes):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The subscription response is too large (%lld bytes)."),
+            return AppLocalization.format(
+                "The subscription response is too large (%lld bytes).",
                 Int64(clamping: bytes)
             )
         case let .subscriptionHTTPStatus(status):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The subscription provider returned HTTP %lld. Check that the link is active and permitted for this Mac."),
+            return AppLocalization.format(
+                "The subscription provider returned HTTP %lld. Check that the link is active and permitted for this Mac.",
                 Int64(clamping: status)
             )
         case .notModifiedWithoutActiveProfile:
@@ -1350,15 +1480,15 @@ extension TunnelManager {
         case .emptyProfile:
             return AppLocalization.string("The profile is empty.")
         case let .profileTooLarge(bytes):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The profile is too large (%lld bytes)."),
+            return AppLocalization.format(
+                "The profile is too large (%lld bytes).",
                 Int64(clamping: bytes)
             )
         case .profileNotUTF8:
             return AppLocalization.string("The profile is not UTF-8 text.")
         case let .forbiddenExecutableKey(key):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The executable profile key ‘%@’ is not allowed."),
+            return AppLocalization.format(
+                "The executable profile key ‘%@’ is not allowed.",
                 key
             )
         case .missingProxyDefinition:
@@ -1366,8 +1496,8 @@ extension TunnelManager {
                 "No proxies or proxy providers were found in the profile."
             )
         case let .reservedRule(kind):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The profile uses the rule type ‘%@’, which is reserved for AetherRoute’s application rules."),
+            return AppLocalization.format(
+                "The profile uses the rule type ‘%@’, which is reserved for AetherRoute’s application rules.",
                 kind
             )
         case .unsupportedSubscriptionFormat:
@@ -1379,18 +1509,18 @@ extension TunnelManager {
                 "The subscription contains invalid Base64 text."
             )
         case let .tooManySubscriptionNodes(maximum):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The subscription contains more than %lld nodes."),
+            return AppLocalization.format(
+                "The subscription contains more than %lld nodes.",
                 Int64(clamping: maximum)
             )
         case let .invalidSubscriptionNode(index):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("Subscription node %lld is invalid."),
+            return AppLocalization.format(
+                "Subscription node %lld is invalid.",
                 Int64(clamping: index)
             )
         case let .unsupportedShareScheme(scheme):
-            return String.localizedStringWithFormat(
-                AppLocalization.string("The subscription uses the unsupported ‘%@’ share-link scheme."),
+            return AppLocalization.format(
+                "The subscription uses the unsupported ‘%@’ share-link scheme.",
                 scheme
             )
         }
@@ -1653,7 +1783,13 @@ extension TunnelManager {
             cachedEffectiveProfileCompilation = nil
             refreshActiveProfileSummary()
             if state == .connected {
-                await reloadCustomRulesLive()
+                let reloaded = await reloadCustomRulesLive()
+                if !reloaded {
+                    profileMessage = customRuleMessage
+                        ?? AppLocalization.string("Global override template saved, but live reload failed.")
+                    profileMessageIsError = true
+                    return false
+                }
             }
             profileMessage = AppLocalization.string("Global override template saved.")
             profileMessageIsError = false
@@ -1852,6 +1988,7 @@ extension TunnelManager {
 
     @discardableResult
     func refreshAllExternalProviders() async -> (rules: [RuleProviderMetadata], proxies: [ProxyProviderMetadata]) {
+        guard ensurePrivacyConsent() else { return ([], []) }
         let yaml = activeProfile?.yaml ?? ""
         let stagedRules: [RuleProviderMetadata]
         let stagedProxies: [ProxyProviderMetadata]
@@ -1866,11 +2003,26 @@ extension TunnelManager {
 
         await reloadCustomRuleProvidersFromEngine()
         refreshActiveProfileSummary()
+        var reloadSucceeded = true
         if state == .connected, !isUIReviewMode {
-            await reloadCustomRulesLive()
+            reloadSucceeded = await reloadCustomRulesLive()
         }
-        profileMessage = AppLocalization.string("External rule and proxy providers staged.")
-        profileMessageIsError = false
+        let firstProviderError = stagedRules.compactMap(\.lastError).first
+            ?? stagedProxies.compactMap(\.lastError).first
+        if let firstProviderError {
+            profileMessage = AppLocalization.format(
+                "External provider update finished with warnings: %@",
+                firstProviderError.sanitizedMessageWithRedactedURLs()
+            )
+            profileMessageIsError = true
+        } else if !reloadSucceeded {
+            profileMessage = customRuleMessage
+                ?? AppLocalization.string("External providers staged, but live reload failed.")
+            profileMessageIsError = true
+        } else {
+            profileMessage = AppLocalization.string("External rule and proxy providers staged.")
+            profileMessageIsError = false
+        }
         return (stagedRules, stagedProxies)
     }
 

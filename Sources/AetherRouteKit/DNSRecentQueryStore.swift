@@ -66,6 +66,12 @@ public enum DNSRecentQueryFilter: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+public enum DNSResolvedPolicyKind: String, Codable, Equatable, Sendable {
+    case direct
+    case reject
+    case rejectDrop
+}
+
 public struct DNSRecentQueryRecord: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let timestamp: Date
@@ -78,6 +84,19 @@ public struct DNSRecentQueryRecord: Identifiable, Equatable, Sendable {
     public let sourceApp: String?
     public let matchedRuleSummary: String?
     public let matchedRouteTarget: String?
+
+    public var resolvedPolicyKind: DNSResolvedPolicyKind? {
+        switch resolvedValue.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "DIRECT":
+            return .direct
+        case "REJECT":
+            return .reject
+        case "REJECT-DROP":
+            return .rejectDrop
+        default:
+            return nil
+        }
+    }
 
     public init(
         id: UUID = UUID(),
@@ -130,20 +149,24 @@ public struct FakeIPReverseLookupMatch: Equatable, Sendable {
 public struct DNSRecentQueryStore: Equatable, Sendable {
     public static let maxEntries: Int = 64
     public static let maxFakeIPMappings: Int = 256
-    private static let maxIngestedConnectionKeys: Int = 256
+    public static let maxInactiveConnectionKeys: Int = 256
 
     public let capacity: Int
     public private(set) var entries: [DNSRecentQueryRecord]
     private var fakeIPTable: [String: FakeIPReverseLookupMatch]
-    private var ingestedConnectionKeys: [String]
-    private var ingestedConnectionKeySet: Set<String>
+    private var activeConnectionKeys: Set<String>
+    private var inactiveConnectionLRU: [String]
+    private var inactiveConnectionKeySet: Set<String>
+    private var suppressedFlowSignatures: Set<String>
 
     public init(capacity: Int = DNSRecentQueryStore.maxEntries) {
         self.capacity = min(max(capacity, 1), Self.maxEntries)
         self.entries = []
         self.fakeIPTable = [:]
-        self.ingestedConnectionKeys = []
-        self.ingestedConnectionKeySet = []
+        self.activeConnectionKeys = []
+        self.inactiveConnectionLRU = []
+        self.inactiveConnectionKeySet = []
+        self.suppressedFlowSignatures = []
     }
 
     public var count: Int { entries.count }
@@ -207,11 +230,26 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
         return fakeIPTable[normalized]
     }
 
-    public mutating func clearAll() {
+    public mutating func clear(suppressingActiveConnections connections: [ConnectionTelemetry] = []) {
         entries.removeAll(keepingCapacity: false)
         fakeIPTable.removeAll(keepingCapacity: false)
-        ingestedConnectionKeys.removeAll(keepingCapacity: false)
-        ingestedConnectionKeySet.removeAll(keepingCapacity: false)
+        suppressedFlowSignatures.formUnion(activeConnectionKeys)
+        suppressedFlowSignatures.formUnion(inactiveConnectionKeySet)
+        for connection in connections {
+            if let key = Self.connectionDedupeKey(for: connection) {
+                activeConnectionKeys.insert(key)
+                suppressedFlowSignatures.insert(key)
+            }
+        }
+        let inactiveSuppressed = suppressedFlowSignatures.subtracting(activeConnectionKeys)
+        for key in inactiveSuppressed.sorted() where !inactiveConnectionKeySet.contains(key) {
+            appendInactiveConnectionKey(key)
+        }
+        suppressedFlowSignatures = activeConnectionKeys.union(inactiveConnectionKeySet)
+    }
+
+    public mutating func clearAll() {
+        clear()
     }
 
     /// Converts and records a `DNSLookupReport` produced by `DNSLookupInspector`,
@@ -306,14 +344,32 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
         return record
     }
 
+    public static func connectionDedupeKey(for connection: ConnectionTelemetry) -> String? {
+        let destination = DNSLookupInspector.normalizeHost(connection.destination)
+            ?? connection.destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !destination.isEmpty else { return nil }
+
+        let payloadTrimmed = connection.rulePayload.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasMeasuredDNS = connection.dnsDurationMilliseconds != nil
+        let hasFakeIP = FakeIPAddressMatcher.normalizeFakeIP(destination) != nil
+            || FakeIPAddressMatcher.normalizeFakeIP(payloadTrimmed) != nil
+        guard hasMeasuredDNS || hasFakeIP else { return nil }
+
+        return "\(connection.startedAtUnixMilliseconds)|\(destination)|\(payloadTrimmed)|\(connection.sourceAppIdentifier)"
+    }
+
     /// Ingests active `ConnectionTelemetry` snapshots into the recent DNS store and
     /// Fake-IP reverse lookup index without touching `Core/Engine` FFI. Deduplicates
-    /// previously seen connections so periodic telemetry polls never spam the ring buffer.
+    /// previously seen connections using active-set retention plus bounded LRU for
+    /// closed flows so long-lived flows stay deduplicated past 256 flows.
     public mutating func ingestConnections(
         _ connections: [ConnectionTelemetry],
         runtimePolicy: DNSRuntimePolicy? = nil,
         now: Date = Date()
     ) {
+        var currentActiveKeys: Set<String> = []
+        currentActiveKeys.reserveCapacity(connections.count)
+
         for connection in connections {
             let destination = DNSLookupInspector.normalizeHost(connection.destination)
                 ?? connection.destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -328,18 +384,28 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
             guard hasMeasuredDNS || hasFakeIP else { continue }
 
             let dedupeKey = "\(connection.startedAtUnixMilliseconds)|\(destination)|\(payloadTrimmed)|\(connection.sourceAppIdentifier)"
-            guard !ingestedConnectionKeySet.contains(dedupeKey) else { continue }
-            rememberIngestedKey(dedupeKey)
+            currentActiveKeys.insert(dedupeKey)
+
+            let alreadySeen = activeConnectionKeys.contains(dedupeKey)
+                || inactiveConnectionKeySet.contains(dedupeKey)
+                || suppressedFlowSignatures.contains(dedupeKey)
+            if inactiveConnectionKeySet.contains(dedupeKey) {
+                removeInactiveConnectionKey(dedupeKey)
+            }
+            if alreadySeen {
+                continue
+            }
 
             let timestamp: Date = connection.startedAtUnixMilliseconds > 0
                 ? Date(timeIntervalSince1970: Double(connection.startedAtUnixMilliseconds) / 1_000.0)
                 : now
 
-            let chainUpper = connection.proxyChain.uppercased()
+            let chainTrimmed = connection.proxyChain.trimmingCharacters(in: .whitespacesAndNewlines)
+            let chainUpper = chainTrimmed.uppercased()
             let isRejected = chainUpper.contains("REJECT")
             let kind: DNSRecentQueryKind = if isRejected {
                 .rejected
-            } else if hasFakeIP || runtimePolicy?.resolutionMode == .fakeIP {
+            } else if hasFakeIP {
                 .fakeIP
             } else {
                 .direct
@@ -350,9 +416,9 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
             } else if let destFakeIP {
                 destFakeIP
             } else if isRejected {
-                "REJECT"
-            } else if !connection.proxyChain.isEmpty {
-                connection.proxyChain
+                chainUpper == "REJECT-DROP" ? "REJECT-DROP" : "REJECT"
+            } else if !chainTrimmed.isEmpty {
+                chainUpper == "DIRECT" ? "DIRECT" : chainTrimmed
             } else {
                 "DIRECT"
             }
@@ -381,8 +447,7 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
                 if kind == .fakeIP {
                     return "Fake-IP"
                 }
-                let chain = connection.proxyChain.trimmingCharacters(in: .whitespacesAndNewlines)
-                return chain.isEmpty ? "System DNS" : chain
+                return "System DNS"
             }()
 
             let record = DNSRecentQueryRecord(
@@ -395,7 +460,7 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
                 latencyMs: connection.dnsDurationMilliseconds.map(Int.init),
                 sourceApp: sourceApp.isEmpty ? nil : sourceApp,
                 matchedRuleSummary: ruleSummary,
-                matchedRouteTarget: connection.proxyChain.isEmpty ? nil : connection.proxyChain
+                matchedRouteTarget: chainTrimmed.isEmpty ? nil : chainTrimmed
             )
 
             self.record(record)
@@ -403,17 +468,36 @@ public struct DNSRecentQueryStore: Equatable, Sendable {
                 registerFakeIPMapping(fakeIP: fakeIP, domain: domain, record: record)
             }
         }
+
+        let newlyClosed = activeConnectionKeys.subtracting(currentActiveKeys)
+        if !newlyClosed.isEmpty {
+            for closedKey in newlyClosed.sorted() {
+                appendInactiveConnectionKey(closedKey)
+            }
+        }
+        activeConnectionKeys = currentActiveKeys
     }
 
-    private mutating func rememberIngestedKey(_ key: String) {
-        ingestedConnectionKeySet.insert(key)
-        ingestedConnectionKeys.append(key)
-        if ingestedConnectionKeys.count > Self.maxIngestedConnectionKeys {
-            let overflow = ingestedConnectionKeys.count - Self.maxIngestedConnectionKeys
-            for evicted in ingestedConnectionKeys.prefix(overflow) {
-                ingestedConnectionKeySet.remove(evicted)
+    private mutating func appendInactiveConnectionKey(_ key: String) {
+        if inactiveConnectionKeySet.contains(key) {
+            removeInactiveConnectionKey(key)
+        }
+        inactiveConnectionKeySet.insert(key)
+        inactiveConnectionLRU.append(key)
+        if inactiveConnectionLRU.count > Self.maxInactiveConnectionKeys {
+            let overflow = inactiveConnectionLRU.count - Self.maxInactiveConnectionKeys
+            for evicted in inactiveConnectionLRU.prefix(overflow) {
+                inactiveConnectionKeySet.remove(evicted)
+                suppressedFlowSignatures.remove(evicted)
             }
-            ingestedConnectionKeys.removeFirst(overflow)
+            inactiveConnectionLRU.removeFirst(overflow)
+        }
+    }
+
+    private mutating func removeInactiveConnectionKey(_ key: String) {
+        inactiveConnectionKeySet.remove(key)
+        if let index = inactiveConnectionLRU.firstIndex(of: key) {
+            inactiveConnectionLRU.remove(at: index)
         }
     }
 }

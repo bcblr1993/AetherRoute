@@ -77,17 +77,17 @@ public enum ProxyProviderError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .invalidURL:
-            "代理集合 URL 无效 / Invalid proxy provider URL"
+            "Invalid proxy provider URL"
         case .insecureScheme:
-            "代理集合必须使用 HTTPS 协议 / Proxy provider must use HTTPS"
+            "Proxy provider must use HTTPS"
         case let .downloadFailed(reason):
-            "代理集合下载失败: \(reason) / Download failed: \(reason)"
+            "Download failed: \(reason)"
         case let .oversizedPayload(bytes):
-            "代理集合超出大小限制 (\(bytes) 字节) / Proxy provider exceeded size limit (\(bytes) bytes)"
+            "Proxy provider exceeded size limit (\(bytes) bytes)"
         case .parsingFailed:
-            "代理集合解析失败 / Failed to parse proxy provider"
+            "Failed to parse proxy provider"
         case .providerNotFound:
-            "未找到指定的代理集合 / Proxy provider not found"
+            "Proxy provider not found"
         }
     }
 }
@@ -297,7 +297,7 @@ public actor ProxyProviderEngine {
             expectedRevision: expectedRevision,
             expectedURL: expectedURL
         )
-        current.lastError = message
+        current.lastError = message.sanitizedMessageWithRedactedURLs(knownSensitiveURL: expectedURL)
         providers[id] = current
         saveMetadata()
         throw failure
@@ -337,20 +337,24 @@ public actor ProxyProviderEngine {
                 )
             }
         } catch let error as ProxyProviderError {
+            let safeMessage = (error.errorDescription ?? error.localizedDescription)
+                .sanitizedMessageWithRedactedURLs(knownSensitiveURL: initial.url)
             try recordFailureIfCurrent(
                 id: id,
                 expectedRevision: expectedRevision,
                 expectedURL: initial.url,
-                message: error.localizedDescription,
+                message: safeMessage,
                 failure: error
             )
         } catch {
+            let safeMessage = error.localizedDescription
+                .sanitizedMessageWithRedactedURLs(knownSensitiveURL: initial.url)
             try recordFailureIfCurrent(
                 id: id,
                 expectedRevision: expectedRevision,
                 expectedURL: initial.url,
-                message: error.localizedDescription,
-                failure: ProxyProviderError.downloadFailed(error.localizedDescription)
+                message: safeMessage,
+                failure: ProxyProviderError.downloadFailed(safeMessage)
             )
         }
 

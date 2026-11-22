@@ -27,8 +27,11 @@ final class LANProxyServerController: ObservableObject {
     @Published private(set) var activeHTTPPort: Int = 7_890
     @Published private(set) var activeSOCKSPort: Int = 7_891
     @Published private(set) var currentLANIP: String = "127.0.0.1"
-    @Published private(set) var activeConnectionsCount: Int = 0
+    private(set) var activeConnectionsCount: Int = 0
     @Published private(set) var statusMessage: String?
+    @Published private(set) var statusFailure: LANProxyStatusFailure?
+
+    static var localizedFailureFormatter: (@MainActor (LANProxyStatusFailure) -> String)?
 
     var onListenerReady: (() -> Void)?
     var onListenerFailure: ((Int, Error) -> Void)?
@@ -228,6 +231,7 @@ final class LANProxyServerController: ObservableObject {
 
             self.isLoopbackOnly = loopbackOnly
             self.isRunning = true
+            self.statusFailure = nil
             self.statusMessage = nil
 
             let checkPorts = portsToCheck
@@ -276,6 +280,8 @@ final class LANProxyServerController: ObservableObject {
         isLoopbackOnly = false
         isReady = false
         isRunning = false
+        statusFailure = nil
+        statusMessage = nil
         Self.logger.info("stage=stop completed")
     }
 
@@ -336,8 +342,10 @@ final class LANProxyServerController: ObservableObject {
 
     private func reportListenerFailure(port: Int, type: String, error: Error) {
         Self.logger.error("stage=listenerFailed type=\(type, privacy: .public) port=\(port) error=\(error.localizedDescription, privacy: .public)")
-        self.statusMessage = "Port \(port): \(error.localizedDescription)"
         self.stop()
+        let failure = LANProxyStatusFailure(port: port, error: error)
+        self.statusFailure = failure
+        self.statusMessage = Self.localizedFailureFormatter?(failure) ?? failure.localizedDescription
         self.onListenerFailure?(port, error)
     }
 
@@ -446,19 +454,134 @@ enum LANProxyInitialMode: Sendable {
     case socks5Only
 }
 
+struct LANProxyStatusFailure: Equatable, Sendable, LocalizedError {
+    enum Kind: Equatable, Sendable {
+        case portInUse(Int)
+        case invalidPort(Int)
+        case permissionDenied(Int)
+        case invalidHandshake
+        case remoteConnectionFailed(String)
+        case listenerFailed(port: Int, detail: String)
+    }
+
+    let kind: Kind
+
+    init(port: Int, error: Error) {
+        if let lanError = error as? LANProxyError {
+            switch lanError {
+            case let .invalidPort(invalidPort):
+                self.kind = .invalidPort(invalidPort)
+            case .invalidHandshake:
+                self.kind = .invalidHandshake
+            case let .remoteConnectionFailed(reason):
+                self.kind = .remoteConnectionFailed(reason)
+            }
+            return
+        }
+        if let nwError = error as? NWError {
+            switch nwError {
+            case .posix(let code) where code == .EADDRINUSE:
+                self.kind = .portInUse(port)
+                return
+            case .posix(let code) where code == .EACCES || code == .EPERM:
+                self.kind = .permissionDenied(port)
+                return
+            default:
+                break
+            }
+        }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain {
+            if nsError.code == Int(EADDRINUSE) {
+                self.kind = .portInUse(port)
+                return
+            }
+            if nsError.code == Int(EACCES) || nsError.code == Int(EPERM) {
+                self.kind = .permissionDenied(port)
+                return
+            }
+        }
+        self.kind = .listenerFailed(port: port, detail: error.localizedDescription)
+    }
+
+    private static var activeLocale: Locale {
+        #if canImport(AetherRouteKit)
+        AppLocalizationLocaleBridge.currentLocale
+        #else
+        .autoupdatingCurrent
+        #endif
+    }
+
+    var errorDescription: String? {
+        let locale = Self.activeLocale
+        switch kind {
+        case let .portInUse(port):
+            return String(
+                format: String(localized: "Port %@ is already in use by another app.", locale: locale),
+                locale: locale,
+                String(port)
+            )
+        case let .invalidPort(port):
+            return String(
+                format: String(localized: "Port %@ is not valid.", locale: locale),
+                locale: locale,
+                String(port)
+            )
+        case let .permissionDenied(port):
+            return String(
+                format: String(localized: "Permission was denied to listen on port %@.", locale: locale),
+                locale: locale,
+                String(port)
+            )
+        case .invalidHandshake:
+            return String(localized: "Invalid proxy handshake.", locale: locale)
+        case let .remoteConnectionFailed(reason):
+            return String(
+                format: String(localized: "Remote connection failed: %@", locale: locale),
+                locale: locale,
+                reason
+            )
+        case let .listenerFailed(port, detail):
+            return String(
+                format: String(localized: "Port %@ could not start: %@", locale: locale),
+                locale: locale,
+                String(port),
+                detail
+            )
+        }
+    }
+}
+
 enum LANProxyError: LocalizedError, Sendable {
     case invalidPort(Int)
     case invalidHandshake
     case remoteConnectionFailed(String)
 
+    private static var activeLocale: Locale {
+        #if canImport(AetherRouteKit)
+        AppLocalizationLocaleBridge.currentLocale
+        #else
+        .autoupdatingCurrent
+        #endif
+    }
+
     var errorDescription: String? {
+        let locale = Self.activeLocale
         switch self {
         case let .invalidPort(port):
-            return "Invalid port: \(port)"
+            return String(
+                format: String(localized: "Port %@ is not valid.", locale: locale),
+                locale: locale,
+                String(port)
+            )
         case .invalidHandshake:
-            return "Invalid proxy handshake"
+            return String(localized: "Invalid proxy handshake.", locale: locale)
         case let .remoteConnectionFailed(reason):
-            return "Remote connection failed: \(reason)"
+            return String(
+                format: String(localized: "Remote connection failed: %@", locale: locale),
+                locale: locale,
+                reason
+            )
         }
     }
 }

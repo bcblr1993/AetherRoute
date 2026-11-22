@@ -69,7 +69,10 @@ extension TunnelManager {
     }
 
     func setNetworkEngineMode(_ mode: NetworkEngineMode) async {
-        guard !isPreparing, !isSwitchingNetworkEngine, mode != networkEngineMode, canChangeNetworkEngine else { return }
+        guard !isPreparing || systemExtensionApprovalRequired,
+              !isSwitchingNetworkEngine,
+              mode != networkEngineMode,
+              canChangeNetworkEngine else { return }
         if isUIReviewMode {
             networkEngineMode = mode
             userDefaults.set(mode.rawValue, forKey: Self.networkEnginePreferenceKey)
@@ -81,6 +84,7 @@ extension TunnelManager {
         let previousMode = networkEngineMode
         let shouldReconnect = isEnabled || managerConnectionIsActive
         let currentRoutingMode = sessionRoutingMode ?? routingMode
+        var didBeginEngineTeardown = false
         isSwitchingNetworkEngine = true
         networkEngineMessage = shouldReconnect
             ? AppLocalization.string("Switching network engine…") : nil
@@ -89,7 +93,7 @@ extension TunnelManager {
         defer {
             isSwitchingNetworkEngine = false
             if case .failed = state {} else {
-                if shouldReconnect {
+                if shouldReconnect && didBeginEngineTeardown {
                     // Force updateState() to observe a fresh transition into .connected
                     // so a new providerConnectionID is minted and readiness/failover run.
                     lastObservedProviderStatus = nil
@@ -111,6 +115,7 @@ extension TunnelManager {
             networkEngineBlockedNeedsSetup = NetworkEngineSwitchPreflight.requiresNetworkSetupSheet(for: blocker)
             return
         }
+        didBeginEngineTeardown = true
         state = .connecting
         connectedSince = nil
         cancelStartupRestore(reason: "switchingEngine")
@@ -194,7 +199,11 @@ extension TunnelManager {
             }
         } catch {
             // A failed rollback must not leave an unobserved connecting provider.
-            beginDisconnectionWatchdog(selfInitiated: true)
+            disconnectionWasSelfInitiated = true
+            userIntendsToConnect = false
+            connectedSince = nil
+            sessionRoutingMode = nil
+            sessionNetworkEngineMode = nil
             if manager !== previousManager {
                 manager?.connection.stopVPNTunnel()
                 detachManagerObserver()
@@ -278,7 +287,16 @@ extension TunnelManager {
     }
 
     func applyNetworkEngineMode(_ mode: NetworkEngineMode) async {
-        guard !isPreparing else { return }
+        guard !isPreparing || systemExtensionApprovalRequired else { return }
+        systemExtensionActivator.cancelPendingActivation()
+        systemExtensionApprovalRequired = false
+        prepareTask?.cancel()
+        prepareTask = nil
+        isPreparing = false
+        prepareGeneration &+= 1
+        networkEngineMessage = nil
+        networkEngineMessageIsError = false
+        networkEngineBlockedNeedsSetup = false
         invalidateCachedManager()
         networkEngineMode = mode
 
@@ -510,7 +528,7 @@ extension TunnelManager {
                 localProxySettingsMessage = AppLocalization.string("The loopback proxy is off.")
             }
         } catch {
-            localProxySettingsMessage = error.localizedDescription
+            localProxySettingsMessage = localizedLocalProxyError(error)
         }
     }
 
@@ -872,10 +890,6 @@ extension TunnelManager {
         if status == .reasserting {
             connectedSince = connection.connectedDate ?? connectedSince
         }
-        connectionStage = ConnectionStagePolicy.stage(
-            providerPhase: Self.providerLifecyclePhase(status),
-            isVerifyingReadiness: requiresReadiness || isVerifyingProxyReadiness
-        )
         if status == .connected {
             refreshOlderRoutingResourcesAfterConnection()
             cancelConnectionWatchdog()
@@ -932,10 +946,14 @@ extension TunnelManager {
                 )
             } catch {
                 manager?.connection.stopVPNTunnel()
+                userIntendsToConnect = false
+                disconnectionWasSelfInitiated = true
+                cancelConnectionReadiness()
                 connectedSince = nil
                 sessionRoutingMode = nil
                 sessionNetworkEngineMode = nil
                 recordFailure(error, context: .configuration)
+                return
             }
             // Telemetry starts with the usable tunnel rather than waiting on
             // the quality probe, so the dashboard is live immediately.
@@ -962,5 +980,63 @@ extension TunnelManager {
              .disconnecting:
             break
         }
+    }
+
+    func localizedLocalProxyError(_ error: Error) -> String {
+        if let localError = error as? LocalProxySettingsError {
+            switch localError {
+            case .unsupportedVersion:
+                return AppLocalization.string("The local proxy settings version is not supported.")
+            case let .invalidHTTPPort(port):
+                return AppLocalization.format("HTTP proxy port %@ is outside the supported range.", String(port))
+            case let .invalidSOCKSPort(port):
+                return AppLocalization.format("SOCKS5 proxy port %@ is outside the supported range.", String(port))
+            case let .duplicatePorts(port):
+                return AppLocalization.format("HTTP and SOCKS5 proxy ports cannot both use %@.", String(port))
+            case let .invalidBypassDomain(domain):
+                return AppLocalization.format("Bypass domain entry ‘%@’ is not valid.", domain)
+            case .disabled:
+                return AppLocalization.string("Enable local proxy before copying a shell command or PAC script.")
+            }
+        }
+        if let lanError = error as? LANProxyError {
+            switch lanError {
+            case let .invalidPort(port):
+                return AppLocalization.format("Port %@ is not valid.", String(port))
+            case .invalidHandshake:
+                return AppLocalization.string("Invalid proxy handshake.")
+            case let .remoteConnectionFailed(reason):
+                return AppLocalization.format("Remote connection failed: %@", reason)
+            }
+        }
+        if let dnsError = error as? DNSRuntimePolicyError {
+            switch dnsError {
+            case .appGroupUnavailable:
+                return AppLocalization.string("AetherRoute could not access its shared storage. Quit and reopen the app, then try again.")
+            case .decodingFailed, .invalidProfileDigest:
+                return AppLocalization.string("The saved DNS runtime policy is malformed.")
+            case .encodingFailed, .writeFailed:
+                return AppLocalization.string("The DNS runtime policy could not be saved.")
+            case let .fileTooLarge(size):
+                return AppLocalization.format("The DNS runtime policy file is too large (%lld bytes).", Int64(size))
+            case let .unsupportedFormat(version):
+                return AppLocalization.format("The DNS runtime policy format version %lld is unsupported.", Int64(version))
+            }
+        }
+        if case let SystemProxyConfiguratorError.commandFailed(command, exitCode, _) = error {
+            return AppLocalization.format("System proxy command ‘%@’ failed (exit %lld).", command, Int64(exitCode))
+        }
+        return error.localizedDescription
+    }
+}
+
+extension LocalProxySettings {
+    func localizedLANConfigurationGuide(lanIP: String) -> String {
+        AppLocalization.format(
+            "[AetherRoute LAN Shared Proxy]\nConfigure proxy settings on devices on the same Wi-Fi network:\n• Proxy Type: HTTP / Web Proxy (Manual)\n• Server / Hostname: %@\n• Port: %@\n(SOCKS5 Port: %@)",
+            lanIP,
+            String(httpPort),
+            String(socksPort)
+        )
     }
 }

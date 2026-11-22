@@ -12,9 +12,17 @@ enum AppLocalization {
     nonisolated(unsafe) private static var cachedDurationFormatterMinutesOnly: DateComponentsFormatter?
 
     static func configure(_ preference: AppLanguagePreference) {
-        let bundle = resolvedBundle(for: preference)
-        let locale = preference.localeIdentifier.map { Locale(identifier: $0) }
-            ?? .autoupdatingCurrent
+        let localization = resolvedLocalizationIdentifier(for: preference)
+        let bundle = resolvedBundle(for: localization)
+        let locale: Locale
+        if let explicit = preference.localeIdentifier {
+            locale = Locale(identifier: explicit)
+        } else {
+            let firstPreferred = Locale.preferredLanguages.first?.lowercased() ?? ""
+            let matchesOSLocale = (localization == "zh-Hans" && firstPreferred.hasPrefix("zh"))
+                || (localization == "en" && firstPreferred.hasPrefix("en"))
+            locale = matchesOSLocale ? .autoupdatingCurrent : Locale(identifier: localization)
+        }
         lock.withLock {
             localeIdentifier = preference.localeIdentifier
             localizationBundle = bundle
@@ -23,6 +31,7 @@ enum AppLocalization {
             cachedDurationFormatterWithSeconds = nil
             cachedDurationFormatterMinutesOnly = nil
         }
+        AppLocalizationLocaleBridge.register { AppLocalization.currentLocale }
     }
 
     static var currentLocale: Locale {
@@ -113,25 +122,28 @@ enum AppLocalization {
         }
     }
 
-    private static func resolvedBundle(
+    private static func resolvedLocalizationIdentifier(
         for preference: AppLanguagePreference
-    ) -> Bundle {
-        let localization: String?
+    ) -> String {
         switch preference {
         case .simplifiedChinese:
-            localization = "zh-Hans"
+            return "zh-Hans"
         case .english:
-            localization = "en"
+            return "en"
         case .system:
-            localization = Bundle.main.preferredLocalizations.first(where: {
+            return Bundle.main.preferredLocalizations.first(where: {
                 $0.hasPrefix("zh") || $0.hasPrefix("en")
             }) ?? "en"
         }
-        guard let localization,
-              let path = Bundle.main.path(
-                forResource: localization,
-                ofType: "lproj"
-              ),
+    }
+
+    private static func resolvedBundle(
+        for localization: String
+    ) -> Bundle {
+        guard let path = Bundle.main.path(
+            forResource: localization,
+            ofType: "lproj"
+        ),
               let bundle = Bundle(path: path) else {
             return .main
         }
@@ -164,7 +176,7 @@ final class AppLanguageController: ObservableObject {
 
     var locale: Locale {
         preference.localeIdentifier.map { Locale(identifier: $0) }
-            ?? .autoupdatingCurrent
+            ?? AppLocalization.currentLocale
     }
 
     func select(_ preference: AppLanguagePreference) {

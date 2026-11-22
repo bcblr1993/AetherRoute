@@ -58,6 +58,7 @@ public struct RuleProviderMetadata: Codable, Sendable, Equatable, Identifiable {
     public var ruleCount: Int
     public var etag: String?
     public var sha256: String?
+    public var lastError: String?
 
     public init(
         id: UUID = UUID(),
@@ -71,7 +72,8 @@ public struct RuleProviderMetadata: Codable, Sendable, Equatable, Identifiable {
         lastUpdatedAt: Date? = nil,
         ruleCount: Int = 0,
         etag: String? = nil,
-        sha256: String? = nil
+        sha256: String? = nil,
+        lastError: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -85,11 +87,12 @@ public struct RuleProviderMetadata: Codable, Sendable, Equatable, Identifiable {
         self.ruleCount = ruleCount
         self.etag = etag
         self.sha256 = sha256
+        self.lastError = lastError
     }
 
     enum CodingKeys: String, CodingKey {
         case id, name, url, behavior, format, defaultTarget, isEnabled
-        case intervalSeconds, lastUpdatedAt, ruleCount, etag, sha256
+        case intervalSeconds, lastUpdatedAt, ruleCount, etag, sha256, lastError
     }
 
     public init(from decoder: Decoder) throws {
@@ -106,6 +109,7 @@ public struct RuleProviderMetadata: Codable, Sendable, Equatable, Identifiable {
         self.ruleCount = try container.decode(Int.self, forKey: .ruleCount)
         self.etag = try container.decodeIfPresent(String.self, forKey: .etag)
         self.sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
+        self.lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
     }
 }
 
@@ -120,17 +124,17 @@ public enum RuleProviderError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .invalidURL:
-            "规则集 URL 无效 / Invalid rule provider URL"
+            "Invalid rule provider URL"
         case .insecureScheme:
-            "规则集必须使用 HTTPS 协议 / Rule provider must use HTTPS"
+            "Rule provider must use HTTPS"
         case let .downloadFailed(reason):
-            "规则集下载失败: \(reason) / Download failed: \(reason)"
+            "Download failed: \(reason)"
         case let .oversizedPayload(bytes):
-            "规则集超出大小限制 (\(bytes) 字节) / Rule provider exceeded size limit (\(bytes) bytes)"
+            "Rule provider exceeded size limit (\(bytes) bytes)"
         case .parsingFailed:
-            "规则集解析失败 / Failed to parse rule provider"
+            "Failed to parse rule provider"
         case .providerNotFound:
-            "未找到指定的规则集 / Rule provider not found"
+            "Rule provider not found"
         }
     }
 }
@@ -717,6 +721,25 @@ public actor RuleProviderEngine {
         return current
     }
 
+    private func recordFailureIfCurrent(
+        id: UUID,
+        kind: ProviderStoreKind,
+        expectedRevision: UInt64,
+        expectedSnapshot: RuleProviderMetadata,
+        message: String,
+        failure: Error
+    ) throws -> Never {
+        var current = try activeSnapshot(
+            id: id,
+            kind: kind,
+            expectedRevision: expectedRevision,
+            expectedSnapshot: expectedSnapshot
+        )
+        current.lastError = message.sanitizedMessageWithRedactedURLs(knownSensitiveURL: expectedSnapshot.url)
+        setProviderRecord(current, for: id, kind: kind)
+        throw failure
+    }
+
     private func fetchAndParse(providerID: UUID, kind: ProviderStoreKind, force: Bool) async throws -> Int {
         guard let snapshot = providerRecord(for: providerID, kind: kind) else {
             throw RuleProviderError.providerNotFound
@@ -752,21 +775,27 @@ public actor RuleProviderEngine {
                 )
             }
         } catch let error as RuleProviderError {
-            _ = try activeSnapshot(
+            let safeMessage = (error.errorDescription ?? error.localizedDescription)
+                .sanitizedMessageWithRedactedURLs(knownSensitiveURL: snapshot.url)
+            try recordFailureIfCurrent(
                 id: providerID,
                 kind: kind,
                 expectedRevision: expectedRevision,
-                expectedSnapshot: snapshot
+                expectedSnapshot: snapshot,
+                message: safeMessage,
+                failure: error
             )
-            throw error
         } catch {
-            _ = try activeSnapshot(
+            let safeMessage = error.localizedDescription
+                .sanitizedMessageWithRedactedURLs(knownSensitiveURL: snapshot.url)
+            try recordFailureIfCurrent(
                 id: providerID,
                 kind: kind,
                 expectedRevision: expectedRevision,
-                expectedSnapshot: snapshot
+                expectedSnapshot: snapshot,
+                message: safeMessage,
+                failure: RuleProviderError.downloadFailed(safeMessage)
             )
-            throw RuleProviderError.downloadFailed(error.localizedDescription)
         }
 
         var current = try activeSnapshot(
@@ -777,37 +806,86 @@ public actor RuleProviderEngine {
         )
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw RuleProviderError.downloadFailed("Invalid HTTP response")
+            let reason = "Invalid HTTP response"
+            try recordFailureIfCurrent(
+                id: providerID,
+                kind: kind,
+                expectedRevision: expectedRevision,
+                expectedSnapshot: snapshot,
+                message: reason,
+                failure: RuleProviderError.downloadFailed(reason)
+            )
         }
 
         if httpResponse.statusCode == 304 {
             current.lastUpdatedAt = Date()
+            current.lastError = nil
             setProviderRecord(current, for: providerID, kind: kind)
             return current.ruleCount
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw RuleProviderError.downloadFailed("HTTP \(httpResponse.statusCode)")
+            let reason = "HTTP \(httpResponse.statusCode)"
+            try recordFailureIfCurrent(
+                id: providerID,
+                kind: kind,
+                expectedRevision: expectedRevision,
+                expectedSnapshot: snapshot,
+                message: reason,
+                failure: RuleProviderError.downloadFailed(reason)
+            )
         }
 
         let effectiveMaxBytes = current.format == .mrs ? Self.maximumBinaryPayloadBytes : Self.maximumPayloadBytes
         guard data.count <= effectiveMaxBytes else {
-            throw RuleProviderError.oversizedPayload(data.count)
+            let err = RuleProviderError.oversizedPayload(data.count)
+            try recordFailureIfCurrent(
+                id: providerID,
+                kind: kind,
+                expectedRevision: expectedRevision,
+                expectedSnapshot: snapshot,
+                message: err.errorDescription ?? err.localizedDescription,
+                failure: err
+            )
         }
 
         let ruleCount: Int
         if current.format == .mrs {
             guard !data.isEmpty else {
-                throw RuleProviderError.parsingFailed
+                let err = RuleProviderError.parsingFailed
+                try recordFailureIfCurrent(
+                    id: providerID,
+                    kind: kind,
+                    expectedRevision: expectedRevision,
+                    expectedSnapshot: snapshot,
+                    message: err.errorDescription ?? err.localizedDescription,
+                    failure: err
+                )
             }
             ruleCount = 0
         } else {
             guard let text = String(data: data, encoding: .utf8) else {
-                throw RuleProviderError.parsingFailed
+                let err = RuleProviderError.parsingFailed
+                try recordFailureIfCurrent(
+                    id: providerID,
+                    kind: kind,
+                    expectedRevision: expectedRevision,
+                    expectedSnapshot: snapshot,
+                    message: err.errorDescription ?? err.localizedDescription,
+                    failure: err
+                )
             }
             let parsedRules = parseRawRuleContent(text, behavior: current.behavior, format: current.format)
             guard !parsedRules.isEmpty || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw RuleProviderError.parsingFailed
+                let err = RuleProviderError.parsingFailed
+                try recordFailureIfCurrent(
+                    id: providerID,
+                    kind: kind,
+                    expectedRevision: expectedRevision,
+                    expectedSnapshot: snapshot,
+                    message: err.errorDescription ?? err.localizedDescription,
+                    failure: err
+                )
             }
             ruleCount = parsedRules.count
         }
@@ -841,6 +919,7 @@ public actor RuleProviderEngine {
         current.ruleCount = ruleCount
         current.etag = httpResponse.value(forHTTPHeaderField: "ETag")
         current.sha256 = hash
+        current.lastError = nil
         setProviderRecord(current, for: providerID, kind: kind)
 
         return ruleCount

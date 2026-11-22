@@ -10,12 +10,21 @@ struct NativeProfileEditorSheet: View {
     @State private var nodeToEdit: AetherNode?
     @State private var isAddingNode = false
     @State private var isSaving = false
+    @State private var saveErrorMessage: String?
     @State private var requestsCancel = false
-    @State private var removedNode: (index: Int, node: AetherNode)?
+    @State private var removedNodeStack: [(index: Int, node: AetherNode)] = []
 
     init(profile: ManagedProfile) {
         self.profile = profile
         _nodes = State(initialValue: profile.profile.nativeNodes ?? [])
+    }
+
+    private var hasChanges: Bool {
+        nodes != (profile.profile.nativeNodes ?? [])
+    }
+
+    private var canModify: Bool {
+        tunnel.canModifyProfile(id: profile.id)
     }
 
     var body: some View {
@@ -28,15 +37,21 @@ struct NativeProfileEditorSheet: View {
         }
         .aetherLargeSheetFrame()
         .disabled(isSaving)
-        .modifier(DiscardChangesModifier(isDirty: nodes != (profile.profile.nativeNodes ?? []), isSaving: isSaving, requested: $requestsCancel))
+        .onAppear {
+            tunnel.clearProfileMessage()
+        }
+        .onChange(of: nodes) { _, _ in
+            saveErrorMessage = nil
+        }
+        .modifier(DiscardChangesModifier(isDirty: hasChanges, isSaving: isSaving, requested: $requestsCancel))
         .sheet(isPresented: $isAddingNode) {
-            ManualNodeEditorSheet(save: append, dialerCandidates: nodes.map(\.name))
+            ManualNodeEditorSheet(saveResult: append, dialerCandidates: nodes.map(\.name))
                 .environmentObject(tunnel)
         }
         .sheet(item: $nodeToEdit) { node in
             ManualNodeEditorSheet(
                 initialNode: node,
-                save: replace,
+                saveResult: replace,
                 dialerCandidates: nodes.filter { $0.id != node.id }.map(\.name)
             )
             .environmentObject(tunnel)
@@ -55,8 +70,13 @@ struct NativeProfileEditorSheet: View {
             }
             .aetherButton()
             .disabled(
-                !tunnel.canModifyProfile(id: profile.id)
+                !canModify
                     || nodes.count >= AetherNodeProfileCompiler.maximumNodes
+            )
+            .help(
+                !canModify
+                    ? (tunnel.profileEditLockReason ?? AppLocalization.string("Stop the secure connection before changing profiles."))
+                    : AppLocalization.string("Add Node")
             )
         }
         .padding(AetherVisual.dialogPadding)
@@ -71,7 +91,7 @@ struct NativeProfileEditorSheet: View {
                 Text(AppLocalization.string("Add a node to route traffic through this profile."))
             } actions: {
                 Button(AppLocalization.string("Add Node")) { isAddingNode = true }
-                    .disabled(!tunnel.canModifyProfile(id: profile.id))
+                    .disabled(!canModify)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -81,7 +101,7 @@ struct NativeProfileEditorSheet: View {
 
     private var populatedNodeList: some View {
         List {
-            ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+            ForEach(nodes) { node in
                 HStack(spacing: AetherVisual.s4) {
                     Image(systemName: "line.3.horizontal")
                         .foregroundStyle(AetherVisual.tertiaryText)
@@ -111,33 +131,62 @@ struct NativeProfileEditorSheet: View {
                         AetherRowIconLabel(symbol: "pencil", tint: .secondary)
                     }
                     .buttonStyle(.plain)
-                    .help(AppLocalization.string("Edit Node"))
+                    .disabled(!canModify)
+                    .help(
+                        !canModify
+                            ? (tunnel.profileEditLockReason ?? AppLocalization.string("Stop the secure connection before changing profiles."))
+                            : AppLocalization.string("Edit Node")
+                    )
                     .accessibilityLabel(AppLocalization.string("Edit Node"))
 
                     Button(role: .destructive) {
-                        removedNode = (index, nodes[index])
-                        nodes.remove(at: index)
+                        removeNode(id: node.id)
                     } label: {
                         AetherRowIconLabel(symbol: "trash", tint: .red)
                     }
                     .buttonStyle(.plain)
-                    .disabled(nodes.count == 1)
-                    .help(AppLocalization.string("A native profile must keep at least one node."))
+                    .disabled(!tunnel.canModifyProfile(id: profile.id) || nodes.count <= 1)
+                    .help(
+                        !tunnel.canModifyProfile(id: profile.id)
+                            ? (tunnel.profileEditLockReason ?? AppLocalization.string("Stop the secure connection before changing profiles."))
+                            : (nodes.count <= 1
+                                ? AppLocalization.string("A native profile must keep at least one node.")
+                                : AppLocalization.string("Remove Node"))
+                    )
                     .accessibilityLabel(AppLocalization.string("Remove Node"))
                 }
                 .padding(.vertical, AetherVisual.s2)
             }
             .onMove { offsets, destination in
+                guard canModify else { return }
                 nodes.move(fromOffsets: offsets, toOffset: destination)
             }
+            .moveDisabled(!canModify)
         }
         .listStyle(.inset)
         .accessibilityIdentifier("native-profile-node-list")
     }
 
+    private func removeNode(id: AetherNode.ID) {
+        guard canModify,
+              nodes.count > 1,
+              let matchedIndex = nodes.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        let removed = nodes.remove(at: matchedIndex)
+        removedNodeStack.append((index: matchedIndex, node: removed))
+    }
+
     private var footer: some View {
         let currentValidationMessage = validationMessage
         return VStack(alignment: .leading, spacing: AetherVisual.s3) {
+            if !canModify {
+                AetherInlineMessage(
+                    text: tunnel.profileEditLockReason ?? AppLocalization.string("Stop the secure connection before changing profiles."),
+                    kind: .warning,
+                    systemImage: "lock"
+                )
+            }
             if let currentValidationMessage {
                 AetherInlineMessage(text: currentValidationMessage, kind: .warning)
             } else {
@@ -152,15 +201,17 @@ struct NativeProfileEditorSheet: View {
                 .foregroundStyle(AetherVisual.secondaryText)
             }
 
-            if let removedNode {
+            if !removedNodeStack.isEmpty {
                 Button(AppLocalization.string("Undo removal")) {
-                    nodes.insert(removedNode.node, at: min(removedNode.index, nodes.count))
-                    self.removedNode = nil
+                    guard canModify, let entry = removedNodeStack.popLast() else { return }
+                    nodes.insert(entry.node, at: min(entry.index, nodes.count))
                 }
                 .aetherButton()
+                .disabled(!canModify)
+                .accessibilityIdentifier("native-profile-undo-removal")
             }
-            if let message = tunnel.profileMessage, tunnel.profileMessageIsError {
-                AetherInlineMessage(text: message)
+            if let saveErrorMessage {
+                AetherInlineMessage(text: saveErrorMessage)
             }
             HStack {
                 // Cancel and the primary action share the trailing edge, as in
@@ -171,14 +222,25 @@ struct NativeProfileEditorSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(isSaving)
                 Button {
+                    guard hasChanges else {
+                        dismiss()
+                        return
+                    }
                     isSaving = true
+                    saveErrorMessage = nil
+                    tunnel.clearProfileMessage()
                     Task {
                         let didSave = await tunnel.updateNativeProfile(
                             id: profile.id,
                             nodes: nodes
                         )
                         isSaving = false
-                        if didSave { dismiss() }
+                        if didSave {
+                            dismiss()
+                        } else {
+                            saveErrorMessage = tunnel.profileMessage
+                                ?? AppLocalization.string("Could not save the profile. Try again.")
+                        }
                     }
                 } label: {
                     AetherProgressButtonLabel(
@@ -190,7 +252,7 @@ struct NativeProfileEditorSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(
                     currentValidationMessage != nil
-                        || !tunnel.canModifyProfile(id: profile.id)
+                        || !canModify
                         || tunnel.isUpdatingProfiles
                         || isSaving
                 )
@@ -214,25 +276,29 @@ struct NativeProfileEditorSheet: View {
         }
     }
 
-    private func append(_ node: AetherNode) -> Bool {
+    private func append(_ node: AetherNode) -> Result<Void, Error> {
         let candidate = nodes + [node]
-        guard (try? AetherNodeProfileCompiler.compile(nodes: candidate)) != nil else {
-            return false
+        do {
+            _ = try AetherNodeProfileCompiler.compile(nodes: candidate)
+            nodes = candidate
+            return .success(())
+        } catch {
+            return .failure(error)
         }
-        nodes = candidate
-        return true
     }
 
-    private func replace(_ node: AetherNode) -> Bool {
+    private func replace(_ node: AetherNode) -> Result<Void, Error> {
         guard nodes.contains(where: { $0.id == node.id }) else {
-            return false
+            return .failure(AetherNodeProfileCompilerError.emptyProfile)
         }
         let candidate = AetherNode.replacing(node, in: nodes)
-        guard (try? AetherNodeProfileCompiler.compile(nodes: candidate)) != nil else {
-            return false
+        do {
+            _ = try AetherNodeProfileCompiler.compile(nodes: candidate)
+            nodes = candidate
+            return .success(())
+        } catch {
+            return .failure(error)
         }
-        nodes = candidate
-        return true
     }
 
     private func nodeSubtitle(for node: AetherNode) -> String {
@@ -240,7 +306,7 @@ struct NativeProfileEditorSheet: View {
         guard let rawDialer = node.dialerProxy else { return base }
         let dialer = rawDialer.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !dialer.isEmpty else { return base }
-        let via = String.localizedStringWithFormat(AppLocalization.string("via %@"), dialer)
+        let via = AppLocalization.format("via %@", dialer)
         return "\(base) · \(via)"
     }
 }
@@ -253,8 +319,8 @@ extension AetherNodeProfileCompilerError {
         case .emptyProfile:
             AppLocalization.string("Add at least one node.")
         case let .tooManyNodes(limit):
-            String.localizedStringWithFormat(
-                AppLocalization.string("A native profile supports at most %lld nodes."),
+            AppLocalization.format(
+                "A native profile supports at most %lld nodes.",
                 Int64(limit)
             )
         case .duplicateName:

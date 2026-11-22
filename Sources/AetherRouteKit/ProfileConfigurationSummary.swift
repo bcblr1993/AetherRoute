@@ -565,13 +565,21 @@ public enum RouteMatchEngine {
         destination: String,
         against rules: [RuleConfigurationSummary],
         totalRuleCount: Int? = nil,
-        geoSiteData: Data? = nil
+        geoSiteData: Data? = nil,
+        network: String? = nil,
+        processName: String? = nil,
+        processPath: String? = nil,
+        asnLookup: ((String) -> String?)? = nil
     ) -> RouteMatchResult? {
         if case let .matched(result) = assess(
             destination: destination,
             against: rules,
             totalRuleCount: totalRuleCount,
-            geoSiteData: geoSiteData
+            geoSiteData: geoSiteData,
+            network: network,
+            processName: processName,
+            processPath: processPath,
+            asnLookup: asnLookup
         ) {
             return result
         }
@@ -645,121 +653,46 @@ public enum RouteMatchEngine {
         destination: String,
         against rules: [RuleConfigurationSummary],
         totalRuleCount: Int? = nil,
-        geoSiteData: Data? = nil
+        geoSiteData: Data? = nil,
+        network: String? = nil,
+        processName: String? = nil,
+        processPath: String? = nil,
+        asnLookup: ((String) -> String?)? = nil
     ) -> RouteMatchAssessment {
         guard let parsed = destinationHostAndPort(destination) else { return .invalidDestination }
         let host = parsed.host
         let port = parsed.port
+        let effectiveNetwork = normalizedNetwork(network) ?? parsed.schemeNetwork
         let address = addressBytes(host)
         let isLoopback = isLoopbackHostOrAddress(host: host, address: address)
         for rule in rules {
             let kind = rule.kind.uppercased()
-            let criteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let matches: Bool
-            switch kind {
-            case "MATCH", "FINAL":
-                matches = true
-            case "AETHER-APP":
-                // Depends on the app making the request; the tester asks
-                // about a destination alone, as for an app without a rule.
-                matches = false
-            case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD":
-                guard let criteria, !criteria.isEmpty else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-                if address != nil { matches = false }
-                else if kind == "DOMAIN" { matches = host == criteria }
-                else if kind == "DOMAIN-SUFFIX" {
-                    matches = host == criteria || host.hasSuffix("." + criteria)
-                } else { matches = host.contains(criteria) }
-            case "IP-CIDR", "IP-CIDR6":
-                guard let criteria, isValidCIDR(criteria) else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-                if let address {
-                    guard let result = matchesCIDR(address: address, cidr: criteria) else {
-                        return isLoopback
-                            ? .matched(syntheticLoopbackResult(host: host, address: address))
-                            : .indeterminate(ruleOrder: rule.order)
-                    }
-                    matches = result
-                } else if rule.noResolve {
-                    // A `no-resolve` IP rule never triggers DNS resolution in
-                    // the core and therefore never matches a domain name.
-                    matches = false
-                } else {
-                    // Without `no-resolve`, a hostname may resolve into this
-                    // subnet at runtime.
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-            case "GEOIP":
-                guard let criteria, !criteria.isEmpty else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-                if let address {
-                    if criteria == "private" || criteria == "lan" {
-                        matches = isPrivateAddress(address)
-                    } else {
-                        return isLoopback
-                            ? .matched(syntheticLoopbackResult(host: host, address: address))
-                            : .indeterminate(ruleOrder: rule.order)
-                    }
-                } else if rule.noResolve {
-                    matches = false
-                } else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-            case "DST-PORT":
-                guard let criteria, let rulePort = UInt16(criteria), rulePort > 0,
-                      let destinationPort = port else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-                matches = destinationPort == rulePort
-            case "GEOSITE":
-                guard let criteria, !criteria.isEmpty else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-                if address != nil {
-                    matches = false
-                } else if let geoSiteData,
-                          let result = GeoSiteCategoryIndex.matches(
-                            domain: host,
-                            ruleValue: criteria,
-                            in: geoSiteData
-                          ) {
-                    matches = result
-                } else {
-                    return isLoopback
-                        ? .matched(syntheticLoopbackResult(host: host, address: address))
-                        : .indeterminate(ruleOrder: rule.order)
-                }
-            default:
-                // An earlier unsupported rule could win in the real core.
+            let rawCriteria = rule.criteria?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let evaluation = evaluateRule(
+                kind: kind,
+                rawCriteria: rawCriteria,
+                noResolve: rule.noResolve,
+                host: host,
+                address: address,
+                port: port,
+                network: effectiveNetwork,
+                processName: processName,
+                processPath: processPath,
+                geoSiteData: geoSiteData,
+                asnLookup: asnLookup
+            ) else {
+                // An earlier rule that requires runtime state could match in the core.
                 return isLoopback
                     ? .matched(syntheticLoopbackResult(host: host, address: address))
                     : .indeterminate(ruleOrder: rule.order)
             }
-            if matches {
+            if evaluation {
                 let normalizedTarget = rule.target.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
                 if isLoopback && normalizedTarget != "DIRECT" && normalizedTarget != "REJECT" {
                     return .matched(syntheticLoopbackResult(host: host, address: address))
                 }
                 let reason = rule.isCustom
-                    ? "命中用户自定义规则 (优先级最高)"
+                    ? "Matched highest-priority custom rule"
                     : "Matched destination preview rule"
                 return .matched(RouteMatchResult(
                     matchedRule: rule,
@@ -778,10 +711,414 @@ public enum RouteMatchEngine {
         return .noMatch
     }
 
-    private static func destinationHostAndPort(_ destination: String) -> (host: String, port: UInt16?)? {
+    private static func evaluateRule(
+        kind: String,
+        rawCriteria: String?,
+        noResolve: Bool,
+        host: String,
+        address: [UInt8]?,
+        port: UInt16?,
+        network: String?,
+        processName: String?,
+        processPath: String?,
+        geoSiteData: Data?,
+        asnLookup: ((String) -> String?)?
+    ) -> Bool? {
+        let criteria = rawCriteria?.lowercased()
+        switch kind {
+        case "MATCH", "FINAL":
+            return true
+        case "AETHER-APP":
+            // Depends on the app making the request; the tester asks
+            // about a destination alone, as for an app without a rule.
+            return false
+        case "PROCESS-NAME":
+            guard let rawCriteria, !rawCriteria.isEmpty, !rawCriteria.contains("/") else { return nil }
+            if let candidate = normalizedProcessBasename(processName: processName, processPath: processPath) {
+                return candidate == rawCriteria
+            }
+            return false
+        case "PROCESS-PATH":
+            guard let rawCriteria, rawCriteria.hasPrefix("/"), rawCriteria.count > 1 else { return nil }
+            if let trimmedPath = processPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !trimmedPath.isEmpty {
+                return trimmedPath == rawCriteria
+            }
+            if let trimmedName = processName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !trimmedName.isEmpty {
+                let expectedBase = (rawCriteria as NSString).lastPathComponent
+                let candidateBase = (trimmedName as NSString).lastPathComponent
+                if candidateBase != expectedBase {
+                    return false
+                }
+                return nil
+            }
+            return false
+        case "NETWORK":
+            guard let criteria, criteria == "tcp" || criteria == "udp" else { return nil }
+            guard let network else { return nil }
+            return network == criteria
+        case "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD":
+            guard let criteria, !criteria.isEmpty else { return nil }
+            if address != nil { return false }
+            if kind == "DOMAIN" { return host == criteria }
+            if kind == "DOMAIN-SUFFIX" {
+                return host == criteria || host.hasSuffix("." + criteria)
+            }
+            return host.contains(criteria)
+        case "DOMAIN-WILDCARD":
+            guard let criteria, !criteria.isEmpty, isValidDomainWildcardPattern(criteria) else { return nil }
+            if address != nil { return false }
+            return matchesDomainWildcard(pattern: criteria, against: host)
+        case "DOMAIN-REGEX":
+            guard let rawCriteria, !rawCriteria.isEmpty else { return nil }
+            if address != nil { return false }
+            guard containsRegexMetacharacters(rawCriteria),
+                  let regex = try? NSRegularExpression(pattern: rawCriteria, options: [.caseInsensitive]) else {
+                return nil
+            }
+            let range = NSRange(host.startIndex..<host.endIndex, in: host)
+            return regex.firstMatch(in: host, options: [], range: range) != nil
+        case "IP-CIDR", "IP-CIDR6":
+            guard let criteria, isValidCIDR(criteria) else { return nil }
+            if let address {
+                return matchesCIDR(address: address, cidr: criteria)
+            }
+            // A `no-resolve` IP rule never triggers DNS resolution in
+            // the core and therefore never matches a domain name.
+            // Without `no-resolve`, a hostname may resolve into this subnet.
+            return noResolve ? false : nil
+        case "GEOIP":
+            guard let criteria, !criteria.isEmpty else { return nil }
+            if let address {
+                if criteria == "private" || criteria == "lan" {
+                    return isPrivateAddress(address)
+                }
+                return nil
+            }
+            return noResolve ? false : nil
+        case "IP-ASN":
+            guard let expectedASN = normalizedASN(criteria) else { return nil }
+            if address != nil {
+                guard let asnLookup,
+                      let resolvedRaw = asnLookup(host)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !resolvedRaw.isEmpty,
+                      let resolvedASN = normalizedASN(resolvedRaw) else {
+                    return nil
+                }
+                return resolvedASN == expectedASN
+            }
+            return noResolve ? false : nil
+        case "DST-PORT":
+            guard let criteria, let rulePort = UInt16(criteria), rulePort > 0,
+                  let destinationPort = port else {
+                return nil
+            }
+            return destinationPort == rulePort
+        case "GEOSITE":
+            guard let criteria, !criteria.isEmpty else { return nil }
+            if address != nil { return false }
+            guard let geoSiteData else { return nil }
+            return GeoSiteCategoryIndex.matches(
+                domain: host,
+                ruleValue: criteria,
+                in: geoSiteData
+            )
+        case "AND":
+            guard let rawCriteria, !rawCriteria.isEmpty else { return nil }
+            return evaluateLogicalComposite(
+                rawCriteria,
+                isConjunction: true,
+                host: host,
+                address: address,
+                port: port,
+                network: network,
+                processName: processName,
+                processPath: processPath,
+                geoSiteData: geoSiteData,
+                asnLookup: asnLookup
+            )
+        case "OR":
+            guard let rawCriteria, !rawCriteria.isEmpty else { return nil }
+            return evaluateLogicalComposite(
+                rawCriteria,
+                isConjunction: false,
+                host: host,
+                address: address,
+                port: port,
+                network: network,
+                processName: processName,
+                processPath: processPath,
+                geoSiteData: geoSiteData,
+                asnLookup: asnLookup
+            )
+        case "NOT":
+            guard let rawCriteria, !rawCriteria.isEmpty else { return nil }
+            let clauses = extractParenthesizedClauses(rawCriteria)
+            guard clauses.count == 1,
+                  let subResult = evaluateCompositeClause(
+                    clauses[0],
+                    host: host,
+                    address: address,
+                    port: port,
+                    network: network,
+                    processName: processName,
+                    processPath: processPath,
+                    geoSiteData: geoSiteData,
+                    asnLookup: asnLookup
+                  ) else {
+                return nil
+            }
+            return !subResult
+        default:
+            return nil
+        }
+    }
+
+    private static func evaluateLogicalComposite(
+        _ rawCriteria: String,
+        isConjunction: Bool,
+        host: String,
+        address: [UInt8]?,
+        port: UInt16?,
+        network: String?,
+        processName: String?,
+        processPath: String?,
+        geoSiteData: Data?,
+        asnLookup: ((String) -> String?)?
+    ) -> Bool? {
+        let clauses = extractParenthesizedClauses(rawCriteria)
+        guard !clauses.isEmpty else { return nil }
+        var hasIndeterminate = false
+        for clause in clauses {
+            let result = evaluateCompositeClause(
+                clause,
+                host: host,
+                address: address,
+                port: port,
+                network: network,
+                processName: processName,
+                processPath: processPath,
+                geoSiteData: geoSiteData,
+                asnLookup: asnLookup
+            )
+            if isConjunction {
+                if result == false { return false }
+                if result == nil { hasIndeterminate = true }
+            } else {
+                if result == true { return true }
+                if result == nil { hasIndeterminate = true }
+            }
+        }
+        if hasIndeterminate { return nil }
+        return isConjunction
+    }
+
+    private static func evaluateCompositeClause(
+        _ rawClause: String,
+        host: String,
+        address: [UInt8]?,
+        port: UInt16?,
+        network: String?,
+        processName: String?,
+        processPath: String?,
+        geoSiteData: Data?,
+        asnLookup: ((String) -> String?)?
+    ) -> Bool? {
+        var inner = rawClause.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let unwrapped = stripOuterMatchingParensIfWhole(inner) {
+            inner = unwrapped.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !inner.isEmpty else { return nil }
+        let parts = splitTopLevelCommas(inner)
+        guard let rawKind = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawKind.isEmpty else {
+            return nil
+        }
+        let kind = rawKind.uppercased()
+        if parts.count < 2 {
+            return nil
+        }
+        let rawSubCriteria: String
+        let subNoResolve: Bool
+        if kind == "AND" || kind == "OR" || kind == "NOT" {
+            rawSubCriteria = parts.dropFirst().joined(separator: ",")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            subNoResolve = false
+        } else {
+            var criteriaParts = Array(parts.dropFirst())
+            if criteriaParts.count >= 2,
+               criteriaParts.last?.trimmingCharacters(in: .whitespacesAndNewlines)
+                   .caseInsensitiveCompare("no-resolve") == .orderedSame {
+                subNoResolve = true
+                criteriaParts.removeLast()
+            } else {
+                subNoResolve = false
+            }
+            rawSubCriteria = criteriaParts.joined(separator: ",")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return evaluateRule(
+            kind: kind,
+            rawCriteria: rawSubCriteria,
+            noResolve: subNoResolve,
+            host: host,
+            address: address,
+            port: port,
+            network: network,
+            processName: processName,
+            processPath: processPath,
+            geoSiteData: geoSiteData,
+            asnLookup: asnLookup
+        )
+    }
+
+    private static func normalizedNetwork(_ network: String?) -> String? {
+        guard let normalized = network?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              normalized == "tcp" || normalized == "udp" else {
+            return nil
+        }
+        return normalized
+    }
+
+    private static func normalizedProcessBasename(
+        processName: String?,
+        processPath: String?
+    ) -> String? {
+        if let trimmedName = processName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmedName.isEmpty {
+            return (trimmedName as NSString).lastPathComponent
+        }
+        if let trimmedPath = processPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !trimmedPath.isEmpty {
+            return (trimmedPath as NSString).lastPathComponent
+        }
+        return nil
+    }
+
+    private static func isValidDomainWildcardPattern(_ pattern: String) -> Bool {
+        guard !pattern.isEmpty, pattern.count <= 253 else { return false }
+        if pattern.contains("/") || pattern.contains(":") || pattern.contains(",")
+            || pattern.contains(where: \.isWhitespace) {
+            return false
+        }
+        let allowed: Set<Character> = ["*", "?", "+", ".", "-", "_"]
+        return pattern.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || allowed.contains($0)) }
+            && pattern.contains(where: { $0.isLetter || $0.isNumber || $0 == "*" || $0 == "?" })
+    }
+
+    private static func matchesDomainWildcard(pattern: String, against host: String) -> Bool {
+        var regexPattern = "^"
+        var idx = pattern.startIndex
+        while idx < pattern.endIndex {
+            let ch = pattern[idx]
+            if ch == "*" {
+                let next = pattern.index(after: idx)
+                if next < pattern.endIndex && pattern[next] == "*" {
+                    regexPattern += ".*"
+                    idx = pattern.index(after: next)
+                    continue
+                } else {
+                    regexPattern += "[^.]*"
+                }
+            } else if ch == "?" {
+                regexPattern += "[^.]"
+            } else if ch == "+" {
+                regexPattern += "[^.]+"
+            } else {
+                regexPattern += NSRegularExpression.escapedPattern(for: String(ch))
+            }
+            idx = pattern.index(after: idx)
+        }
+        regexPattern += "$"
+        guard let regex = try? NSRegularExpression(pattern: regexPattern, options: [.caseInsensitive]) else {
+            return false
+        }
+        let range = NSRange(host.startIndex..<host.endIndex, in: host)
+        return regex.firstMatch(in: host, options: [], range: range) != nil
+    }
+
+    private static func containsRegexMetacharacters(_ pattern: String) -> Bool {
+        let metacharacters: Set<Character> = ["^", "$", "\\", ".", "*", "+", "?", "[", "]", "(", ")", "{", "}", "|"]
+        return pattern.contains { metacharacters.contains($0) }
+    }
+
+    private static func normalizedASN(_ raw: String?) -> UInt32? {
+        guard var text = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            return nil
+        }
+        if text.lowercased().hasPrefix("as") {
+            text = String(text.dropFirst(2))
+        }
+        guard !text.isEmpty,
+              text.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let value = UInt32(text),
+              value > 0 else {
+            return nil
+        }
+        return value
+    }
+
+    private static func extractParenthesizedClauses(_ raw: String) -> [String] {
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("("), trimmed.hasSuffix(")") else { return [] }
+        if let inner = stripOuterMatchingParensIfWhole(trimmed) {
+            let split = splitTopLevelCommas(inner)
+            if split.count >= 2 || (split.count == 1 && split[0].trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("(")) {
+                trimmed = inner
+            }
+        }
+        let parts = splitTopLevelCommas(trimmed)
+        let clauses = parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard !clauses.isEmpty, clauses.allSatisfy({ $0.hasPrefix("(") && $0.hasSuffix(")") }) else {
+            return []
+        }
+        return clauses
+    }
+
+    private static func stripOuterMatchingParensIfWhole(_ text: String) -> String? {
+        guard text.hasPrefix("("), text.hasSuffix(")") else { return nil }
+        var depth = 0
+        for (offset, ch) in text.enumerated() {
+            if ch == "(" { depth += 1 }
+            else if ch == ")" {
+                depth -= 1
+                if depth == 0 {
+                    if offset == text.count - 1 {
+                        return String(text.dropFirst().dropLast())
+                    }
+                    return nil
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func splitTopLevelCommas(_ text: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        var depth = 0
+        for ch in text {
+            if ch == "(" { depth += 1 }
+            else if ch == ")" { depth = max(0, depth - 1) }
+            else if ch == ",", depth == 0 {
+                result.append(current)
+                current = ""
+                continue
+            }
+            current.append(ch)
+        }
+        if !current.isEmpty {
+            result.append(current)
+        }
+        return result
+    }
+
+    private static func destinationHostAndPort(_ destination: String) -> (host: String, port: UInt16?, schemeNetwork: String?)? {
         let raw = destination.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !raw.isEmpty, !raw.contains(where: { $0.isWhitespace }) else { return nil }
-        if addressBytes(raw) != nil { return (raw, nil) }
+        if addressBytes(raw) != nil { return (raw, nil, nil) }
         let hasExplicitScheme = raw.contains("://")
         let value = hasExplicitScheme ? raw : "https://" + raw
         guard let url = URLComponents(string: value),
@@ -807,7 +1144,21 @@ public enum RouteMatchEngine {
         } else {
             port = nil
         }
-        return (host, port)
+
+        let schemeNetwork: String?
+        if hasExplicitScheme {
+            switch url.scheme?.lowercased() {
+            case "http", "ws", "wss", "tcp":
+                schemeNetwork = "tcp"
+            case "udp":
+                schemeNetwork = "udp"
+            default:
+                schemeNetwork = nil
+            }
+        } else {
+            schemeNetwork = nil
+        }
+        return (host, port, schemeNetwork)
     }
 
     private static func addressBytes(_ text: String) -> [UInt8]? {

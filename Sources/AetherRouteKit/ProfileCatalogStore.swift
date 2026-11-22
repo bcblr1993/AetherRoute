@@ -79,6 +79,24 @@ public struct ProfileCatalog: Codable, Equatable, Sendable {
 /// Encrypted, host-app-owned profile collection. Network extensions deliberately
 /// continue to consume only ``ActiveProfileStore``. This keeps their startup
 /// input small and gives activation an explicit, validated mirror boundary.
+private final class ProfileCatalogDirectoryLockTable: @unchecked Sendable {
+    static let shared = ProfileCatalogDirectoryLockTable()
+    private let registryLock = NSLock()
+    private var locks: [String: NSRecursiveLock] = [:]
+
+    func lock(for directoryURL: URL) -> NSRecursiveLock {
+        let key = directoryURL.standardizedFileURL.path
+        registryLock.lock()
+        defer { registryLock.unlock() }
+        if let existing = locks[key] {
+            return existing
+        }
+        let lock = NSRecursiveLock()
+        locks[key] = lock
+        return lock
+    }
+}
+
 public struct ProfileCatalogStore: Sendable {
     public static let maximumProfiles = 64
     public static let maximumTombstones = 1_024
@@ -127,31 +145,40 @@ public struct ProfileCatalogStore: Sendable {
         )
     }
 
+    private func withDirectoryLock<T>(_ operation: () throws -> T) rethrows -> T {
+        let lock = ProfileCatalogDirectoryLockTable.shared.lock(for: directoryURL)
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation()
+    }
+
     /// Loads the encrypted collection and repairs its extension-facing active
     /// mirror when needed. A pre-catalog encrypted active profile is migrated
     /// without changing its identifier-visible contents.
     public func loadOrMigrate(
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        if fileManager.fileExists(atPath: catalogURL.path) {
-            let catalog = try load(fileManager: fileManager)
-            try repairActiveMirror(for: catalog, fileManager: fileManager)
-            return catalog
-        }
+        try withDirectoryLock {
+            if fileManager.fileExists(atPath: catalogURL.path) {
+                let catalog = try load(fileManager: fileManager)
+                try repairActiveMirror(for: catalog, fileManager: fileManager)
+                return catalog
+            }
 
-        do {
-            let profile = try activeProfileStore.loadValidated(
-                fileManager: fileManager
-            )
-            let managed = ManagedProfile(profile: profile)
-            let catalog = ProfileCatalog(
-                activeProfileID: managed.id,
-                profiles: [managed]
-            )
-            try save(catalog, fileManager: fileManager)
-            return catalog
-        } catch ActiveProfileStoreError.noActiveProfile {
-            return ProfileCatalog()
+            do {
+                let profile = try activeProfileStore.loadValidated(
+                    fileManager: fileManager
+                )
+                let managed = ManagedProfile(profile: profile)
+                let catalog = ProfileCatalog(
+                    activeProfileID: managed.id,
+                    profiles: [managed]
+                )
+                try save(catalog, fileManager: fileManager)
+                return catalog
+            } catch ActiveProfileStoreError.noActiveProfile {
+                return ProfileCatalog()
+            }
         }
     }
 
@@ -182,31 +209,33 @@ public struct ProfileCatalogStore: Sendable {
             importedAt: importedAt,
             subscription: subscription
         )
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard current.profiles.count < Self.maximumProfiles else {
-            throw ProfileCatalogStoreError.profileLimitReached(
-                Self.maximumProfiles
-            )
-        }
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard current.profiles.count < Self.maximumProfiles else {
+                throw ProfileCatalogStoreError.profileLimitReached(
+                    Self.maximumProfiles
+                )
+            }
 
-        let managed = ManagedProfile(profile: profile)
-        var profiles = current.profiles
-        profiles.append(managed)
-        let shouldActivate = makeActive || current.activeProfileID == nil
-        let catalog = ProfileCatalog(
-            activeProfileID: shouldActivate
-                ? managed.id
-                : current.activeProfileID,
-            profiles: profiles
-        )
-        try cancellationCheck()
-        try commit(
-            catalog,
-            previous: current,
-            mirrorProfile: shouldActivate ? profile : nil,
-            fileManager: fileManager
-        )
-        return catalog
+            let managed = ManagedProfile(profile: profile)
+            var profiles = current.profiles
+            profiles.append(managed)
+            let shouldActivate = makeActive || current.activeProfileID == nil
+            let catalog = ProfileCatalog(
+                activeProfileID: shouldActivate
+                    ? managed.id
+                    : current.activeProfileID,
+                profiles: profiles
+            )
+            try cancellationCheck()
+            try commit(
+                catalog,
+                previous: current,
+                mirrorProfile: shouldActivate ? profile : nil,
+                fileManager: fileManager
+            )
+            return catalog
+        }
     }
 
     /// Adds an AetherRoute-authored profile while keeping the native node
@@ -232,29 +261,31 @@ public struct ProfileCatalogStore: Sendable {
         )
         try profile.validateForStorage()
 
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard current.profiles.count < Self.maximumProfiles else {
-            throw ProfileCatalogStoreError.profileLimitReached(
-                Self.maximumProfiles
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard current.profiles.count < Self.maximumProfiles else {
+                throw ProfileCatalogStoreError.profileLimitReached(
+                    Self.maximumProfiles
+                )
+            }
+            let managed = ManagedProfile(profile: profile)
+            var profiles = current.profiles
+            profiles.append(managed)
+            let shouldActivate = makeActive || current.activeProfileID == nil
+            let catalog = ProfileCatalog(
+                activeProfileID: shouldActivate
+                    ? managed.id
+                    : current.activeProfileID,
+                profiles: profiles
             )
+            try commit(
+                catalog,
+                previous: current,
+                mirrorProfile: shouldActivate ? profile : nil,
+                fileManager: fileManager
+            )
+            return catalog
         }
-        let managed = ManagedProfile(profile: profile)
-        var profiles = current.profiles
-        profiles.append(managed)
-        let shouldActivate = makeActive || current.activeProfileID == nil
-        let catalog = ProfileCatalog(
-            activeProfileID: shouldActivate
-                ? managed.id
-                : current.activeProfileID,
-            profiles: profiles
-        )
-        try commit(
-            catalog,
-            previous: current,
-            mirrorProfile: shouldActivate ? profile : nil,
-            fileManager: fileManager
-        )
-        return catalog
     }
 
     @discardableResult
@@ -262,23 +293,25 @@ public struct ProfileCatalogStore: Sendable {
         id: UUID,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let selected = current.profiles.first(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
-        }
-        guard current.activeProfileID != id else { return current }
+        try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let selected = current.profiles.first(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            guard current.activeProfileID != id else { return current }
 
-        let updated = ProfileCatalog(
-            activeProfileID: id,
-            profiles: current.profiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: selected.profile,
-            fileManager: fileManager
-        )
-        return updated
+            let updated = ProfileCatalog(
+                activeProfileID: id,
+                profiles: current.profiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: selected.profile,
+                fileManager: fileManager
+            )
+            return updated
+        }
     }
 
     @discardableResult
@@ -289,35 +322,37 @@ public struct ProfileCatalogStore: Sendable {
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         try profile.validateForStorage()
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
-        }
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
 
-        // Every caller rebuilds the profile from its parts (a subscription
-        // update, a rename, a node edit); overrides it does not mention are
-        // kept. `setOverrides` is the one way to change or clear them.
-        let profile = profile.overrides == nil
-            ? profile.withOverrides(current.profiles[index].profile.overrides)
-            : profile
-        var profiles = current.profiles
-        profiles[index] = ManagedProfile(
-            id: id,
-            profile: profile,
-            updatedAt: updatedAt,
-            mergedSpec: current.profiles[index].mergedSpec
-        )
-        let updated = ProfileCatalog(
-            activeProfileID: current.activeProfileID,
-            profiles: profiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: current.activeProfileID == id ? profile : nil,
-            fileManager: fileManager
-        )
-        return updated
+            // Every caller rebuilds the profile from its parts (a subscription
+            // update, a rename, a node edit); overrides it does not mention are
+            // kept. `setOverrides` is the one way to change or clear them.
+            let profile = profile.overrides == nil
+                ? profile.withOverrides(current.profiles[index].profile.overrides)
+                : profile
+            var profiles = current.profiles
+            profiles[index] = ManagedProfile(
+                id: id,
+                profile: profile,
+                updatedAt: updatedAt,
+                mergedSpec: current.profiles[index].mergedSpec
+            )
+            let updated = ProfileCatalog(
+                activeProfileID: current.activeProfileID,
+                profiles: profiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: current.activeProfileID == id ? profile : nil,
+                fileManager: fileManager
+            )
+            return updated
+        }
     }
 
     /// Replaces or clears a profile's overrides (1.7.0).
@@ -329,30 +364,32 @@ public struct ProfileCatalogStore: Sendable {
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         let validated = try overrides?.validated()
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            let profile = current.profiles[index].profile.withOverrides(validated)
+            try profile.validateForStorage()
+            var profiles = current.profiles
+            profiles[index] = ManagedProfile(
+                id: id,
+                profile: profile,
+                updatedAt: updatedAt,
+                mergedSpec: current.profiles[index].mergedSpec
+            )
+            let updated = ProfileCatalog(
+                activeProfileID: current.activeProfileID,
+                profiles: profiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: current.activeProfileID == id ? profile : nil,
+                fileManager: fileManager
+            )
+            return updated
         }
-        let profile = current.profiles[index].profile.withOverrides(validated)
-        try profile.validateForStorage()
-        var profiles = current.profiles
-        profiles[index] = ManagedProfile(
-            id: id,
-            profile: profile,
-            updatedAt: updatedAt,
-            mergedSpec: current.profiles[index].mergedSpec
-        )
-        let updated = ProfileCatalog(
-            activeProfileID: current.activeProfileID,
-            profiles: profiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: current.activeProfileID == id ? profile : nil,
-            fileManager: fileManager
-        )
-        return updated
     }
 
     // MARK: - Merged Profiles (Multi-Subscription Combination)
@@ -366,47 +403,49 @@ public struct ProfileCatalogStore: Sendable {
         makeActive: Bool = true,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard current.profiles.count < Self.maximumProfiles else {
-            throw ProfileCatalogStoreError.profileLimitReached(Self.maximumProfiles)
-        }
-        let sources = resolveMergeSources(spec: spec, in: current.profiles)
-        guard sources.count >= 2 else {
-            throw ProfileCatalogStoreError.invalidMergeSpec
-        }
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedName = cleanName.isEmpty
-            ? sources.map(\.profile.name).joined(separator: " + ")
-            : cleanName
-        let yaml = try Self.compileMergedYAML(sources: sources, spec: spec)
         let validatedOverrides = try overrides?.validated()
-        let profile = ActiveProfile(
-            name: resolvedName,
-            yaml: yaml,
-            importedAt: importedAt,
-            overrides: validatedOverrides
-        )
-        try profile.validateForStorage()
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard current.profiles.count < Self.maximumProfiles else {
+                throw ProfileCatalogStoreError.profileLimitReached(Self.maximumProfiles)
+            }
+            let sources = resolveMergeSources(spec: spec, in: current.profiles)
+            guard sources.count >= 2 else {
+                throw ProfileCatalogStoreError.invalidMergeSpec
+            }
+            let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedName = cleanName.isEmpty
+                ? sources.map(\.profile.name).joined(separator: " + ")
+                : cleanName
+            let yaml = try Self.compileMergedYAML(sources: sources, spec: spec)
+            let profile = ActiveProfile(
+                name: resolvedName,
+                yaml: yaml,
+                importedAt: importedAt,
+                overrides: validatedOverrides
+            )
+            try profile.validateForStorage()
 
-        let managed = ManagedProfile(
-            profile: profile,
-            updatedAt: importedAt,
-            mergedSpec: spec
-        )
-        var profiles = current.profiles
-        profiles.append(managed)
-        let shouldActivate = makeActive || current.activeProfileID == nil
-        let updated = ProfileCatalog(
-            activeProfileID: shouldActivate ? managed.id : current.activeProfileID,
-            profiles: profiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: shouldActivate ? profile : nil,
-            fileManager: fileManager
-        )
-        return updated
+            let managed = ManagedProfile(
+                profile: profile,
+                updatedAt: importedAt,
+                mergedSpec: spec
+            )
+            var profiles = current.profiles
+            profiles.append(managed)
+            let shouldActivate = makeActive || current.activeProfileID == nil
+            let updated = ProfileCatalog(
+                activeProfileID: shouldActivate ? managed.id : current.activeProfileID,
+                profiles: profiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: shouldActivate ? profile : nil,
+                fileManager: fileManager
+            )
+            return updated
+        }
     }
 
     @discardableResult
@@ -415,45 +454,47 @@ public struct ProfileCatalogStore: Sendable {
         updatedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
-        }
-        let existing = current.profiles[index]
-        guard let spec = existing.mergedSpec else {
-            throw ProfileCatalogStoreError.notMergedProfile
-        }
-        let sources = resolveMergeSources(spec: spec, in: current.profiles)
-        guard !sources.isEmpty else {
-            throw ProfileCatalogStoreError.invalidMergeSpec
-        }
-        let yaml = try Self.compileMergedYAML(sources: sources, spec: spec)
-        let rebuilt = ActiveProfile(
-            name: existing.profile.name,
-            yaml: yaml,
-            importedAt: updatedAt,
-            overrides: existing.profile.overrides
-        )
-        try rebuilt.validateForStorage()
+        try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let index = current.profiles.firstIndex(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            let existing = current.profiles[index]
+            guard let spec = existing.mergedSpec else {
+                throw ProfileCatalogStoreError.notMergedProfile
+            }
+            let sources = resolveMergeSources(spec: spec, in: current.profiles)
+            guard !sources.isEmpty else {
+                throw ProfileCatalogStoreError.invalidMergeSpec
+            }
+            let yaml = try Self.compileMergedYAML(sources: sources, spec: spec)
+            let rebuilt = ActiveProfile(
+                name: existing.profile.name,
+                yaml: yaml,
+                importedAt: updatedAt,
+                overrides: existing.profile.overrides
+            )
+            try rebuilt.validateForStorage()
 
-        var profiles = current.profiles
-        profiles[index] = ManagedProfile(
-            id: id,
-            profile: rebuilt,
-            updatedAt: updatedAt,
-            mergedSpec: spec
-        )
-        let updated = ProfileCatalog(
-            activeProfileID: current.activeProfileID,
-            profiles: profiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: current.activeProfileID == id ? rebuilt : nil,
-            fileManager: fileManager
-        )
-        return updated
+            var profiles = current.profiles
+            profiles[index] = ManagedProfile(
+                id: id,
+                profile: rebuilt,
+                updatedAt: updatedAt,
+                mergedSpec: spec
+            )
+            let updated = ProfileCatalog(
+                activeProfileID: current.activeProfileID,
+                profiles: profiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: current.activeProfileID == id ? rebuilt : nil,
+                fileManager: fileManager
+            )
+            return updated
+        }
     }
 
     @discardableResult
@@ -462,14 +503,16 @@ public struct ProfileCatalogStore: Sendable {
         updatedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        var catalog = try loadOrMigrate(fileManager: fileManager)
-        let dependentIDs = catalog.profiles
-            .filter { $0.mergedSpec?.sourceProfileIDs.contains(sourceProfileID) == true }
-            .map(\.id)
-        for mergedID in dependentIDs {
-            catalog = try rebuildMergedProfile(id: mergedID, updatedAt: updatedAt, fileManager: fileManager)
+        try withDirectoryLock {
+            var catalog = try loadOrMigrate(fileManager: fileManager)
+            let dependentIDs = catalog.profiles
+                .filter { $0.mergedSpec?.sourceProfileIDs.contains(sourceProfileID) == true }
+                .map(\.id)
+            for mergedID in dependentIDs {
+                catalog = try rebuildMergedProfile(id: mergedID, updatedAt: updatedAt, fileManager: fileManager)
+            }
+            return catalog
         }
-        return catalog
     }
 
     private func resolveMergeSources(
@@ -833,28 +876,30 @@ public struct ProfileCatalogStore: Sendable {
         updatedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let existing = current.profiles.first(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
+        try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let existing = current.profiles.first(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            guard existing.profile.nativeNodes != nil,
+                  existing.profile.subscription == nil else {
+                throw ProfileCatalogStoreError.notNativeProfile
+            }
+            try AetherNodeProfileCompiler.validateDialerProxies(in: nodes)
+            let yaml = try AetherNodeProfileCompiler.compile(nodes: nodes)
+            let profile = ActiveProfile(
+                name: existing.profile.name,
+                yaml: yaml,
+                importedAt: updatedAt,
+                nativeNodes: nodes
+            )
+            return try replace(
+                id: id,
+                with: profile,
+                updatedAt: updatedAt,
+                fileManager: fileManager
+            )
         }
-        guard existing.profile.nativeNodes != nil,
-              existing.profile.subscription == nil else {
-            throw ProfileCatalogStoreError.notNativeProfile
-        }
-        try AetherNodeProfileCompiler.validateDialerProxies(in: nodes)
-        let yaml = try AetherNodeProfileCompiler.compile(nodes: nodes)
-        let profile = ActiveProfile(
-            name: existing.profile.name,
-            yaml: yaml,
-            importedAt: updatedAt,
-            nativeNodes: nodes
-        )
-        return try replace(
-            id: id,
-            with: profile,
-            updatedAt: updatedAt,
-            fileManager: fileManager
-        )
     }
 
     @discardableResult
@@ -868,23 +913,25 @@ public struct ProfileCatalogStore: Sendable {
         guard !cleanName.isEmpty else {
             throw ProfileCatalogStoreError.emptyName
         }
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let existing = current.profiles.first(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let existing = current.profiles.first(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            let profile = ActiveProfile(
+                name: cleanName,
+                yaml: existing.profile.yaml,
+                importedAt: existing.profile.importedAt,
+                subscription: existing.profile.subscription,
+                nativeNodes: existing.profile.nativeNodes
+            )
+            return try replace(
+                id: id,
+                with: profile,
+                updatedAt: updatedAt,
+                fileManager: fileManager
+            )
         }
-        let profile = ActiveProfile(
-            name: cleanName,
-            yaml: existing.profile.yaml,
-            importedAt: existing.profile.importedAt,
-            subscription: existing.profile.subscription,
-            nativeNodes: existing.profile.nativeNodes
-        )
-        return try replace(
-            id: id,
-            with: profile,
-            updatedAt: updatedAt,
-            fileManager: fileManager
-        )
     }
 
     @discardableResult
@@ -894,40 +941,42 @@ public struct ProfileCatalogStore: Sendable {
         importedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard let existing = current.profiles.first(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
-        }
-        guard current.profiles.count < Self.maximumProfiles else {
-            throw ProfileCatalogStoreError.profileLimitReached(
-                Self.maximumProfiles
+        try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard let existing = current.profiles.first(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            guard current.profiles.count < Self.maximumProfiles else {
+                throw ProfileCatalogStoreError.profileLimitReached(
+                    Self.maximumProfiles
+                )
+            }
+            let defaultName = "\(existing.profile.name) Copy"
+            let cleanName = (suggestedName ?? defaultName)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let clonedProfile = ActiveProfile(
+                name: cleanName.isEmpty ? defaultName : cleanName,
+                yaml: existing.profile.yaml,
+                importedAt: importedAt,
+                subscription: nil,
+                nativeNodes: existing.profile.nativeNodes,
+                overrides: existing.profile.overrides
             )
+            try clonedProfile.validateForStorage()
+            var profiles = current.profiles
+            profiles.append(ManagedProfile(profile: clonedProfile))
+            let updated = ProfileCatalog(
+                activeProfileID: current.activeProfileID,
+                profiles: profiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: nil,
+                fileManager: fileManager
+            )
+            return updated
         }
-        let defaultName = "\(existing.profile.name) Copy"
-        let cleanName = (suggestedName ?? defaultName)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let clonedProfile = ActiveProfile(
-            name: cleanName.isEmpty ? defaultName : cleanName,
-            yaml: existing.profile.yaml,
-            importedAt: importedAt,
-            subscription: nil,
-            nativeNodes: existing.profile.nativeNodes,
-            overrides: existing.profile.overrides
-        )
-        try clonedProfile.validateForStorage()
-        var profiles = current.profiles
-        profiles.append(ManagedProfile(profile: clonedProfile))
-        let updated = ProfileCatalog(
-            activeProfileID: current.activeProfileID,
-            profiles: profiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: nil,
-            fileManager: fileManager
-        )
-        return updated
     }
 
     @discardableResult
@@ -936,53 +985,55 @@ public struct ProfileCatalogStore: Sendable {
         deletedAt: Date = .now,
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
-        let current = try loadOrMigrate(fileManager: fileManager)
-        guard current.profiles.contains(where: { $0.id == id }) else {
-            throw ProfileCatalogStoreError.profileNotFound
-        }
-        guard current.activeProfileID != id else {
-            throw ProfileCatalogStoreError.cannotRemoveActiveProfile
-        }
+        try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            guard current.profiles.contains(where: { $0.id == id }) else {
+                throw ProfileCatalogStoreError.profileNotFound
+            }
+            guard current.activeProfileID != id else {
+                throw ProfileCatalogStoreError.cannotRemoveActiveProfile
+            }
 
-        var remainingProfiles: [ManagedProfile] = []
-        remainingProfiles.reserveCapacity(current.profiles.count)
-        for item in current.profiles where item.id != id {
-            if var spec = item.mergedSpec, spec.sourceProfileIDs.contains(id) {
-                spec.sourceProfileIDs.removeAll { $0 == id }
-                let updatedSpec: MergedProfileSpec? = spec.sourceProfileIDs.isEmpty ? nil : spec
-                remainingProfiles.append(
-                    ManagedProfile(
-                        id: item.id,
-                        profile: item.profile,
-                        updatedAt: deletedAt,
-                        mergedSpec: updatedSpec
+            var remainingProfiles: [ManagedProfile] = []
+            remainingProfiles.reserveCapacity(current.profiles.count)
+            for item in current.profiles where item.id != id {
+                if var spec = item.mergedSpec, spec.sourceProfileIDs.contains(id) {
+                    spec.sourceProfileIDs.removeAll { $0 == id }
+                    let updatedSpec: MergedProfileSpec? = spec.sourceProfileIDs.isEmpty ? nil : spec
+                    remainingProfiles.append(
+                        ManagedProfile(
+                            id: item.id,
+                            profile: item.profile,
+                            updatedAt: deletedAt,
+                            mergedSpec: updatedSpec
+                        )
                     )
-                )
-            } else {
-                remainingProfiles.append(item)
+                } else {
+                    remainingProfiles.append(item)
+                }
             }
-        }
 
-        var updated = ProfileCatalog(
-            activeProfileID: current.activeProfileID,
-            profiles: remainingProfiles
-        )
-        try commit(
-            updated,
-            previous: current,
-            mirrorProfile: nil,
-            fileManager: fileManager
-        )
-        var tombstones = loadDeletedProfiles(fileManager: fileManager)
-        tombstones[id] = max(deletedAt, tombstones[id] ?? .distantPast)
-        try? saveDeletedProfiles(tombstones, fileManager: fileManager)
-        // Rebuild any merged profiles whose remaining sources are still non-empty
-        for item in updated.profiles where item.mergedSpec != nil {
-            if let rebuilt = try? rebuildMergedProfile(id: item.id, updatedAt: deletedAt, fileManager: fileManager) {
-                updated = rebuilt
+            var updated = ProfileCatalog(
+                activeProfileID: current.activeProfileID,
+                profiles: remainingProfiles
+            )
+            try commit(
+                updated,
+                previous: current,
+                mirrorProfile: nil,
+                fileManager: fileManager
+            )
+            var tombstones = loadDeletedProfiles(fileManager: fileManager)
+            tombstones[id] = max(deletedAt, tombstones[id] ?? .distantPast)
+            try? saveDeletedProfiles(tombstones, fileManager: fileManager)
+            // Rebuild any merged profiles whose remaining sources are still non-empty
+            for item in updated.profiles where item.mergedSpec != nil {
+                if let rebuilt = try? rebuildMergedProfile(id: item.id, updatedAt: deletedAt, fileManager: fileManager) {
+                    updated = rebuilt
+                }
             }
+            return updated
         }
-        return updated
     }
 
     /// Merges a decrypted portable catalog while preserving the profile that
@@ -998,57 +1049,59 @@ public struct ProfileCatalogStore: Sendable {
         guard !imported.profiles.isEmpty else {
             throw PortableProfileArchiveError.emptyCatalog
         }
-        let current = try loadOrMigrate(fileManager: fileManager)
-        var profiles = current.profiles
-        var identifiers = Set(profiles.map(\.id))
-        var importedIdentifierMap: [UUID: UUID] = [:]
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            var profiles = current.profiles
+            var identifiers = Set(profiles.map(\.id))
+            var importedIdentifierMap: [UUID: UUID] = [:]
 
-        for managed in imported.profiles {
-            if let existing = profiles.first(where: {
-                $0.profile.isEquivalentForPortableMerge(to: managed.profile)
-            }) {
-                importedIdentifierMap[managed.id] = existing.id
-                continue
-            }
-            guard profiles.count < Self.maximumProfiles else {
-                throw ProfileCatalogStoreError.profileLimitReached(
-                    Self.maximumProfiles
+            for managed in imported.profiles {
+                if let existing = profiles.first(where: {
+                    $0.profile.isEquivalentForPortableMerge(to: managed.profile)
+                }) {
+                    importedIdentifierMap[managed.id] = existing.id
+                    continue
+                }
+                guard profiles.count < Self.maximumProfiles else {
+                    throw ProfileCatalogStoreError.profileLimitReached(
+                        Self.maximumProfiles
+                    )
+                }
+                var identifier = managed.id
+                while identifiers.contains(identifier) {
+                    identifier = UUID()
+                }
+                identifiers.insert(identifier)
+                importedIdentifierMap[managed.id] = identifier
+                profiles.append(
+                    ManagedProfile(id: identifier, profile: managed.profile)
                 )
             }
-            var identifier = managed.id
-            while identifiers.contains(identifier) {
-                identifier = UUID()
-            }
-            identifiers.insert(identifier)
-            importedIdentifierMap[managed.id] = identifier
-            profiles.append(
-                ManagedProfile(id: identifier, profile: managed.profile)
-            )
-        }
 
-        let activeProfileID: UUID?
-        if let currentActive = current.activeProfileID {
-            activeProfileID = currentActive
-        } else if let importedActive = imported.activeProfileID {
-            activeProfileID = importedIdentifierMap[importedActive]
-        } else {
-            activeProfileID = nil
+            let activeProfileID: UUID?
+            if let currentActive = current.activeProfileID {
+                activeProfileID = currentActive
+            } else if let importedActive = imported.activeProfileID {
+                activeProfileID = importedIdentifierMap[importedActive]
+            } else {
+                activeProfileID = nil
+            }
+            let merged = ProfileCatalog(
+                activeProfileID: activeProfileID,
+                profiles: profiles
+            )
+            guard merged != current else { return current }
+            let mirror = current.activeProfileID == nil
+                ? merged.activeProfile?.profile
+                : nil
+            try commit(
+                merged,
+                previous: current,
+                mirrorProfile: mirror,
+                fileManager: fileManager
+            )
+            return merged
         }
-        let merged = ProfileCatalog(
-            activeProfileID: activeProfileID,
-            profiles: profiles
-        )
-        guard merged != current else { return current }
-        let mirror = current.activeProfileID == nil
-            ? merged.activeProfile?.profile
-            : nil
-        try commit(
-            merged,
-            previous: current,
-            mirrorProfile: mirror,
-            fileManager: fileManager
-        )
-        return merged
     }
 
     /// Reconciles an incoming iCloud catalog and deletion tombstones with the
@@ -1063,59 +1116,35 @@ public struct ProfileCatalogStore: Sendable {
         fileManager: FileManager = .default
     ) throws -> ProfileCatalog {
         try remoteCatalog.validateForStorage()
-        let current = try loadOrMigrate(fileManager: fileManager)
-        let localTombstones = loadDeletedProfiles(fileManager: fileManager)
+        return try withDirectoryLock {
+            let current = try loadOrMigrate(fileManager: fileManager)
+            let localTombstones = loadDeletedProfiles(fileManager: fileManager)
 
-        var mergedTombstones = localTombstones
-        for (id, deletedAt) in remoteTombstones {
-            if deletedAt > (mergedTombstones[id] ?? .distantPast) {
-                mergedTombstones[id] = deletedAt
-            }
-        }
-
-        var mergedProfiles: [ManagedProfile] = []
-        for local in current.profiles {
-            if let deletedAt = mergedTombstones[local.id], deletedAt >= local.updatedAt {
-                continue
-            }
-            if mergedTombstones[local.id] != nil {
-                mergedTombstones.removeValue(forKey: local.id)
-            }
-            mergedProfiles.append(local)
-        }
-
-        for remote in remoteCatalog.profiles {
-            if let deletedAt = mergedTombstones[remote.id], deletedAt >= remote.updatedAt {
-                continue
-            }
-
-            if let matchIndex = mergedProfiles.firstIndex(where: { $0.id == remote.id }) {
-                let existing = mergedProfiles[matchIndex]
-                if remote.updatedAt > existing.updatedAt {
-                    mergedProfiles[matchIndex] = ManagedProfile(
-                        id: existing.id,
-                        profile: remote.profile,
-                        updatedAt: remote.updatedAt,
-                        mergedSpec: remote.mergedSpec
-                    )
-                    if let deletedAt = mergedTombstones[existing.id], remote.updatedAt > deletedAt {
-                        mergedTombstones.removeValue(forKey: existing.id)
-                    }
+            var mergedTombstones = localTombstones
+            for (id, deletedAt) in remoteTombstones {
+                if deletedAt > (mergedTombstones[id] ?? .distantPast) {
+                    mergedTombstones[id] = deletedAt
                 }
-                continue
             }
 
-            if let remoteSubURL = remote.profile.subscription?.url {
-                let canonicalRemoteURL = Self.canonicalSubscriptionURL(remoteSubURL)
-                if let matchIndex = mergedProfiles.firstIndex(where: {
-                    $0.profile.subscription.map {
-                        Self.canonicalSubscriptionURL($0.url) == canonicalRemoteURL
-                    } ?? false
-                }) {
+            var mergedProfiles: [ManagedProfile] = []
+            for local in current.profiles {
+                if let deletedAt = mergedTombstones[local.id], deletedAt >= local.updatedAt {
+                    continue
+                }
+                if mergedTombstones[local.id] != nil {
+                    mergedTombstones.removeValue(forKey: local.id)
+                }
+                mergedProfiles.append(local)
+            }
+
+            for remote in remoteCatalog.profiles {
+                if let deletedAt = mergedTombstones[remote.id], deletedAt >= remote.updatedAt {
+                    continue
+                }
+
+                if let matchIndex = mergedProfiles.firstIndex(where: { $0.id == remote.id }) {
                     let existing = mergedProfiles[matchIndex]
-                    if let deletedAt = mergedTombstones[existing.id], deletedAt >= max(existing.updatedAt, remote.updatedAt) {
-                        continue
-                    }
                     if remote.updatedAt > existing.updatedAt {
                         mergedProfiles[matchIndex] = ManagedProfile(
                             id: existing.id,
@@ -1129,71 +1158,99 @@ public struct ProfileCatalogStore: Sendable {
                     }
                     continue
                 }
+
+                if let remoteSubURL = remote.profile.subscription?.url {
+                    let canonicalRemoteURL = Self.canonicalSubscriptionURL(remoteSubURL)
+                    if let matchIndex = mergedProfiles.firstIndex(where: {
+                        $0.profile.subscription.map {
+                            Self.canonicalSubscriptionURL($0.url) == canonicalRemoteURL
+                        } ?? false
+                    }) {
+                        let existing = mergedProfiles[matchIndex]
+                        if let deletedAt = mergedTombstones[existing.id], deletedAt >= max(existing.updatedAt, remote.updatedAt) {
+                            continue
+                        }
+                        if remote.updatedAt > existing.updatedAt {
+                            mergedProfiles[matchIndex] = ManagedProfile(
+                                id: existing.id,
+                                profile: remote.profile,
+                                updatedAt: remote.updatedAt,
+                                mergedSpec: remote.mergedSpec
+                            )
+                            if let deletedAt = mergedTombstones[existing.id], remote.updatedAt > deletedAt {
+                                mergedTombstones.removeValue(forKey: existing.id)
+                            }
+                        }
+                        continue
+                    }
+                }
+
+                guard mergedProfiles.count < Self.maximumProfiles else {
+                    throw ProfileCatalogStoreError.profileLimitReached(
+                        Self.maximumProfiles
+                    )
+                }
+                if let deletedAt = mergedTombstones[remote.id], remote.updatedAt > deletedAt {
+                    mergedTombstones.removeValue(forKey: remote.id)
+                }
+                mergedProfiles.append(remote)
             }
 
-            guard mergedProfiles.count < Self.maximumProfiles else {
-                throw ProfileCatalogStoreError.profileLimitReached(
-                    Self.maximumProfiles
-                )
+            let mergedIDs = Set(mergedProfiles.map(\.id))
+            let activeProfileID: UUID?
+            if mergedProfiles.isEmpty {
+                activeProfileID = nil
+            } else if let currentActive = current.activeProfileID, mergedIDs.contains(currentActive) {
+                activeProfileID = currentActive
+            } else if let remoteActive = remoteCatalog.activeProfileID, mergedIDs.contains(remoteActive) {
+                activeProfileID = remoteActive
+            } else {
+                activeProfileID = mergedProfiles.first?.id
             }
-            if let deletedAt = mergedTombstones[remote.id], remote.updatedAt > deletedAt {
-                mergedTombstones.removeValue(forKey: remote.id)
-            }
-            mergedProfiles.append(remote)
-        }
 
-        let mergedIDs = Set(mergedProfiles.map(\.id))
-        let activeProfileID: UUID?
-        if mergedProfiles.isEmpty {
-            activeProfileID = nil
-        } else if let currentActive = current.activeProfileID, mergedIDs.contains(currentActive) {
-            activeProfileID = currentActive
-        } else if let remoteActive = remoteCatalog.activeProfileID, mergedIDs.contains(remoteActive) {
-            activeProfileID = remoteActive
-        } else {
-            activeProfileID = mergedProfiles.first?.id
-        }
-
-        let reconciled = ProfileCatalog(
-            activeProfileID: activeProfileID,
-            profiles: mergedProfiles
-        )
-        let prunedTombstones = Self.prunedTombstones(mergedTombstones)
-        if prunedTombstones != localTombstones {
-            try saveDeletedProfiles(prunedTombstones, fileManager: fileManager)
-        }
-        guard reconciled != current else { return current }
-
-        if let mirror = reconciled.activeProfile?.profile {
-            let shouldUpdateMirror = reconciled.activeProfile != current.activeProfile
-            try commit(
-                reconciled,
-                previous: current,
-                mirrorProfile: shouldUpdateMirror ? mirror : nil,
-                fileManager: fileManager
+            let reconciled = ProfileCatalog(
+                activeProfileID: activeProfileID,
+                profiles: mergedProfiles
             )
-        } else {
-            try save(reconciled, fileManager: fileManager)
-            if current.activeProfile != nil {
-                try? activeProfileStore.removeEncryptedProfile(fileManager: fileManager)
+            let prunedTombstones = Self.prunedTombstones(mergedTombstones)
+            if prunedTombstones != localTombstones {
+                try saveDeletedProfiles(prunedTombstones, fileManager: fileManager)
             }
+            guard reconciled != current else { return current }
+
+            if let mirror = reconciled.activeProfile?.profile {
+                let shouldUpdateMirror = reconciled.activeProfile != current.activeProfile
+                try commit(
+                    reconciled,
+                    previous: current,
+                    mirrorProfile: shouldUpdateMirror ? mirror : nil,
+                    fileManager: fileManager
+                )
+            } else {
+                try save(reconciled, fileManager: fileManager)
+                if current.activeProfile != nil {
+                    try? activeProfileStore.removeEncryptedProfile(fileManager: fileManager)
+                }
+            }
+            return reconciled
         }
-        return reconciled
     }
 
     public func loadDeletedProfiles(fileManager: FileManager = .default) -> [UUID: Date] {
-        guard fileManager.fileExists(atPath: tombstonesURL.path),
-              let data = try? Data(contentsOf: tombstonesURL, options: [.mappedIfSafe]),
-              let raw = try? Self.tombstoneDecoder.decode([String: Date].self, from: data) else {
-            return [:]
-        }
-        var result: [UUID: Date] = [:]
-        for (key, date) in raw {
-            if let uuid = UUID(uuidString: key) {
-                result[uuid] = date
+        withDirectoryLock {
+            guard fileManager.fileExists(atPath: tombstonesURL.path),
+                  let data = try? Data(contentsOf: tombstonesURL, options: [.mappedIfSafe]),
+                  let raw = try? Self.tombstoneDecoder.decode([String: Date].self, from: data) else {
+                return [:]
             }
+            var result: [UUID: Date] = [:]
+            for (key, date) in raw {
+                if let uuid = UUID(uuidString: key) {
+                    result[uuid] = date
+                }
+            }
+            return result
         }
-        return result
     }
 
     static func canonicalSubscriptionURL(_ url: URL) -> String {
@@ -1260,14 +1317,16 @@ public struct ProfileCatalogStore: Sendable {
         fileManager: FileManager = .default
     ) throws {
         try catalog.validateForStorage()
-        let current = try? load(fileManager: fileManager)
-        let mirror = catalog.activeProfile?.profile
-        try commit(
-            catalog,
-            previous: current,
-            mirrorProfile: mirror,
-            fileManager: fileManager
-        )
+        try withDirectoryLock {
+            let current = try? load(fileManager: fileManager)
+            let mirror = catalog.activeProfile?.profile
+            try commit(
+                catalog,
+                previous: current,
+                mirrorProfile: mirror,
+                fileManager: fileManager
+            )
+        }
     }
 
     private func load(fileManager: FileManager) throws -> ProfileCatalog {
