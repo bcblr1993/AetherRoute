@@ -331,8 +331,8 @@ extension TunnelManager {
     func addBypassRule(_ input: String) async -> Bool {
         guard ensurePrivacyConsent() else { return false }
         guard canModifyBypassPolicy else {
-            bypassPolicyMessage = profileEditLockReason ?? AppLocalization.string(
-                "Disconnect before changing bypass rules."
+            bypassPolicyMessage = bypassPolicyLockReason ?? AppLocalization.string(
+                "Wait for the current change to finish."
             )
             bypassPolicyMessageIsError = true
             return false
@@ -341,8 +341,13 @@ extension TunnelManager {
         defer { isUpdatingBypassPolicy = false }
         do {
             let updated = try bypassPolicy.adding(BypassRule.parse(input))
+            let wasConnected = (state == .connected && !isUIReviewMode)
             try await persistBypassPolicy(updated)
-            bypassPolicyMessage = AppLocalization.string("Bypass rule added.")
+            bypassPolicyMessage = AppLocalization.string(
+                wasConnected
+                    ? "Bypass rule added and active immediately."
+                    : "Bypass rule added."
+            )
             bypassPolicyMessageIsError = false
             return true
         } catch {
@@ -355,8 +360,8 @@ extension TunnelManager {
     func removeBypassRule(id: UUID) async {
         guard ensurePrivacyConsent() else { return }
         guard canModifyBypassPolicy else {
-            bypassPolicyMessage = profileEditLockReason ?? AppLocalization.string(
-                "Disconnect before changing bypass rules."
+            bypassPolicyMessage = bypassPolicyLockReason ?? AppLocalization.string(
+                "Wait for the current change to finish."
             )
             bypassPolicyMessageIsError = true
             return
@@ -364,8 +369,13 @@ extension TunnelManager {
         isUpdatingBypassPolicy = true
         defer { isUpdatingBypassPolicy = false }
         do {
+            let wasConnected = (state == .connected && !isUIReviewMode)
             try await persistBypassPolicy(bypassPolicy.removing(id: id))
-            bypassPolicyMessage = AppLocalization.string("Bypass rule removed.")
+            bypassPolicyMessage = AppLocalization.string(
+                wasConnected
+                    ? "Bypass rule removed and active immediately."
+                    : "Bypass rule removed."
+            )
             bypassPolicyMessageIsError = false
         } catch {
             bypassPolicyMessage = localizedProfileOperationError(error)
@@ -746,6 +756,12 @@ extension TunnelManager {
         }
     }
 
+    enum LiveReloadStrategy: Sendable {
+        case hotReloadRulesOnly
+        case hotReloadFull
+        case fullRestart
+    }
+
     struct PreparedReloadProfile: Sendable {
         let payloadData: Data
         let routingResources: [RoutingResourceKind: Data]
@@ -753,10 +769,18 @@ extension TunnelManager {
 
     func reloadActiveProfileStagingResources(
         _ prepared: PreparedReloadProfile,
-        via client: ProxySelectionProviderClient
+        via client: ProxySelectionProviderClient,
+        strategy: LiveReloadStrategy = .hotReloadFull
     ) async throws {
         try await client.stageRoutingResources(prepared.routingResources)
-        try await client.reloadActiveProfile(payload: prepared.payloadData)
+        switch strategy {
+        case .hotReloadRulesOnly:
+            try await client.hotReloadRules(payload: prepared.payloadData, reloadOutbounds: false)
+        case .hotReloadFull:
+            try await client.hotReloadRules(payload: prepared.payloadData, reloadOutbounds: true)
+        case .fullRestart:
+            try await client.reloadActiveProfile(payload: prepared.payloadData)
+        }
     }
 
     func prepareReloadProfilePayload(
@@ -1689,6 +1713,7 @@ extension TunnelManager {
 
     func persistBypassPolicy(_ policy: BypassPolicy) async throws {
         let policy = try policy.validated()
+        let previous = bypassPolicy
         if !isUIReviewMode {
             try await Task.detached(priority: .userInitiated) {
                 try BypassPolicyStore.applicationGroup().save(policy)
@@ -1696,7 +1721,32 @@ extension TunnelManager {
         }
         bypassPolicy = policy
         hasLoadedBypassPolicy = true
-        refreshActiveProfileSummary()
+        await refreshActiveProfileSummaryOffMainActor()
+        if !isUIReviewMode, state == .connected {
+            do {
+                let currentRoutingMode = sessionRoutingMode ?? routingMode
+                let preparedReload = try await prepareReloadProfilePayload(
+                    requestedMode: currentRoutingMode
+                )
+                let client = makeProxySelectionProviderClient()
+                try await reloadActiveProfileStagingResources(
+                    preparedReload,
+                    via: client,
+                    strategy: .hotReloadRulesOnly
+                )
+                await syncGlobalSelector(client: client)
+            } catch {
+                // Roll back stored bypass policy if live reload failed.
+                if !isUIReviewMode {
+                    try? await Task.detached(priority: .userInitiated) {
+                        try BypassPolicyStore.applicationGroup().save(previous)
+                    }.value
+                }
+                bypassPolicy = previous
+                await refreshActiveProfileSummaryOffMainActor()
+                throw error
+            }
+        }
     }
 
 #if DEBUG || AETHERROUTE_PERFORMANCE_MEASUREMENT || AETHERROUTE_UI_RESPONSIVENESS || AETHERROUTE_DEVELOPMENT_PREVIEW
@@ -1781,9 +1831,9 @@ extension TunnelManager {
             }
             cachedGlobalProfileOverride = validated
             cachedEffectiveProfileCompilation = nil
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             if state == .connected {
-                let reloaded = await reloadCustomRulesLive()
+                let reloaded = await reloadCustomRulesLive(reloadOutbounds: true)
                 if !reloaded {
                     profileMessage = customRuleMessage
                         ?? AppLocalization.string("Global override template saved, but live reload failed.")
@@ -2002,10 +2052,10 @@ extension TunnelManager {
         _ = await ruleProviderEngine.updateAllExpired()
 
         await reloadCustomRuleProvidersFromEngine()
-        refreshActiveProfileSummary()
+        await refreshActiveProfileSummaryOffMainActor()
         var reloadSucceeded = true
         if state == .connected, !isUIReviewMode {
-            reloadSucceeded = await reloadCustomRulesLive()
+            reloadSucceeded = await reloadCustomRulesLive(reloadOutbounds: true)
         }
         let firstProviderError = stagedRules.compactMap(\.lastError).first
             ?? stagedProxies.compactMap(\.lastError).first

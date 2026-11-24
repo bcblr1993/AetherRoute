@@ -15,6 +15,13 @@ protocol CoreBridge: Sendable {
         snapshot: ProviderLaunchSnapshot,
         completion: @escaping @Sendable (Error?) -> Void
     ) throws
+    func reloadRules(
+        configuration: TunnelConfiguration,
+        snapshot: ProviderLaunchSnapshot,
+        reloadOutbounds: Bool
+    ) throws
+    func setMITMConfig(_ configJSON: Data) throws
+    func httpCapturesJSON() throws -> Data
     func selectorSnapshot(group: String) throws -> ProxySelectionState
     func setRoutingMode(_ mode: RoutingMode) throws
     func selectProxy(group: String, member: String) throws -> ProxySelectionState
@@ -147,14 +154,16 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         self.onUnexpectedExit = onUnexpectedExit
     }
 
-    func start(
-        configuration: TunnelConfiguration,
-        snapshot: ProviderLaunchSnapshot,
-        completion: @escaping @Sendable (Error?) -> Void
-    ) throws {
-        lifecycleLock.lock()
-        defer { lifecycleLock.unlock() }
+    private struct PreparedEnvironment {
+        let profileYAML: String
+        let runtimeDirectory: URL
+        let restorableSelections: [String: String]
+        let defaultGlobalOutbound: String?
+    }
 
+    private func prepareEnvironment(
+        snapshot: ProviderLaunchSnapshot
+    ) throws -> PreparedEnvironment {
         PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot begin")
         try snapshot.validate()
         PacketCoreRuntimeLog.logger.info("stage=validateLaunchSnapshot success")
@@ -175,7 +184,6 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         }
         _ = try resourceStore.prepareRuntimeResources(for: profileYAML)
         PacketCoreRuntimeLog.logger.info("stage=installLaunchResources success")
-        let dnsPolicy = snapshot.dnsPolicy
         let savedSelections = snapshot.proxySelections
         let profileSummary = ProfileConfigurationInspector.inspect(yaml: profileYAML)
         let seededSelections = InitialProxySelectionPolicy.selections(
@@ -214,6 +222,28 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             throw error
         }
         PacketCoreRuntimeLog.logger.info("stage=prepareRuntimeDirectory success")
+        return PreparedEnvironment(
+            profileYAML: profileYAML,
+            runtimeDirectory: runtimeDirectory,
+            restorableSelections: restorableSelections,
+            defaultGlobalOutbound: defaultGlobalOutbound
+        )
+    }
+
+    func start(
+        configuration: TunnelConfiguration,
+        snapshot: ProviderLaunchSnapshot,
+        completion: @escaping @Sendable (Error?) -> Void
+    ) throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
+        let env = try prepareEnvironment(snapshot: snapshot)
+        let profileYAML = env.profileYAML
+        let runtimeDirectory = env.runtimeDirectory
+        let restorableSelections = env.restorableSelections
+        let defaultGlobalOutbound = env.defaultGlobalOutbound
+        let dnsPolicy = snapshot.dnsPolicy
         // The host supplies the stable key in ephemeral start options because
         // the Developer ID system extension cannot read the user's Keychain.
         let fakeIPCacheKey = snapshot.fakeIPCacheKey ?? Data()
@@ -315,6 +345,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             enableIPv6: configuration.enableIPv6,
             dnsPolicy: dnsPolicy,
             localProxy: configuration.localProxy,
+            controlledListeners: configuration.controlledListeners,
             fakeIPCacheKey: fakeIPCacheKey,
             generation: engineGeneration,
             completionGroup: engineCompletion
@@ -470,6 +501,130 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
     private func releaseContext(_ context: UnsafeMutableRawPointer?) {
         guard let context else { return }
         Unmanaged<RustCoreBridge>.fromOpaque(context).release()
+    }
+
+    func reloadRules(
+        configuration: TunnelConfiguration,
+        snapshot: ProviderLaunchSnapshot,
+        reloadOutbounds: Bool
+    ) throws {
+        let env = try prepareEnvironment(snapshot: snapshot)
+        let effectiveDNSIPv6: Int32 = configuration.enableIPv6
+            ? snapshot.dnsPolicy.ipv6.rawValue
+            : DNSRuntimeBoolean.disabled.rawValue
+        var dnsPolicyABI = clash_packet_dns_policy_v1_t(
+            struct_size: UInt32(
+                MemoryLayout<clash_packet_dns_policy_v1_t>.size
+            ),
+            resolution_mode: snapshot.dnsPolicy.resolutionMode.rawValue,
+            ipv6: effectiveDNSIPv6,
+            respect_rules: snapshot.dnsPolicy.respectsRules.rawValue
+        )
+        var localProxyABI = clash_packet_local_proxy_v1_t(
+            struct_size: UInt32(
+                MemoryLayout<clash_packet_local_proxy_v1_t>.size
+            ),
+            enabled: configuration.localProxy.isEnabled ? 1 : 0,
+            http_port: configuration.localProxy.isEnabled
+                ? UInt32(configuration.localProxy.httpPort)
+                : 0,
+            socks_port: configuration.localProxy.isEnabled
+                ? UInt32(configuration.localProxy.socksPort)
+                : 0
+        )
+        let status = try controlLock.withLock { () -> Int32 in
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            return withUnsafePointer(to: &dnsPolicyABI) { policyPointer in
+                withUnsafePointer(to: &localProxyABI) { localProxyPointer in
+                    env.profileYAML.withCString { profilePointer in
+                        env.runtimeDirectory.path.withCString { cwdPointer in
+                            clash_packet_reload_rules_v1(
+                                profilePointer,
+                                cwdPointer,
+                                Int32(configuration.mtu),
+                                configuration.mode.packetFlowABIValue,
+                                policyPointer,
+                                localProxyPointer,
+                                reloadOutbounds ? 1 : 0
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        guard status == CLASH_FLOW_OK else {
+            throw Self.selectorError(status, selecting: false)
+        }
+        if reloadOutbounds {
+            try? restoreSelections(
+                env.restorableSelections,
+                defaultGlobalOutbound: env.defaultGlobalOutbound
+            )
+        }
+    }
+
+    func setMITMConfig(_ configJSON: Data) throws {
+        guard configJSON.count <= 4 * 1_024 * 1_024 else {
+            throw PacketTunnelSelectorError.rejected
+        }
+        let status: Int32 = try controlLock.withLock {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            return configJSON.withUnsafeBytes { bytes in
+                clash_packet_set_mitm_config_v1(
+                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                    configJSON.count
+                )
+            }
+        }
+        guard status == CLASH_FLOW_OK else {
+            throw Self.selectorError(status, selecting: false)
+        }
+    }
+
+    func httpCapturesJSON() throws -> Data {
+        try controlLock.withLock {
+            guard isRunning(), clash_packet_flow_ready() == 1 else {
+                throw PacketTunnelSelectorError.unavailable
+            }
+            var required = 0
+            let queryStatus = clash_packet_http_captures_v1(nil, 0, &required)
+            guard queryStatus == CLASH_FLOW_OK else {
+                throw Self.selectorError(queryStatus, selecting: false)
+            }
+            guard required <= ProxySelectionProviderMessageCodec.maximumMessageBytes - 64 else {
+                throw PacketTunnelSelectorError.responseTooLarge
+            }
+            var capacity = max(required, 2)
+            var attempt = 0
+            while attempt < 2 {
+                defer { attempt += 1 }
+                var output = Data(count: capacity)
+                var copiedRequired = 0
+                let copyStatus = output.withUnsafeMutableBytes { outputBytes in
+                    clash_packet_http_captures_v1(
+                        outputBytes.bindMemory(to: UInt8.self).baseAddress,
+                        outputBytes.count,
+                        &copiedRequired
+                    )
+                }
+                if copyStatus == CLASH_FLOW_OK, copiedRequired <= output.count {
+                    output.count = copiedRequired
+                    return output
+                }
+                if copyStatus == CLASH_FLOW_TOO_LARGE,
+                   copiedRequired > output.count,
+                   copiedRequired <= ProxySelectionProviderMessageCodec.maximumMessageBytes - 64 {
+                    capacity = copiedRequired
+                    continue
+                }
+                throw Self.selectorError(copyStatus, selecting: false)
+            }
+            throw PacketTunnelSelectorError.responseTooLarge
+        }
     }
 
     func selectorSnapshot(group: String) throws -> ProxySelectionState {
@@ -865,6 +1020,7 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
         enableIPv6: Bool,
         dnsPolicy: DNSRuntimePolicy,
         localProxy: LocalProxySettings,
+        controlledListeners: [ControlledListenerSpec],
         fakeIPCacheKey: Data,
         generation: UInt64,
         completionGroup: DispatchGroup
@@ -910,18 +1066,24 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
                         "".withCString { logPointer in
                             cwd.withCString { cwdPointer in
                                 fakeIPCacheKey.withUnsafeBytes { keyBytes in
-                                    clash_start_packet_flow_with_policy_local_proxy_and_cache_v2(
-                                        profilePointer,
-                                        logPointer,
-                                        cwdPointer,
-                                        Int32(mtu),
-                                        routingModeABI,
-                                        policyPointer,
-                                        localProxyPointer,
-                                        keyBytes.bindMemory(to: UInt8.self).baseAddress,
-                                        keyBytes.count,
-                                        1
-                                    )
+                                    Self.withControlledListenerABIs(
+                                        controlledListeners
+                                    ) { listenerPointer, listenerCount in
+                                        clash_start_packet_flow_with_policy_local_proxy_cache_and_listeners_v3(
+                                            profilePointer,
+                                            logPointer,
+                                            cwdPointer,
+                                            Int32(mtu),
+                                            routingModeABI,
+                                            policyPointer,
+                                            localProxyPointer,
+                                            keyBytes.bindMemory(to: UInt8.self).baseAddress,
+                                            keyBytes.count,
+                                            listenerPointer,
+                                            listenerCount,
+                                            1
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1213,6 +1375,43 @@ final class RustCoreBridge: CoreBridge, @unchecked Sendable {
             guard !state.startupFinished else { return false }
             state.startupFinished = true
             return true
+        }
+    }
+
+    private static func withControlledListenerABIs<T>(
+        _ listeners: [ControlledListenerSpec],
+        body: (UnsafePointer<clash_packet_controlled_listener_v1_t>?, Int) -> T
+    ) -> T {
+        guard !listeners.isEmpty else {
+            return body(nil, 0)
+        }
+        var allocatedNames: [UnsafeMutablePointer<CChar>] = []
+        allocatedNames.reserveCapacity(listeners.count)
+        defer {
+            for pointer in allocatedNames {
+                free(pointer)
+            }
+        }
+        var abiEntries: [clash_packet_controlled_listener_v1_t] = []
+        abiEntries.reserveCapacity(listeners.count)
+        for listener in listeners {
+            var namePointer: UnsafePointer<CChar>?
+            if let duplicated = strdup(listener.name) {
+                allocatedNames.append(duplicated)
+                namePointer = UnsafePointer(duplicated)
+            }
+            abiEntries.append(
+                clash_packet_controlled_listener_v1_t(
+                    struct_size: UInt32(MemoryLayout<clash_packet_controlled_listener_v1_t>.stride),
+                    kind: listener.kind.abiKind,
+                    port: UInt16(listener.port),
+                    reserved: 0,
+                    name: namePointer
+                )
+            )
+        }
+        return abiEntries.withUnsafeBufferPointer { buffer in
+            body(buffer.baseAddress, buffer.count)
         }
     }
 }

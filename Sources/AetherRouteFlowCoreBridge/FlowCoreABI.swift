@@ -40,6 +40,13 @@ protocol FlowCoreABIBackend: AnyObject, Sendable {
         interfaceIndex: UInt32
     ) -> Int32
 
+    func reloadRules(
+        engine: FlowCoreABIHandle,
+        profile: Data,
+        workingDirectory: Data,
+        reloadOutbounds: Bool
+    ) -> Int32
+
     func engineCreate(
         profile: Data,
         workingDirectory: Data,
@@ -156,6 +163,28 @@ extension FlowCoreABIBackend {
     ) -> Int32 {
         FlowCoreABIStatus.internalError
     }
+
+    func reloadRules(
+        engine _: FlowCoreABIHandle,
+        profile _: Data,
+        workingDirectory _: Data,
+        reloadOutbounds _: Bool
+    ) -> Int32 {
+        FlowCoreABIStatus.internalError
+    }
+
+    func setMITMConfig(
+        engine _: FlowCoreABIHandle,
+        configJSON _: Data
+    ) -> Int32 {
+        FlowCoreABIStatus.internalError
+    }
+
+    func httpCapturesJSON(
+        engine _: FlowCoreABIHandle
+    ) -> (status: Int32, json: Data?) {
+        (FlowCoreABIStatus.internalError, nil)
+    }
 }
 
 enum FlowCoreABIStatus {
@@ -177,17 +206,98 @@ enum FlowCoreABIStatus {
 }
 
 final class LiveFlowCoreABIBackend: FlowCoreABIBackend, @unchecked Sendable {
-    private let table: aetherroute_flow_abi_v8_t
+    private let tableV10: aetherroute_flow_abi_v10_t
+    private var table: aetherroute_flow_abi_v8_t { tableV10.v9.v8 }
 
     init() throws {
-        var table = aetherroute_flow_abi_v8_t()
-        table.struct_size = UInt32(
-            MemoryLayout<aetherroute_flow_abi_v8_t>.size
+        var loaded = aetherroute_flow_abi_v10_t()
+        loaded.struct_size = UInt32(
+            MemoryLayout<aetherroute_flow_abi_v10_t>.size
         )
-        guard aetherroute_flow_abi_load_v8(&table) == 1 else {
+        guard aetherroute_flow_abi_load_v10(&loaded) == 1 else {
             throw FlowCoreEngineError.flowABIUnavailable
         }
-        self.table = table
+        self.tableV10 = loaded
+    }
+
+    func reloadRules(
+        engine: FlowCoreABIHandle,
+        profile: Data,
+        workingDirectory: Data,
+        reloadOutbounds: Bool
+    ) -> Int32 {
+        guard let function = tableV10.v9.reload_rules_v1 else {
+            return FlowCoreABIStatus.internalError
+        }
+        return profile.withUnsafeBytes { profileBytes in
+            workingDirectory.withUnsafeBytes { directoryBytes in
+                function(
+                    engine.rawValue,
+                    profileBytes.bindMemory(to: UInt8.self).baseAddress,
+                    profileBytes.count,
+                    directoryBytes.bindMemory(to: UInt8.self).baseAddress,
+                    directoryBytes.count,
+                    reloadOutbounds ? 1 : 0
+                )
+            }
+        }
+    }
+
+    func setMITMConfig(
+        engine: FlowCoreABIHandle,
+        configJSON: Data
+    ) -> Int32 {
+        guard let function = tableV10.set_mitm_config_v1 else {
+            return FlowCoreABIStatus.internalError
+        }
+        return configJSON.withUnsafeBytes { bytes in
+            function(
+                engine.rawValue,
+                bytes.bindMemory(to: UInt8.self).baseAddress,
+                configJSON.count
+            )
+        }
+    }
+
+    func httpCapturesJSON(
+        engine: FlowCoreABIHandle
+    ) -> (status: Int32, json: Data?) {
+        guard let function = tableV10.http_captures_v1 else {
+            return (FlowCoreABIStatus.internalError, nil)
+        }
+        var required = 0
+        let queryStatus = function(engine.rawValue, nil, 0, &required)
+        guard queryStatus == FlowCoreABIStatus.success else {
+            return (queryStatus, nil)
+        }
+        guard required <= ProxySelectionProviderMessageCodec.maximumMessageBytes - 64 else {
+            return (FlowCoreABIStatus.tooLarge, nil)
+        }
+        var capacity = max(required, 2)
+        for _ in 0..<2 {
+            var output = Data(count: capacity)
+            var copiedRequired = 0
+            let copyStatus = output.withUnsafeMutableBytes { outputBytes in
+                function(
+                    engine.rawValue,
+                    outputBytes.bindMemory(to: UInt8.self).baseAddress,
+                    outputBytes.count,
+                    &copiedRequired
+                )
+            }
+            if copyStatus == FlowCoreABIStatus.success, copiedRequired <= output.count {
+                output.count = copiedRequired
+                return (copyStatus, output)
+            }
+            if copyStatus == FlowCoreABIStatus.tooLarge,
+               copiedRequired > output.count,
+               copiedRequired <= ProxySelectionProviderMessageCodec.maximumMessageBytes - 64 {
+                capacity = copiedRequired
+                continue
+            }
+            return (copyStatus, nil)
+        }
+        return (FlowCoreABIStatus.tooLarge, nil)
     }
 
     func engineCreate(

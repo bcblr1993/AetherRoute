@@ -382,6 +382,50 @@ static int32_t reset_network_state_v1_adapter(
     );
 }
 
+static int32_t reload_rules_v1_adapter(
+    void *engine,
+    const uint8_t *profile,
+    size_t profile_length,
+    const uint8_t *cwd,
+    size_t cwd_length,
+    int32_t reload_outbounds
+) {
+    return clash_flow_reload_rules_v1(
+        (clash_flow_engine_t *)engine,
+        profile,
+        profile_length,
+        cwd,
+        cwd_length,
+        reload_outbounds
+    );
+}
+
+static int32_t set_mitm_config_v1_adapter(
+    void *engine,
+    const uint8_t *config_json,
+    size_t config_json_length
+) {
+    return clash_flow_set_mitm_config_v1(
+        (clash_flow_engine_t *)engine,
+        config_json,
+        config_json_length
+    );
+}
+
+static int32_t http_captures_v1_adapter(
+    void *engine,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+) {
+    return clash_flow_http_captures_v1(
+        (clash_flow_engine_t *)engine,
+        output,
+        output_capacity,
+        required_length
+    );
+}
+
 static int32_t close_connections_v1_adapter(
     void *engine,
     const uint8_t *request,
@@ -660,5 +704,40 @@ int32_t aetherroute_flow_abi_load_v8(aetherroute_flow_abi_v8_t *output) {
         return 0;
     }
     output->reset_network_state_v1 = reset_network_state_v1_adapter;
+    return 1;
+}
+
+int32_t aetherroute_flow_abi_load_v9(aetherroute_flow_abi_v9_t *output) {
+    if (output == NULL || output->struct_size != sizeof(*output)) {
+        return 0;
+    }
+    const uint32_t struct_size = output->struct_size;
+    memset(output, 0, sizeof(*output));
+    output->struct_size = struct_size;
+    output->v8.struct_size = sizeof(output->v8);
+    if (aetherroute_flow_abi_load_v8(&output->v8) != 1) {
+        memset(output, 0, sizeof(*output));
+        output->struct_size = struct_size;
+        return 0;
+    }
+    output->reload_rules_v1 = reload_rules_v1_adapter;
+    return 1;
+}
+
+int32_t aetherroute_flow_abi_load_v10(aetherroute_flow_abi_v10_t *output) {
+    if (output == NULL || output->struct_size != sizeof(*output)) {
+        return 0;
+    }
+    const uint32_t struct_size = output->struct_size;
+    memset(output, 0, sizeof(*output));
+    output->struct_size = struct_size;
+    output->v9.struct_size = sizeof(output->v9);
+    if (aetherroute_flow_abi_load_v9(&output->v9) != 1) {
+        memset(output, 0, sizeof(*output));
+        output->struct_size = struct_size;
+        return 0;
+    }
+    output->set_mitm_config_v1 = set_mitm_config_v1_adapter;
+    output->http_captures_v1 = http_captures_v1_adapter;
     return 1;
 }

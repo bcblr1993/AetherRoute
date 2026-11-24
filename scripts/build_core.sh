@@ -140,6 +140,9 @@ for SYMBOL in \
   clash_flow_telemetry_snapshot_v4 \
   clash_flow_close_connections_v1 \
   clash_flow_engine_reset_network_state_v1 \
+  clash_flow_reload_rules_v1 \
+  clash_flow_set_mitm_config_v1 \
+  clash_flow_http_captures_v1 \
   clash_flow_tcp_create \
   clash_flow_tcp_create_v2 \
   clash_flow_udp_create \
@@ -169,7 +172,7 @@ done
 # on the ABI surface: raising it should be a decision, not a side effect of
 # adding an export.
 FLOW_ABI_COUNT=$(printf '%s\n' "$FLOW_SYMBOLS" | grep -Ec '^_clash_flow_' || true)
-if [ "$FLOW_ABI_COUNT" -ne 27 ]; then
+if [ "$FLOW_ABI_COUNT" -ne 30 ]; then
   echo "Refusing core artifact with unexpected Flow ABI count: $FLOW_ABI_COUNT" >&2
   exit 1
 fi

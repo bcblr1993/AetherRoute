@@ -234,6 +234,7 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
     public var dnsServers: [String]
     public var excludeLocalNetworks: Bool
     public var localProxy: LocalProxySettings
+    public var controlledListeners: [ControlledListenerSpec]
 
     public init(
         mode: RoutingMode = .rule,
@@ -245,7 +246,8 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
         enableIPv6: Bool = false,
         dnsServers: [String] = TunnelConfiguration.packetFlowDNSServers,
         excludeLocalNetworks: Bool = true,
-        localProxy: LocalProxySettings = LocalProxySettings()
+        localProxy: LocalProxySettings = LocalProxySettings(),
+        controlledListeners: [ControlledListenerSpec] = []
     ) {
         self.mode = mode
         self.mtu = mtu
@@ -257,6 +259,25 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
         self.dnsServers = dnsServers
         self.excludeLocalNetworks = excludeLocalNetworks
         self.localProxy = localProxy
+        self.controlledListeners = controlledListeners
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.mode = try container.decode(RoutingMode.self, forKey: .mode)
+        self.mtu = try container.decode(Int.self, forKey: .mtu)
+        self.ipv4Address = try container.decode(String.self, forKey: .ipv4Address)
+        self.ipv4SubnetMask = try container.decode(String.self, forKey: .ipv4SubnetMask)
+        self.ipv6Address = try container.decode(String.self, forKey: .ipv6Address)
+        self.ipv6PrefixLength = try container.decode(Int.self, forKey: .ipv6PrefixLength)
+        self.enableIPv6 = try container.decode(Bool.self, forKey: .enableIPv6)
+        self.dnsServers = try container.decode([String].self, forKey: .dnsServers)
+        self.excludeLocalNetworks = try container.decode(Bool.self, forKey: .excludeLocalNetworks)
+        self.localProxy = try container.decode(LocalProxySettings.self, forKey: .localProxy)
+        self.controlledListeners = try container.decodeIfPresent(
+            [ControlledListenerSpec].self,
+            forKey: .controlledListeners
+        ) ?? []
     }
 
     public func validated() throws -> Self {
@@ -285,6 +306,10 @@ public struct TunnelConfiguration: Codable, Equatable, Sendable {
         }
         do {
             _ = try localProxy.validated()
+            _ = try ExternalControllerSettings(
+                controlledListenersEnabled: !controlledListeners.isEmpty,
+                controlledListeners: controlledListeners
+            ).validated(localProxy: localProxy)
         } catch {
             throw TunnelConfigurationError.invalidLocalProxy
         }

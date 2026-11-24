@@ -90,6 +90,7 @@ fi
 
 swiftc -parse-as-library \
   "$ROOT/Sources/AetherRouteKit/LocalProxySettings.swift" \
+  "$ROOT/Sources/AetherRouteKit/ExternalControllerPreferences.swift" \
   "$ROOT/Sources/AetherRouteKit/TunnelConfiguration.swift" \
   "$ROOT/Sources/AetherRouteKit/IndependentDistribution.swift" \
   "$ROOT/Tests/DistributionStaging/main.swift" \

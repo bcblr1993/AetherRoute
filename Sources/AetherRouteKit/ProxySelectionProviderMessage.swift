@@ -72,6 +72,13 @@ public enum ProxySelectionProviderRequest: Sendable, Equatable {
     case stageRoutingResourceChunk(RoutingResourceTransferChunk)
     /// Queries SHA-256 digests of usable routing databases currently installed in the extension.
     case installedRoutingResourceDigests
+    /// Hot-reloads routing rules (and optionally outbounds/groups) in place
+    /// inside a running provider without tearing down active flows.
+    case hotReloadRules(Data, reloadOutbounds: Bool)
+    /// Applies serialized MITM configuration and ephemeral Keychain CA PEMs in memory.
+    case setMITMConfig(Data)
+    /// Queries recent decrypted MITM HTTP captures as UTF-8 JSON.
+    case httpCaptures
 }
 
 public enum ProxySelectionProviderFailure: UInt8, Sendable, Equatable {
@@ -98,6 +105,8 @@ public enum ProxySelectionProviderResponse: Sendable, Equatable {
     case traceRoute(RouteTraceResult)
     case routingResourceChunkStaged
     case routingResourceDigests([RoutingResourceKind: String])
+    case mitmConfigApplied
+    case httpCaptures(Data)
     case failure(ProxySelectionProviderFailure)
 }
 
@@ -336,6 +345,27 @@ public enum ProxySelectionProviderMessageCodec {
             group = Data()
             member = Data()
             reserved = [0, 0, 0]
+        case let .hotReloadRules(payload, reloadOutbounds):
+            guard payload.count <= maximumMessageBytes - requestHeaderBytes else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            operation = 16
+            group = payload
+            member = Data()
+            reserved = [reloadOutbounds ? 1 : 0, 0, 0]
+        case let .setMITMConfig(payload):
+            guard payload.count <= maximumMessageBytes - requestHeaderBytes else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            operation = 17
+            group = payload
+            member = Data()
+            reserved = [0, 0, 0]
+        case .httpCaptures:
+            operation = 18
+            group = Data()
+            member = Data()
+            reserved = [0, 0, 0]
         }
 
         var output = Data(requestMagic)
@@ -542,6 +572,33 @@ public enum ProxySelectionProviderMessageCodec {
                 memberLength == 0
             else { throw ProxySelectionProviderMessageError.malformed }
             return .installedRoutingResourceDigests
+        case 16:
+            guard
+                bytes[5] <= 1,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            let payload = Data(bytes[groupStart..<memberStart])
+            return .hotReloadRules(payload, reloadOutbounds: bytes[5] == 1)
+        case 17:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            let payload = Data(bytes[groupStart..<memberStart])
+            return .setMITMConfig(payload)
+        case 18:
+            guard
+                bytes[5] == 0,
+                bytes[6] == 0,
+                bytes[7] == 0,
+                groupLength == 0,
+                memberLength == 0
+            else { throw ProxySelectionProviderMessageError.malformed }
+            return .httpCaptures
         default:
             throw ProxySelectionProviderMessageError.malformed
         }
@@ -722,6 +779,24 @@ public enum ProxySelectionProviderMessageCodec {
             appendUInt32(UInt32(payload.count), to: &output)
             output.append(payload)
             return output
+        case .mitmConfigApplied:
+            var output = Data(responseMagic)
+            output.append(15)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(0, to: &output)
+            return output
+        case let .httpCaptures(payload):
+            guard responseHeaderBytes + payload.count <= maximumMessageBytes else {
+                throw ProxySelectionProviderMessageError.tooLarge
+            }
+            var output = Data(responseMagic)
+            output.append(16)
+            output.append(contentsOf: [0, 0, 0])
+            appendUInt32(noSelection, to: &output)
+            appendUInt32(UInt32(payload.count), to: &output)
+            output.append(payload)
+            return output
         }
     }
 
@@ -789,7 +864,7 @@ public enum ProxySelectionProviderMessageCodec {
                 data.count == responseHeaderBytes,
                 routingMode(code: bytes[5]) != nil
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 7, 8, 11, 13:
+        case 7, 8, 11, 13, 15:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
@@ -809,7 +884,7 @@ public enum ProxySelectionProviderMessageCodec {
                 memberCount <= UInt32(maximumRecentLogKilobytes) * 1_024,
                 data.count == responseHeaderBytes + Int(memberCount)
             else { throw ProxySelectionProviderMessageError.malformed }
-        case 12, 14:
+        case 12, 14, 16:
             guard
                 bytes[5] == 0,
                 selectedIndex == noSelection,
@@ -821,6 +896,12 @@ public enum ProxySelectionProviderMessageCodec {
         }
 
         var offset = responseHeaderBytes
+        if bytes[4] == 16 {
+            return .httpCaptures(Data(bytes[responseHeaderBytes...]))
+        }
+        if bytes[4] == 15 {
+            return .mitmConfigApplied
+        }
         if bytes[4] == 14 {
             let payload = Data(bytes[responseHeaderBytes...])
             guard let rawMap = try? JSONDecoder().decode([String: String].self, from: payload) else {

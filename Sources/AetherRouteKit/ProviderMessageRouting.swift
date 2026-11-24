@@ -22,6 +22,8 @@ public enum ProviderMessageClass: Sendable, Equatable {
             self = .probe
         case .snapshot, .select, .telemetry, .diagnostics,
              .setRoutingMode, .resetNetwork, .reloadProfile(_),
+             .hotReloadRules(_, _),
+             .setMITMConfig(_), .httpCaptures,
              .closeConnections(_), .recentLog, .setDiagnosticLogLevel,
              .traceRoute(_), .stageRoutingResourceChunk(_),
              .installedRoutingResourceDigests:

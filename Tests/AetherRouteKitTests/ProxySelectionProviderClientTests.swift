@@ -211,4 +211,24 @@ final class ProxySelectionProviderClientTests: XCTestCase {
 
         try await client.reloadActiveProfile(payload: expectedPayload)
     }
+
+    func testHotReloadRulesSendsValidWireRequestAndAcceptsProfileReloadedResponse() async throws {
+        let expectedPayload = Data([10, 20, 30, 40])
+        for reloadOutbounds in [false, true] {
+            let client = ProxySelectionProviderClient { data in
+                XCTAssertEqual(
+                    try ProxySelectionProviderMessageCodec.decodeRequest(data),
+                    .hotReloadRules(expectedPayload, reloadOutbounds: reloadOutbounds)
+                )
+                return try ProxySelectionProviderMessageCodec.encode(
+                    response: .profileReloaded
+                )
+            }
+
+            try await client.hotReloadRules(
+                payload: expectedPayload,
+                reloadOutbounds: reloadOutbounds
+            )
+        }
+    }
 }

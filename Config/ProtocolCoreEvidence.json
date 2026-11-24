@@ -1,11 +1,11 @@
 {
   "artifacts": {
-    "flowCoreSHA256": "6ba7019ba6067fd3608389f3b7de3268cd15d0136d00d3fe1cb3b71662209b1b",
-    "headerSHA256": "bf25e15ff3eeecec9d140fc7190cea240f7d5878af51f017f50faf09dc1c5dee",
+    "flowCoreSHA256": "56a1dc40d84bdf107a418e4e0c05944d8877661ed8e3229da9f4916a608a6034",
+    "headerSHA256": "68214cc95e8818038ecfaa981d1e5ad24625526ad87a0ac2959dd7d3635ca035",
     "interopTestBinarySHA256": "7a5dd255246a4ed32ca2c5638429733656e235d5f8812153202256b74c31b77e",
-    "packetFlowCoreSHA256": "806a68e0dabaf671f9e77736b6db0cb82a8bb900b83ef62bd4290089fa64088f"
+    "packetFlowCoreSHA256": "2f55549e84312988f65ce6466ff881330c8cf736da8ae9197d1fa2677d349ce4"
   },
-  "coreCommit": "54d279cd81b91b23b64f7d57562ff6a4cc69235f",
+  "coreCommit": "03ac470e8e8b10096c3f64a83003fb6df2e38c3f",
   "coreFeatures": [
     "aether-tuic",
     "shadowquic",
@@ -71,13 +71,13 @@
   ],
   "schemaVersion": 1,
   "sourceFiles": {
-    "coreManifestSHA256": "f3076cbcc886f37ebb8feee21160bd1c7d3a67e310a596e9360ef09224937182",
+    "coreManifestSHA256": "c93e33b128b9a38fa8fbe5a7dc4c63a1cff8720881e57524c59d1027bc23071b",
     "directSourceSHA256": "b3114f4181bcc30e700521ac752136d7318d42a3106a9179660c090a7b80f6fd",
-    "dispatcherSHA256": "919233e816c15ebf4939552bb6665c08d4d2995f721aece65ad3ff9fe9a3f158",
-    "embeddedFlowSourceSHA256": "8508e7795176d223d867b8395c082e8349d1bd45e0af6a161a5279de65c35b49",
+    "dispatcherSHA256": "5b226284bf11182468dfa66ad2bdd4a832b94f7ec51be29eddd7a27193a501f6",
+    "embeddedFlowSourceSHA256": "a6806ac5a6f1808101c77de5eea83b96b52b4e700c47169e3bc08aa8abb1eea8",
     "ffiManifestSHA256": "4806bf2f52377b82cf9d034ad4eb9da6d09ccddc6b73795a48478dedffeaac98",
-    "ffiSourceSHA256": "e74dd541eb21138bb2dc4379e68b825dbaf4cc6bc122fc3bdb5ff8b9796de167",
-    "flowFFISourceSHA256": "ebc036591468a81fbdcec4ad8c85b703016e24ed624adca96a82c4917519cbd7",
+    "ffiSourceSHA256": "917cfabd8f830f48140e6626d4656f29160701c148655af6666936ec0f77abbb",
+    "flowFFISourceSHA256": "f29bf40cdd5a92400c5f27594753f749c247d8f00aa1130000074256f77217f9",
     "interopTestsSHA256": "1a12f1e1aa010030e7dec473628a0dbe92131b03e63302be0ce94304e3c0a69b",
     "outboundManagerSHA256": "3a66c7972411800cc58e201a898aceeb19e62311da73a0fe1d90a7aad21fbb17",
     "proxyManagerSHA256": "b9a97f7e0400f690897ae5323deeab9073526443f1653f73cf5ead427dbee839",

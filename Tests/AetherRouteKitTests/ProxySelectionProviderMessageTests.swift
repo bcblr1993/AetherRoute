@@ -371,4 +371,44 @@ final class ProxySelectionProviderMessageTests: XCTestCase {
             ProviderMessageClass.of(messageData: Data([0xFF])).countsTowardUnresponsiveProvider
         )
     }
+
+    func testHotReloadRulesRequestRoundTripsAndRejectsInvalidFlags() throws {
+        let payload = Data([1, 2, 3, 4])
+        for reloadOutbounds in [false, true] {
+            let encoded = try ProxySelectionProviderMessageCodec.encode(
+                request: .hotReloadRules(payload, reloadOutbounds: reloadOutbounds)
+            )
+            XCTAssertEqual(ProviderMessageClass.of(messageData: encoded), .control)
+            XCTAssertEqual(
+                try ProxySelectionProviderMessageCodec.decodeRequest(encoded),
+                .hotReloadRules(payload, reloadOutbounds: reloadOutbounds)
+            )
+        }
+
+        var invalidFlag = try ProxySelectionProviderMessageCodec.encode(
+            request: .hotReloadRules(payload, reloadOutbounds: true)
+        )
+        invalidFlag[5] = 2
+        XCTAssertThrowsError(
+            try ProxySelectionProviderMessageCodec.decodeRequest(invalidFlag)
+        )
+    }
+
+    func testMITMConfigAndHTTPCapturesMessagesRoundTrip() throws {
+        let mitmPayload = Data("{\"enabled\":true}".utf8)
+        let setReq = try ProxySelectionProviderMessageCodec.encode(request: .setMITMConfig(mitmPayload))
+        XCTAssertEqual(ProviderMessageClass.of(messageData: setReq), .control)
+        XCTAssertEqual(try ProxySelectionProviderMessageCodec.decodeRequest(setReq), .setMITMConfig(mitmPayload))
+
+        let capReq = try ProxySelectionProviderMessageCodec.encode(request: .httpCaptures)
+        XCTAssertEqual(ProviderMessageClass.of(messageData: capReq), .control)
+        XCTAssertEqual(try ProxySelectionProviderMessageCodec.decodeRequest(capReq), .httpCaptures)
+
+        let appliedResp = try ProxySelectionProviderMessageCodec.encode(response: .mitmConfigApplied)
+        XCTAssertEqual(try ProxySelectionProviderMessageCodec.decodeResponse(appliedResp), .mitmConfigApplied)
+
+        let capData = Data("[{\"id\":1}]".utf8)
+        let capResp = try ProxySelectionProviderMessageCodec.encode(response: .httpCaptures(capData))
+        XCTAssertEqual(try ProxySelectionProviderMessageCodec.decodeResponse(capResp), .httpCaptures(capData))
+    }
 }

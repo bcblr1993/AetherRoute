@@ -204,7 +204,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             let configuration = try TunnelConfiguration(
                 mode: routingMode,
                 enableIPv6: enableIPv6,
-                localProxy: localProxy
+                localProxy: localProxy,
+                controlledListeners: snapshot.controlledListeners ?? []
             ).validated()
             Self.runtimeLogger.info(
                 "stage=decodeProviderConfiguration success routing=\(routingMode.rawValue, privacy: .public) localProxyEnabled=\(localProxy.isEnabled, privacy: .public) ipv6Enabled=\(enableIPv6, privacy: .public)"
@@ -360,23 +361,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         targetQueue.async { [self] in
             if case let .reloadProfile(payloadData) = request {
                 self.handleReloadProfile(payloadData: payloadData) { response in
-                    if case let .failure(failure) = response {
-                        self.diagnostics.record(failure)
-                    }
-                    do {
-                        completion.call(
-                            try ProxySelectionProviderMessageCodec.encode(
-                                response: response
-                            )
-                        )
-                    } catch {
-                        self.diagnostics.record(.oversizedControlResponse)
-                        completion.call(
-                            try? ProxySelectionProviderMessageCodec.encode(
-                                response: .failure(.responseTooLarge)
-                            )
-                        )
-                    }
+                    self.sendControlResponse(response, to: completion)
+                }
+                return
+            }
+            if case let .hotReloadRules(payloadData, reloadOutbounds) = request {
+                self.handleHotReloadRules(
+                    payloadData: payloadData,
+                    reloadOutbounds: reloadOutbounds
+                ) { response in
+                    self.sendControlResponse(response, to: completion)
                 }
                 return
             }
@@ -439,8 +433,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     try handleStageRoutingResourceChunk(chunk)
                 case .installedRoutingResourceDigests:
                     .routingResourceDigests(resourceChunkReceiver.installedDigests())
-                case .reloadProfile:
-                    // Answered by the early branch above; never crash the
+                case let .setMITMConfig(configData):
+                    try {
+                        try currentCore().setMITMConfig(configData)
+                        return .mitmConfigApplied
+                    }()
+                case .httpCaptures:
+                    .httpCaptures(try currentCore().httpCapturesJSON())
+                case .reloadProfile, .hotReloadRules:
+                    // Answered by the early branches above; never crash the
                     // extension (and the user's network) if that changes.
                     .failure(.invalidRequest)
                 }
@@ -455,21 +456,30 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             if case let .failure(failure) = response {
                 diagnostics.record(failure)
             }
+            sendControlResponse(response, to: completion)
+        }
+    }
 
-            do {
-                completion.call(
-                    try ProxySelectionProviderMessageCodec.encode(
-                        response: response
-                    )
+    private func sendControlResponse(
+        _ response: ProxySelectionProviderResponse,
+        to completion: PacketProviderMessageCompletion
+    ) {
+        if case let .failure(failure) = response {
+            diagnostics.record(failure)
+        }
+        do {
+            completion.call(
+                try ProxySelectionProviderMessageCodec.encode(
+                    response: response
                 )
-            } catch {
-                diagnostics.record(.oversizedControlResponse)
-                completion.call(
-                    try? ProxySelectionProviderMessageCodec.encode(
-                        response: .failure(.responseTooLarge)
-                    )
+            )
+        } catch {
+            diagnostics.record(.oversizedControlResponse)
+            completion.call(
+                try? ProxySelectionProviderMessageCodec.encode(
+                    response: .failure(.responseTooLarge)
                 )
-            }
+            )
         }
     }
 
@@ -836,7 +846,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 proxySelections: selections,
                 routingResources: recipe.snapshot.routingResources,
                 fakeIPCacheKey: recipe.snapshot.fakeIPCacheKey,
-                diagnosticLogLevel: recipe.snapshot.diagnosticLogLevel
+                diagnosticLogLevel: recipe.snapshot.diagnosticLogLevel,
+                controlledListeners: recipe.snapshot.controlledListeners
             ) {
                 activeRecipe = TunnelRecipe(
                     configuration: recipe.configuration,
@@ -935,6 +946,208 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
         }
     }
 
+    private struct PreparedReloadState {
+        let snapshot: ProviderLaunchSnapshot
+        let configuration: TunnelConfiguration
+        let settingsPlan: PacketTunnelNetworkSettingsPlan
+        let previousRecipe: TunnelRecipe?
+    }
+
+    private func prepareReloadState(
+        payloadData: Data
+    ) throws -> PreparedReloadState {
+        let store = try ActiveProfileStore.applicationGroup()
+        let (fakeIPCacheKey, diagnosticLogLevel) = self.uplinkLock.withLock {
+            (self.launchFakeIPCacheKey, self.launchDiagnosticLogLevel)
+        }
+        let previousRecipe = self.recipeLock.withLock { self.activeRecipe }
+        let snapshot: ProviderLaunchSnapshot
+        if !payloadData.isEmpty {
+            let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
+            let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? diagnosticLogLevel
+            if reloadPayload.diagnosticLogLevel != nil {
+                DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
+                self.uplinkLock.withLock { self.launchDiagnosticLogLevel = effectiveDiagnosticLevel }
+            }
+            let resourceStore = RoutingResourceStore(
+                applicationSupportDirectory: store.directoryURL
+            )
+            let resources = try resourceStore.resolveReloadResourceSnapshot(
+                for: reloadPayload.profileYAML,
+                inlineResources: reloadPayload.routingResources
+            )
+            snapshot = try ProviderLaunchSnapshot(
+                profileYAML: reloadPayload.profileYAML,
+                routingMode: reloadPayload.routingMode,
+                bypassPolicy: reloadPayload.bypassPolicy,
+                dnsPolicy: reloadPayload.dnsPolicy,
+                proxySelections: reloadPayload.proxySelections,
+                routingResources: resources,
+                fakeIPCacheKey: fakeIPCacheKey,
+                diagnosticLogLevel: effectiveDiagnosticLevel
+            )
+        } else {
+            let activeProfile = try store.loadValidated()
+            let provider = self.protocolConfiguration as? NETunnelProviderProtocol
+            let routingMode = (try? TunnelProviderConfigurationCodec.routingMode(
+                from: provider?.providerConfiguration
+            )) ?? self.uplinkLock.withLock({ self.recoveryRoutingMode })
+            let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
+            let resources = try resourceStore.resolveReloadResourceSnapshot(
+                for: activeProfile.runtimeYAML
+            )
+            let persistedSelections = (try? ProxySelectionStore.applicationGroup()
+                .selections(forProfileYAML: activeProfile.runtimeYAML))
+                ?? previousRecipe?.snapshot.proxySelections
+                ?? [:]
+            snapshot = try ProviderLaunchSnapshot(
+                profileYAML: activeProfile.runtimeYAML,
+                routingMode: routingMode,
+                bypassPolicy: (try? BypassPolicyStore.applicationGroup().load())
+                    ?? previousRecipe?.snapshot.bypassPolicy
+                    ?? .empty,
+                dnsPolicy: previousRecipe?.snapshot.dnsPolicy ?? .inherited,
+                proxySelections: persistedSelections,
+                routingResources: resources,
+                fakeIPCacheKey: fakeIPCacheKey,
+                diagnosticLogLevel: diagnosticLogLevel
+            )
+        }
+
+        let provider = self.protocolConfiguration as? NETunnelProviderProtocol
+        let routingMode = snapshot.routingMode
+        let localProxy = (try? TunnelProviderConfigurationCodec.localProxySettings(
+            from: provider?.providerConfiguration
+        )) ?? previousRecipe?.configuration.localProxy ?? LocalProxySettings()
+        let enableIPv6 = ProfileConfigurationInspector
+            .inspect(yaml: snapshot.profileYAML)
+            .allowsIPv6
+        let configuration = try TunnelConfiguration(
+            mode: routingMode,
+            enableIPv6: enableIPv6,
+            localProxy: localProxy
+        ).validated()
+        let bypassPlan = try BypassNetworkSettingsPlan(
+            policy: snapshot.bypassPolicy
+        )
+        let settingsPlan = PacketTunnelNetworkSettingsPlan(
+            configuration: configuration,
+            bypassPlan: bypassPlan
+        )
+        return PreparedReloadState(
+            snapshot: snapshot,
+            configuration: configuration,
+            settingsPlan: settingsPlan,
+            previousRecipe: previousRecipe
+        )
+    }
+
+    private func handleHotReloadRules(
+        payloadData: Data,
+        reloadOutbounds: Bool,
+        outerCompletion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+    ) {
+        reloadGate.enqueue { [weak self] finishReload in
+            let completion: @Sendable (ProxySelectionProviderResponse) -> Void = { response in
+                finishReload()
+                outerCompletion(response)
+            }
+            guard let self else {
+                completion(.failure(.unavailable))
+                return
+            }
+            self.reloadWorkerQueue.async { [weak self] in
+                guard let self else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                Self.runtimeLogger.info(
+                    "stage=handleHotReloadRules requested bytes=\(payloadData.count, privacy: .public) reloadOutbounds=\(reloadOutbounds, privacy: .public)"
+                )
+                guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                do {
+                    let prepared = try self.prepareReloadState(payloadData: payloadData)
+                    if let previousConfig = prepared.previousRecipe?.configuration,
+                       previousConfig.localProxy != prepared.configuration.localProxy {
+                        Self.runtimeLogger.info("stage=handleHotReloadRules localProxyChanged fallingBackToFullReload")
+                        self.performFullCoreReload(state: prepared, completion: completion)
+                        return
+                    }
+                    try self.currentCore().reloadRules(
+                        configuration: prepared.configuration,
+                        snapshot: prepared.snapshot,
+                        reloadOutbounds: reloadOutbounds
+                    )
+                    let previousSettingsPlan: PacketTunnelNetworkSettingsPlan? = prepared.previousRecipe.flatMap { recipe in
+                        guard let previousBypass = try? BypassNetworkSettingsPlan(policy: recipe.snapshot.bypassPolicy) else {
+                            return nil
+                        }
+                        return PacketTunnelNetworkSettingsPlan(
+                            configuration: recipe.configuration,
+                            bypassPlan: previousBypass
+                        )
+                    }
+                    let commitRecipe: @Sendable () -> Void = {
+                        self.recipeLock.withLock {
+                            self.activeRecipe = TunnelRecipe(
+                                configuration: prepared.configuration,
+                                snapshot: prepared.snapshot
+                            )
+                        }
+                        self.uplinkLock.withLock {
+                            self.recoveryRoutingMode = prepared.configuration.mode
+                        }
+                    }
+                    if previousSettingsPlan == prepared.settingsPlan {
+                        commitRecipe()
+                        Self.runtimeLogger.info("stage=handleHotReloadRules success skippedNetworkSettings=true")
+                        completion(.profileReloaded)
+                        return
+                    }
+                    Self.runtimeLogger.info("stage=handleHotReloadRules updatingNetworkSettings")
+                    let settings = self.makeNetworkSettings(prepared.settingsPlan)
+                    self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
+                        guard let self else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        if self.uplinkLock.withLock({ self.providerStopping }) {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        if let settingsError {
+                            Self.runtimeLogger.error(
+                                "stage=handleHotReloadRules setSettingsFailed error=\(String(reflecting: settingsError), privacy: .public)"
+                            )
+                            self.diagnostics.record(.networkSettingsFailure)
+                            completion(.failure(.internalFailure))
+                            return
+                        }
+                        commitRecipe()
+                        Self.runtimeLogger.info("stage=handleHotReloadRules success skippedNetworkSettings=false")
+                        completion(.profileReloaded)
+                    }
+                } catch is ProxySelectionProviderMessageError {
+                    self.diagnostics.record(.invalidControlRequest)
+                    completion(.failure(.invalidRequest))
+                } catch PacketTunnelSelectorError.unavailable {
+                    completion(.failure(.unavailable))
+                } catch PacketTunnelSelectorError.rejected {
+                    completion(.failure(.rejected))
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=handleHotReloadRules failed error=\(String(reflecting: error), privacy: .public)"
+                    )
+                    self.diagnostics.record(.internalControlFailure)
+                    completion(.failure(.internalFailure))
+                }
+            }
+        }
+    }
+
     private func handleReloadProfile(
         payloadData: Data,
         outerCompletion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
@@ -961,230 +1174,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 }
 
                 do {
-                    let store = try ActiveProfileStore.applicationGroup()
-                    let (fakeIPCacheKey, diagnosticLogLevel) = self.uplinkLock.withLock {
-                        (self.launchFakeIPCacheKey, self.launchDiagnosticLogLevel)
-                    }
-                    let previousRecipe = self.recipeLock.withLock { self.activeRecipe }
-                    let snapshot: ProviderLaunchSnapshot
-                    if !payloadData.isEmpty {
-                        Self.runtimeLogger.info("stage=handleReloadProfile decoding payload from message")
-                        let reloadPayload = try ReloadProfilePayloadCodec.decode(payloadData)
-                        let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? diagnosticLogLevel
-                        if reloadPayload.diagnosticLogLevel != nil {
-                            DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
-                            self.uplinkLock.withLock { self.launchDiagnosticLogLevel = effectiveDiagnosticLevel }
-                        }
-                        let resourceStore = RoutingResourceStore(
-                            applicationSupportDirectory: store.directoryURL
-                        )
-                        let resources = try resourceStore.resolveReloadResourceSnapshot(
-                            for: reloadPayload.profileYAML,
-                            inlineResources: reloadPayload.routingResources
-                        )
-                        snapshot = try ProviderLaunchSnapshot(
-                            profileYAML: reloadPayload.profileYAML,
-                            routingMode: reloadPayload.routingMode,
-                            bypassPolicy: reloadPayload.bypassPolicy,
-                            dnsPolicy: reloadPayload.dnsPolicy,
-                            proxySelections: reloadPayload.proxySelections,
-                            routingResources: resources,
-                            fakeIPCacheKey: fakeIPCacheKey,
-                            diagnosticLogLevel: effectiveDiagnosticLevel
-                        )
-                    } else {
-                        Self.runtimeLogger.info("stage=handleReloadProfile loading active profile from store")
-                        let activeProfile = try store.loadValidated()
-                        let provider = self.protocolConfiguration as? NETunnelProviderProtocol
-                        let routingMode = (try? TunnelProviderConfigurationCodec.routingMode(
-                            from: provider?.providerConfiguration
-                        )) ?? self.uplinkLock.withLock({ self.recoveryRoutingMode })
-                        let resourceStore = RoutingResourceStore(applicationSupportDirectory: store.directoryURL)
-                        let resources = try resourceStore.resolveReloadResourceSnapshot(
-                            for: activeProfile.runtimeYAML
-                        )
-                        let persistedSelections = (try? ProxySelectionStore.applicationGroup()
-                            .selections(forProfileYAML: activeProfile.runtimeYAML))
-                            ?? previousRecipe?.snapshot.proxySelections
-                            ?? [:]
-                        snapshot = try ProviderLaunchSnapshot(
-                            profileYAML: activeProfile.runtimeYAML,
-                            routingMode: routingMode,
-                            bypassPolicy: (try? BypassPolicyStore.applicationGroup().load())
-                                ?? previousRecipe?.snapshot.bypassPolicy
-                                ?? .empty,
-                            dnsPolicy: previousRecipe?.snapshot.dnsPolicy ?? .inherited,
-                            proxySelections: persistedSelections,
-                            routingResources: resources,
-                            fakeIPCacheKey: fakeIPCacheKey,
-                            diagnosticLogLevel: diagnosticLogLevel
-                        )
-                    }
-
-                    let provider = self.protocolConfiguration as? NETunnelProviderProtocol
-                    let routingMode = snapshot.routingMode
-                    let localProxy = (try? TunnelProviderConfigurationCodec.localProxySettings(
-                        from: provider?.providerConfiguration
-                    )) ?? previousRecipe?.configuration.localProxy ?? LocalProxySettings()
-                    let enableIPv6 = ProfileConfigurationInspector
-                        .inspect(yaml: snapshot.profileYAML)
-                        .allowsIPv6
-                    let configuration = try TunnelConfiguration(
-                        mode: routingMode,
-                        enableIPv6: enableIPv6,
-                        localProxy: localProxy
-                    ).validated()
-                    let bypassPlan = try BypassNetworkSettingsPlan(
-                        policy: snapshot.bypassPolicy
-                    )
-                    let settingsPlan = PacketTunnelNetworkSettingsPlan(
-                        configuration: configuration,
-                        bypassPlan: bypassPlan
-                    )
-
-                    guard !self.uplinkLock.withLock({ self.providerStopping }) else {
-                        completion(.failure(.unavailable))
-                        return
-                    }
-                    Self.runtimeLogger.info("stage=handleReloadProfile stopping current core")
-                    let oldCore = self.currentCore()
-                    oldCore.stop { [weak self] in
-                        guard let self else {
-                            completion(.failure(.unavailable))
-                            return
-                        }
-                        self.reloadWorkerQueue.async { [weak self] in
-                            guard let self else {
-                                completion(.failure(.unavailable))
-                                return
-                            }
-                            guard !self.uplinkLock.withLock({ self.providerStopping }) else {
-                                completion(.failure(.unavailable))
-                                return
-                            }
-                            Self.runtimeLogger.info("stage=handleReloadProfile starting replacement core")
-                            let newCore = self.makeCoreBridge()
-                            _ = self.swapCore(with: newCore)
-                            guard !self.uplinkLock.withLock({ self.providerStopping }) else {
-                                newCore.stop { completion(.failure(.unavailable)) }
-                                return
-                            }
-                            do {
-                                try newCore.start(
-                                    configuration: configuration,
-                                    snapshot: snapshot
-                                ) { [weak self] coreError in
-                                    guard let self else {
-                                        newCore.stop { completion(.failure(.unavailable)) }
-                                        return
-                                    }
-                                    if self.uplinkLock.withLock({ self.providerStopping }) {
-                                        newCore.stop { completion(.failure(.unavailable)) }
-                                        return
-                                    }
-                                    if let coreError {
-                                        Self.runtimeLogger.error(
-                                            "stage=handleReloadProfile coreStartFailed error=\(String(reflecting: coreError), privacy: .public)"
-                                        )
-                                        let nsError = coreError as NSError
-                                        Self.diagnosticLog.failure(
-                                            "stage=handleReloadProfile failed domain=\(nsError.domain) code=\(nsError.code)"
-                                        )
-                                        self.diagnostics.record(.startupFailure)
-                                        if Self.isUnrecoverableLifecycleError(coreError) {
-                                            completion(.failure(.unavailable))
-                                            self.cancelTunnelWithError(coreError)
-                                            return
-                                        }
-                                        newCore.stop { [weak self] in
-                                            guard let self else {
-                                                completion(.failure(.unavailable))
-                                                return
-                                            }
-                                            self.reloadWorkerQueue.async { [weak self] in
-                                                self?.rollbackReloadedCore(
-                                                    to: previousRecipe,
-                                                    triggerError: coreError,
-                                                    completion: completion
-                                                ) ?? completion(.failure(.unavailable))
-                                            }
-                                        }
-                                        return
-                                    }
-
-                                    Self.runtimeLogger.info("stage=handleReloadProfile updating network settings")
-                                    let settings = self.makeNetworkSettings(settingsPlan)
-                                    self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
-                                        guard let self else {
-                                            newCore.stop { completion(.failure(.unavailable)) }
-                                            return
-                                        }
-                                        if self.uplinkLock.withLock({ self.providerStopping }) {
-                                            newCore.stop { completion(.failure(.unavailable)) }
-                                            return
-                                        }
-                                        if let settingsError {
-                                            Self.runtimeLogger.error(
-                                                "stage=handleReloadProfile setSettingsFailed error=\(String(reflecting: settingsError), privacy: .public)"
-                                            )
-                                            self.diagnostics.record(.networkSettingsFailure)
-                                            newCore.stop { [weak self] in
-                                                guard let self else {
-                                                    completion(.failure(.unavailable))
-                                                    return
-                                                }
-                                                self.reloadWorkerQueue.async { [weak self] in
-                                                    self?.rollbackReloadedCore(
-                                                        to: previousRecipe,
-                                                        triggerError: settingsError,
-                                                        completion: completion
-                                                    ) ?? completion(.failure(.unavailable))
-                                                }
-                                            }
-                                            return
-                                        }
-                                        self.recipeLock.withLock {
-                                            self.activeRecipe = TunnelRecipe(
-                                                configuration: configuration,
-                                                snapshot: snapshot
-                                            )
-                                        }
-                                        self.uplinkLock.withLock {
-                                            self.recoveryRoutingMode = routingMode
-                                        }
-                                        Self.runtimeLogger.info("stage=handleReloadProfile success")
-                                        Self.diagnosticLog.aggregate("stage=handleReloadProfile success")
-                                        completion(.profileReloaded)
-                                    }
-                                }
-                            } catch {
-                                Self.runtimeLogger.error(
-                                    "stage=handleReloadProfile newCoreStartException error=\(String(reflecting: error), privacy: .public)"
-                                )
-                                self.diagnostics.record(.startupFailure)
-                                if Self.isUnrecoverableLifecycleError(error) {
-                                    newCore.stop { [weak self] in
-                                        completion(.failure(.unavailable))
-                                        self?.cancelTunnelWithError(error)
-                                    }
-                                    return
-                                }
-                                newCore.stop { [weak self] in
-                                    guard let self else {
-                                        completion(.failure(.unavailable))
-                                        return
-                                    }
-                                    self.reloadWorkerQueue.async { [weak self] in
-                                        self?.rollbackReloadedCore(
-                                            to: previousRecipe,
-                                            triggerError: error,
-                                            completion: completion
-                                        ) ?? completion(.failure(.unavailable))
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    let prepared = try self.prepareReloadState(payloadData: payloadData)
+                    self.performFullCoreReload(state: prepared, completion: completion)
                 } catch is ProxySelectionProviderMessageError {
                     self.diagnostics.record(.invalidControlRequest)
                     completion(.failure(.invalidRequest))
@@ -1194,6 +1185,161 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                     )
                     self.diagnostics.record(.internalControlFailure)
                     completion(.failure(.internalFailure))
+                }
+            }
+        }
+    }
+
+    private func performFullCoreReload(
+        state prepared: PreparedReloadState,
+        completion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+    ) {
+        let snapshot = prepared.snapshot
+        let configuration = prepared.configuration
+        let settingsPlan = prepared.settingsPlan
+        let previousRecipe = prepared.previousRecipe
+        let routingMode = configuration.mode
+
+        guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+            completion(.failure(.unavailable))
+            return
+        }
+        Self.runtimeLogger.info("stage=handleReloadProfile stopping current core")
+        let oldCore = self.currentCore()
+        oldCore.stop { [weak self] in
+            guard let self else {
+                completion(.failure(.unavailable))
+                return
+            }
+            self.reloadWorkerQueue.async { [weak self] in
+                guard let self else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                Self.runtimeLogger.info("stage=handleReloadProfile starting replacement core")
+                let newCore = self.makeCoreBridge()
+                _ = self.swapCore(with: newCore)
+                guard !self.uplinkLock.withLock({ self.providerStopping }) else {
+                    newCore.stop { completion(.failure(.unavailable)) }
+                    return
+                }
+                do {
+                    try newCore.start(
+                        configuration: configuration,
+                        snapshot: snapshot
+                    ) { [weak self] coreError in
+                        guard let self else {
+                            newCore.stop { completion(.failure(.unavailable)) }
+                            return
+                        }
+                        if self.uplinkLock.withLock({ self.providerStopping }) {
+                            newCore.stop { completion(.failure(.unavailable)) }
+                            return
+                        }
+                        if let coreError {
+                            Self.runtimeLogger.error(
+                                "stage=handleReloadProfile coreStartFailed error=\(String(reflecting: coreError), privacy: .public)"
+                            )
+                            let nsError = coreError as NSError
+                            Self.diagnosticLog.failure(
+                                "stage=handleReloadProfile failed domain=\(nsError.domain) code=\(nsError.code)"
+                            )
+                            self.diagnostics.record(.startupFailure)
+                            if Self.isUnrecoverableLifecycleError(coreError) {
+                                completion(.failure(.unavailable))
+                                self.cancelTunnelWithError(coreError)
+                                return
+                            }
+                            newCore.stop { [weak self] in
+                                guard let self else {
+                                    completion(.failure(.unavailable))
+                                    return
+                                }
+                                self.reloadWorkerQueue.async { [weak self] in
+                                    self?.rollbackReloadedCore(
+                                        to: previousRecipe,
+                                        triggerError: coreError,
+                                        completion: completion
+                                    ) ?? completion(.failure(.unavailable))
+                                }
+                            }
+                            return
+                        }
+
+                        Self.runtimeLogger.info("stage=handleReloadProfile updating network settings")
+                        let settings = self.makeNetworkSettings(settingsPlan)
+                        self.setTunnelNetworkSettings(settings) { [weak self] settingsError in
+                            guard let self else {
+                                newCore.stop { completion(.failure(.unavailable)) }
+                                return
+                            }
+                            if self.uplinkLock.withLock({ self.providerStopping }) {
+                                newCore.stop { completion(.failure(.unavailable)) }
+                                return
+                            }
+                            if let settingsError {
+                                Self.runtimeLogger.error(
+                                    "stage=handleReloadProfile setSettingsFailed error=\(String(reflecting: settingsError), privacy: .public)"
+                                )
+                                self.diagnostics.record(.networkSettingsFailure)
+                                newCore.stop { [weak self] in
+                                    guard let self else {
+                                        completion(.failure(.unavailable))
+                                        return
+                                    }
+                                    self.reloadWorkerQueue.async { [weak self] in
+                                        self?.rollbackReloadedCore(
+                                            to: previousRecipe,
+                                            triggerError: settingsError,
+                                            completion: completion
+                                        ) ?? completion(.failure(.unavailable))
+                                    }
+                                }
+                                return
+                            }
+                            self.recipeLock.withLock {
+                                self.activeRecipe = TunnelRecipe(
+                                    configuration: configuration,
+                                    snapshot: snapshot
+                                )
+                            }
+                            self.uplinkLock.withLock {
+                                self.recoveryRoutingMode = routingMode
+                            }
+                            Self.runtimeLogger.info("stage=handleReloadProfile success")
+                            Self.diagnosticLog.aggregate("stage=handleReloadProfile success")
+                            completion(.profileReloaded)
+                        }
+                    }
+                } catch {
+                    Self.runtimeLogger.error(
+                        "stage=handleReloadProfile newCoreStartException error=\(String(reflecting: error), privacy: .public)"
+                    )
+                    self.diagnostics.record(.startupFailure)
+                    if Self.isUnrecoverableLifecycleError(error) {
+                        newCore.stop { [weak self] in
+                            completion(.failure(.unavailable))
+                            self?.cancelTunnelWithError(error)
+                        }
+                        return
+                    }
+                    newCore.stop { [weak self] in
+                        guard let self else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        self.reloadWorkerQueue.async { [weak self] in
+                            self?.rollbackReloadedCore(
+                                to: previousRecipe,
+                                triggerError: error,
+                                completion: completion
+                            ) ?? completion(.failure(.unavailable))
+                        }
+                    }
                 }
             }
         }

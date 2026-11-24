@@ -34,7 +34,7 @@ extension TunnelManager {
                 ruleProviderMessageIsError = true
             }
             await reloadCustomRuleProvidersFromEngine()
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
             Task { _ = try? await ProfileCloudSyncManager.shared.sync() }
             return true
@@ -66,7 +66,7 @@ extension TunnelManager {
                 ruleProviderMessageIsError = false
             }
             await reloadCustomRuleProvidersFromEngine()
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
             Task { _ = try? await ProfileCloudSyncManager.shared.sync() }
             return true
@@ -87,7 +87,7 @@ extension TunnelManager {
         ruleProviderMessage = nil
         ruleProviderMessageIsError = false
         await reloadCustomRuleProvidersFromEngine()
-        refreshActiveProfileSummary()
+        await refreshActiveProfileSummaryOffMainActor()
         await reloadCustomRulesLive()
         Task { _ = try? await ProfileCloudSyncManager.shared.sync() }
     }
@@ -102,7 +102,7 @@ extension TunnelManager {
         ruleProviderMessage = AppLocalization.string("Rule provider removed")
         ruleProviderMessageIsError = false
         await reloadCustomRuleProvidersFromEngine()
-        refreshActiveProfileSummary()
+        await refreshActiveProfileSummaryOffMainActor()
         await reloadCustomRulesLive()
         Task { _ = try? await ProfileCloudSyncManager.shared.sync() }
     }
@@ -119,7 +119,7 @@ extension TunnelManager {
             )
             ruleProviderMessageIsError = false
             await reloadCustomRuleProvidersFromEngine()
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
         } catch is CancellationError {
             // Provider URL/format was edited mid-refresh and superseded by a newer fetch.
@@ -149,7 +149,7 @@ extension TunnelManager {
             refreshingRuleProviderIDs.remove(id)
         }
         await reloadCustomRuleProvidersFromEngine()
-        refreshActiveProfileSummary()
+        await refreshActiveProfileSummaryOffMainActor()
         await reloadCustomRulesLive()
         if let lastError, updatedCount == 0 {
             ruleProviderMessage = localizedRuleProviderError(lastError)

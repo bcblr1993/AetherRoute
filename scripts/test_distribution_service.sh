@@ -141,6 +141,7 @@ fi
 PUBLIC_KEY_BASE64=$(base64 <"$PUBLIC_KEY" | tr -d '\n')
 swiftc -parse-as-library \
   "$ROOT/Sources/AetherRouteKit/LocalProxySettings.swift" \
+  "$ROOT/Sources/AetherRouteKit/ExternalControllerPreferences.swift" \
   "$ROOT/Sources/AetherRouteKit/TunnelConfiguration.swift" \
   "$ROOT/Sources/AetherRouteKit/IndependentDistribution.swift" \
   "$ROOT/Tests/DistributionServiceInterop/main.swift" \

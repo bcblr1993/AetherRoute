@@ -1,8 +1,8 @@
 import AetherRouteKit
 import SwiftUI
 
-/// Collapsible on-demand egress IP & AI/Streaming availability row inside
-/// `OverviewView.routeSection`. Privacy-first: never probes automatically.
+/// Always-available egress IP & AI/Streaming availability row inside
+/// `OverviewView.routeSection`. Automatically checks when connected unless in UI review mode.
 struct OverviewEgressRow: View {
     @EnvironmentObject private var tunnel: TunnelManager
 
@@ -18,11 +18,20 @@ private struct OverviewEgressRowContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var tunnel: TunnelManager
     @ObservedObject var egressStore: EgressProbeStore
-    @State private var isExpanded = false
+    @State private var isExpanded = true
     @State private var revealsFullIP = false
 
     private var report: EgressProbeReport? {
         tunnel.latestEgressReportForCurrentNode()
+    }
+
+    private var autoProbeTriggerKey: String {
+        [
+            tunnel.isConnected ? "1" : "0",
+            String(describing: tunnel.providerConnectionID),
+            tunnel.effectiveRoutingMode.rawValue,
+            tunnel.currentEgressProbeNodeName ?? "",
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -35,7 +44,7 @@ private struct OverviewEgressRowContent: View {
                 trailingContent
             }
 
-            if isExpanded, tunnel.isConnected, let report {
+            if isExpanded, tunnel.isConnected {
                 OverviewRowDivider()
                 expandedDrawer(for: report)
                     .transition(.opacity)
@@ -53,7 +62,6 @@ private struct OverviewEgressRowContent: View {
         .onChange(of: tunnel.isConnected) { _, connected in
             if !connected {
                 revealsFullIP = false
-                isExpanded = false
             }
         }
         .onChange(of: tunnel.currentEgressProbeNodeName) { _, _ in
@@ -61,6 +69,15 @@ private struct OverviewEgressRowContent: View {
             if egressStore.isProbing {
                 tunnel.cancelEgressAvailabilityProbe()
             }
+        }
+        .task(id: autoProbeTriggerKey) {
+            guard tunnel.isConnected,
+                  !tunnel.isUIReviewMode,
+                  report == nil,
+                  !egressStore.isProbing else {
+                return
+            }
+            await tunnel.runEgressAvailabilityProbe()
         }
     }
 
@@ -194,8 +211,11 @@ private struct OverviewEgressRowContent: View {
         }
     }
 
-    private func expandedDrawer(for report: EgressProbeReport) -> some View {
-        VStack(alignment: .leading, spacing: AetherVisual.s3) {
+    private func expandedDrawer(for report: EgressProbeReport?) -> some View {
+        let aiResults = report?.aiServices ?? Self.placeholderServices(for: EgressServiceKind.aiServices)
+        let streamingResults = report?.streamingServices ?? Self.placeholderServices(for: EgressServiceKind.streamingServices)
+
+        return VStack(alignment: .leading, spacing: AetherVisual.s3) {
             if egressStore.isProbing {
                 HStack(spacing: AetherVisual.s2) {
                     ProgressView()
@@ -207,57 +227,67 @@ private struct OverviewEgressRowContent: View {
                 .accessibilityIdentifier("overview-egress-refreshing-banner")
             }
 
-            // Adaptive inset identity cards: IP (with Hide/Show), ASN/Type, Purity
+            // Equal-width 3-column identity row spanning the full container width.
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 155), spacing: AetherVisual.s2)],
+                columns: Array(repeating: GridItem(.flexible(), spacing: AetherVisual.s2), count: 3),
                 alignment: .leading,
                 spacing: AetherVisual.s2
             ) {
-                ipInsetCard(identity: report.identity)
-                asnInsetCard(identity: report.identity)
-                purityInsetCard(identity: report.identity)
+                ipInsetCard(identity: report?.identity)
+                asnInsetCard(identity: report?.identity)
+                purityInsetCard(identity: report?.identity)
             }
             .opacity(egressStore.isProbing ? 0.65 : 1)
 
-            // Adaptive compact grids: AI & Streaming
+            // Equal-width 4-column grids matching the identity row edges cleanly.
             serviceGridSection(
                 title: AppLocalization.string("AI Services"),
-                results: report.aiServices
+                results: aiResults
             )
             .opacity(egressStore.isProbing ? 0.65 : 1)
 
             serviceGridSection(
                 title: AppLocalization.string("Streaming"),
-                results: report.streamingServices
+                results: streamingResults
             )
             .opacity(egressStore.isProbing ? 0.65 : 1)
 
-            if report.isAIRestricted {
+            if let report, report.isAIRestricted {
                 aiRestrictedCallout(identity: report.identity)
             }
 
             HStack(spacing: AetherVisual.s2) {
-                Image(systemName: "lock.shield")
+                Image(systemName: "network.badge.shield.half.filled")
                     .font(.caption)
                     .foregroundStyle(AetherVisual.tertiaryText)
                     .accessibilityHidden(true)
                 Text(
-                    AppLocalization.string("Runs only when you tap Check. Never probed in the background.")
+                    AppLocalization.string("Automatically checks on connect or node switch while Overview is open. Tap Recheck anytime.")
                 )
                 .font(.caption)
                 .foregroundStyle(AetherVisual.tertiaryText)
                 Spacer(minLength: AetherVisual.s2)
-                Text(
-                    AppLocalization.date(report.checkedAt, date: .omitted, time: .shortened)
-                )
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(AetherVisual.tertiaryText)
+                if let report {
+                    Text(
+                        AppLocalization.date(report.checkedAt, date: .omitted, time: .shortened)
+                    )
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(AetherVisual.tertiaryText)
+                }
             }
         }
         .padding(.horizontal, AetherVisual.s4)
         .padding(.vertical, AetherVisual.s3)
         .accessibilityIdentifier("overview-egress-drawer")
+    }
+
+    private static func placeholderServices(
+        for kinds: [EgressServiceKind]
+    ) -> [EgressServiceProbeResult] {
+        kinds.map {
+            EgressServiceProbeResult(service: $0, status: .unknown, latencyMilliseconds: nil)
+        }
     }
 
     private func ipInsetCard(identity: EgressIdentity?) -> some View {
@@ -314,7 +344,7 @@ private struct OverviewEgressRowContent: View {
                 .truncationMode(.tail)
                 .help(Text(verbatim: locationText))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(AetherVisual.s3)
         .background(
             AetherVisual.cardFill,
@@ -355,7 +385,7 @@ private struct OverviewEgressRowContent: View {
                 .truncationMode(.tail)
                 .help(Text(verbatim: orgText))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(AetherVisual.s3)
         .background(
             AetherVisual.cardFill,
@@ -403,7 +433,7 @@ private struct OverviewEgressRowContent: View {
                 .truncationMode(.tail)
                 .help(summaryText)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(AetherVisual.s3)
         .background(
             AetherVisual.cardFill,
@@ -419,12 +449,12 @@ private struct OverviewEgressRowContent: View {
         title: String,
         results: [EgressServiceProbeResult]
     ) -> some View {
-        let columns = [GridItem(.adaptive(minimum: 118), spacing: AetherVisual.s2)]
+        let columns = Array(repeating: GridItem(.flexible(), spacing: AetherVisual.s2), count: 4)
         return VStack(alignment: .leading, spacing: AetherVisual.s2) {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AetherVisual.secondaryText)
-            LazyVGrid(columns: columns, spacing: AetherVisual.s2) {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: AetherVisual.s2) {
                 ForEach(results) { item in
                     serviceCell(item)
                 }
@@ -453,6 +483,7 @@ private struct OverviewEgressRowContent: View {
             }
             Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, AetherVisual.s2)
         .padding(.vertical, AetherVisual.sCompact)
         .background(

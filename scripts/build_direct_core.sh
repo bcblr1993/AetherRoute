@@ -123,6 +123,8 @@ for SYMBOL in \
   clash_start_packet_flow_with_mode \
   clash_start_packet_flow_with_policy_v1 \
   clash_start_packet_flow_with_policy_and_local_proxy_v1 \
+  clash_start_packet_flow_with_policy_local_proxy_and_cache_v2 \
+  clash_start_packet_flow_with_policy_local_proxy_cache_and_listeners_v3 \
   clash_shutdown \
   clash_free_string \
   clash_install_packet_flow \
@@ -137,6 +139,9 @@ for SYMBOL in \
   clash_packet_telemetry_snapshot_v3 \
   clash_packet_telemetry_snapshot_v4 \
   clash_packet_reset_network_state_v1 \
+  clash_packet_reload_rules_v1 \
+  clash_packet_set_mitm_config_v1 \
+  clash_packet_http_captures_v1 \
   clash_packet_close_connections_v1 \
   clash_uninstall_packet_flow
 do

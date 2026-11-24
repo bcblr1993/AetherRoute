@@ -146,20 +146,11 @@ public final class FlowCoreEngine: @unchecked Sendable {
         configuration: FlowCoreEngineConfiguration,
         backend: any FlowCoreABIBackend
     ) throws {
-        let validated = try configuration.validated()
-        guard !profile.isEmpty, profile.count <= Self.maximumProfileBytes else {
-            throw FlowCoreEngineError.invalidProfile
-        }
-        guard
-            runtimeDirectory.isFileURL,
-            runtimeDirectory.path.hasPrefix("/"),
-            let directory = runtimeDirectory.path.data(using: .utf8),
-            !directory.isEmpty,
-            directory.count <= 4_096,
-            !directory.contains(0)
-        else {
-            throw FlowCoreEngineError.invalidConfiguration
-        }
+        let (validated, profile, directory) = try Self.validatedEngineInputs(
+            profile: profile,
+            runtimeDirectory: runtimeDirectory,
+            configuration: configuration
+        )
 
         let created = backend.engineCreate(
             profile: profile,
@@ -296,6 +287,67 @@ public final class FlowCoreEngine: @unchecked Sendable {
         interfaceIndex: UInt32
     ) throws -> EngineNetworkResetOutcome {
         try storage.resetNetworkState(interfaceIndex: interfaceIndex)
+    }
+
+    /// Hot-reloads routing rules, rule-providers, domain/sniff overrides, and
+    /// optionally outbounds/groups in place without disrupting active flows.
+    public func reloadRules(
+        profileYAML: String,
+        workingDirectory: URL,
+        reloadOutbounds: Bool
+    ) throws {
+        guard let profileData = profileYAML.data(using: .utf8) else {
+            throw FlowCoreEngineError.invalidProfile
+        }
+        let (_, validatedProfile, directoryData) = try Self.validatedEngineInputs(
+            profile: profileData,
+            runtimeDirectory: workingDirectory,
+            configuration: FlowCoreEngineConfiguration()
+        )
+        let status = try storage.reloadRules(
+            profile: validatedProfile,
+            workingDirectory: directoryData,
+            reloadOutbounds: reloadOutbounds
+        )
+        guard status == FlowCoreABIStatus.success else {
+            throw Self.engineError(for: status)
+        }
+    }
+
+    public func setMITMConfig(_ configJSON: Data) throws {
+        guard configJSON.count <= 4 * 1_024 * 1_024 else {
+            throw FlowCoreEngineError.invalidProfile
+        }
+        let status = try storage.setMITMConfig(configJSON)
+        guard status == FlowCoreABIStatus.success else {
+            throw Self.engineError(for: status)
+        }
+    }
+
+    public func httpCapturesJSON() throws -> Data {
+        try storage.httpCapturesJSON()
+    }
+
+    private static func validatedEngineInputs(
+        profile: Data,
+        runtimeDirectory: URL,
+        configuration: FlowCoreEngineConfiguration
+    ) throws -> (FlowCoreEngineConfiguration, Data, Data) {
+        let validated = try configuration.validated()
+        guard !profile.isEmpty, profile.count <= Self.maximumProfileBytes else {
+            throw FlowCoreEngineError.invalidProfile
+        }
+        guard
+            runtimeDirectory.isFileURL,
+            runtimeDirectory.path.hasPrefix("/"),
+            let directory = runtimeDirectory.path.data(using: .utf8),
+            !directory.isEmpty,
+            directory.count <= 4_096,
+            !directory.contains(0)
+        else {
+            throw FlowCoreEngineError.invalidConfiguration
+        }
+        return (validated, profile, directory)
     }
 
     /// Idempotent engine callback barrier. Completion is never invoked from a
@@ -677,6 +729,37 @@ private final class FlowCoreEngineStorage: @unchecked Sendable {
             default:
                 throw Self.selectorError(status, selecting: false)
             }
+        }
+    }
+
+    func reloadRules(
+        profile: Data,
+        workingDirectory: Data,
+        reloadOutbounds: Bool
+    ) throws -> Int32 {
+        try withReadLease { engineHandle in
+            backend.reloadRules(
+                engine: engineHandle,
+                profile: profile,
+                workingDirectory: workingDirectory,
+                reloadOutbounds: reloadOutbounds
+            )
+        }
+    }
+
+    func setMITMConfig(_ configJSON: Data) throws -> Int32 {
+        try withReadLease { engineHandle in
+            backend.setMITMConfig(engine: engineHandle, configJSON: configJSON)
+        }
+    }
+
+    func httpCapturesJSON() throws -> Data {
+        try withReadLease { engineHandle in
+            let result = backend.httpCapturesJSON(engine: engineHandle)
+            guard result.status == FlowCoreABIStatus.success, let json = result.json else {
+                throw FlowCoreEngineError.selectorUnavailable
+            }
+            return json
         }
     }
 

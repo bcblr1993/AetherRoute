@@ -451,6 +451,7 @@ final class TunnelManager: ObservableObject {
             let current = Self.diagnosticEventCode(for: state)
             if oldValue != state {
                 handleSystemProxyForStateTransition(from: oldValue, to: state)
+                handleMITMStateTransition(to: state)
             }
             guard previous != current else { return }
             Self.runtimeLogger.info(
@@ -465,6 +466,7 @@ final class TunnelManager: ObservableObject {
     @Published var activeProfileID: UUID?
     @Published var activeProfile: ActiveProfile?
     @Published var activeProfileSummary: ProfileConfigurationSummary?
+    var activeProfileSummaryGeneration: UInt64 = 0
     @Published var profileMessage: String?
     @Published var profileMessageIsError = false
     @Published var pendingExternalSubscription:
@@ -705,12 +707,26 @@ final class TunnelManager: ObservableObject {
 
     @Published var localProxySettings: LocalProxySettings
     @Published var localProxySettingsMessage: String? = nil
+    @Published var externalControllerSettings: ExternalControllerSettings
+    @Published var externalControllerSecret: String
+    @Published var externalControllerIsRunning = false
+    @Published var externalControllerMessage: String? = nil
+    @Published var externalControllerMessageIsError = false
+    @Published var mitmConfiguration: MITMConfiguration
+    @Published var mitmCAFingerprint: String? = nil
+    @Published var mitmMessage: String? = nil
+    @Published var mitmMessageIsError = false
     @Published var isSystemProxyActive = false
     @Published var controlURLSchemePreferences: ControlURLSchemePreferences
     @Published private(set) var controlURLSchemeToken: String
     @Published var pendingControlURLRequest: PendingControlURLRequest?
     var cachedGlobalProfileOverride: ProfileOverride?
     var cachedEffectiveProfileCompilation: (key: EffectiveProfileCompilationKey, result: ProfileOverrideResult)?
+    var externalControllerServer: ExternalControllerServer?
+    var externalControllerDelegateAdapter: ExternalControllerTunnelAdapter?
+    var externalControllerBoundPort: UInt16?
+    var externalControllerStartTask: Task<Void, Never>?
+    var mitmSyncTask: Task<Void, Never>?
     @Published var routingMode: RoutingMode {
         didSet {
             guard persistsRoutingModeSelection else { return }
@@ -725,6 +741,10 @@ final class TunnelManager: ObservableObject {
     let privacyConsentStore: PrivacyConsentStore
     let routingModePreferenceStore: RoutingModePreferenceStore
     let localProxySettingsStore: LocalProxySettingsStore
+    let externalControllerPreferencesStore: ExternalControllerPreferencesStore
+    let externalControllerSecretStore: ExternalControllerSecretStore
+    let mitmConfigurationStore: MITMConfigurationStore
+    let mitmCertificateAuthority: MITMCertificateAuthority
     let controlURLSchemePreferenceStore: ControlURLSchemePreferenceStore
     let systemProxyConfigurator: SystemProxyConfigurator
     let userDefaults: UserDefaults
@@ -873,8 +893,20 @@ final class TunnelManager: ObservableObject {
         self.routingResourceStoreFactory = routingResourceStoreFactory
         self.ruleProviderEngine = ruleProviderEngine
         self.proxyProviderEngine = proxyProviderEngine
-        localProxySettingsStore = LocalProxySettingsStore(defaults: userDefaults)
-        localProxySettings = localProxySettingsStore.load()
+        let localProxyStore = LocalProxySettingsStore(defaults: userDefaults)
+        let loadedLocalProxySettings = localProxyStore.load()
+        localProxySettingsStore = localProxyStore
+        localProxySettings = loadedLocalProxySettings
+        let controllerStore = ExternalControllerPreferencesStore(defaults: userDefaults)
+        externalControllerPreferencesStore = controllerStore
+        externalControllerSettings = controllerStore.load(localProxy: loadedLocalProxySettings)
+        let controllerSecretStore = ExternalControllerSecretStore()
+        externalControllerSecretStore = controllerSecretStore
+        externalControllerSecret = ""
+        let mitmStore = MITMConfigurationStore(defaults: userDefaults)
+        mitmConfigurationStore = mitmStore
+        mitmConfiguration = mitmStore.load()
+        mitmCertificateAuthority = MITMCertificateAuthority()
         controlURLSchemePreferenceStore = ControlURLSchemePreferenceStore(defaults: userDefaults)
         controlURLSchemePreferences = controlURLSchemePreferenceStore.load()
         controlURLSchemeToken = Self.loadOrCreateControlURLSchemeToken(in: userDefaults)
@@ -1208,7 +1240,7 @@ final class TunnelManager: ObservableObject {
                 if self.customRules != previousRules
                     || self.bypassPolicy != previousBypass
                     || self.customRuleProviders != previousProviders {
-                    self.refreshActiveProfileSummary()
+                    await self.refreshActiveProfileSummaryOffMainActor()
                     await self.reloadCustomRulesLive()
                 }
             }
@@ -1223,7 +1255,7 @@ final class TunnelManager: ObservableObject {
                 let previousProviders = self.customRuleProviders
                 await self.reloadCustomRuleProvidersFromEngine()
                 if self.customRuleProviders != previousProviders {
-                    self.refreshActiveProfileSummary()
+                    await self.refreshActiveProfileSummaryOffMainActor()
                     await self.reloadCustomRulesLive()
                 }
             }
@@ -1245,6 +1277,8 @@ final class TunnelManager: ObservableObject {
                 #endif
             }
             startSubscriptionUpdateScheduleIfNeeded()
+            syncExternalControllerLifecycle()
+            loadMITMCertificateFingerprintIfNeeded()
         }
     }
 
@@ -2040,6 +2074,9 @@ final class TunnelManager: ObservableObject {
         let bundleDirectory = bundledResourceDirectoryURL
         let requestedDNSPolicy = dnsRuntimePolicy
         let requestedEngine = networkEngineMode
+        let requestedControlledListeners = requestedEngine == .tun
+            ? effectiveControlledListenersForLaunch
+            : []
         let launchInput = try await Task.detached(
             priority: .userInitiated
         ) {
@@ -2095,7 +2132,10 @@ final class TunnelManager: ObservableObject {
                     ).loadOrCreateKey(keyID: "fake-ip-cache.v1")
                     : nil,
                 diagnosticLogLevel: (try? DiagnosticLogLevelStore
-                    .applicationGroup())?.load() ?? .off
+                    .applicationGroup())?.load() ?? .off,
+                controlledListeners: requestedControlledListeners.isEmpty
+                    ? nil
+                    : requestedControlledListeners
             )
             return (
                 snapshot,
@@ -2195,6 +2235,7 @@ final class TunnelManager: ObservableObject {
         if state == .connected {
             startTelemetryPollingIfNeeded()
             handleSystemProxyForStateTransition(from: .disconnecting, to: .connected)
+            handleMITMStateTransition(to: .connected)
         } else {
             LANProxyServerController.shared.updateConfiguration(
                 settings: localProxySettings,
@@ -2240,6 +2281,7 @@ final class TunnelManager: ObservableObject {
         runtimeEnvironmentResetTask?.cancel()
         runtimeEnvironmentResetTask = nil
         LANProxyServerController.shared.stop()
+        stopExternalControllerServer()
         restoreSystemProxyIfNeeded()
     }
 
@@ -2835,10 +2877,11 @@ final class TunnelManager: ObservableObject {
     func setDomesticOptimizationEnabled(_ enabled: Bool) {
         isDomesticOptimizationEnabled = enabled
         DomesticRoutingOptimizer.setEnabled(enabled)
-        refreshActiveProfileSummary()
-        if state == .connected, !isUIReviewMode {
-            Task { @MainActor [weak self] in
-                await self?.reloadCustomRulesLive()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.refreshActiveProfileSummaryOffMainActor()
+            if self.state == .connected, !self.isUIReviewMode {
+                await self.reloadCustomRulesLive()
             }
         }
     }
@@ -2866,10 +2909,11 @@ final class TunnelManager: ObservableObject {
         }
         while let nextPolicy = pendingDNSRuntimePolicy {
             pendingDNSRuntimePolicy = nil
-            guard !isEnabled, !isTransitioning, let currentActive = activeProfile else { break }
+            guard !isTransitioning, let currentActive = activeProfile else { break }
+            let previousPolicy = dnsRuntimePolicy
             do {
+                let profileYAML = currentActive.yaml
                 if !isUIReviewMode {
-                    let profileYAML = currentActive.yaml
                     try await Task.detached(priority: .userInitiated) {
                         try DNSRuntimePolicyStore.applicationGroup().save(
                             nextPolicy,
@@ -2878,9 +2922,39 @@ final class TunnelManager: ObservableObject {
                     }.value
                 }
                 dnsRuntimePolicy = nextPolicy
-                dnsRuntimePolicyMessage = nextPolicy.isInherited
-                    ? AppLocalization.string("DNS behavior will follow the active profile on the next TUN connection.")
-                    : AppLocalization.string("DNS overrides will apply on the next TUN connection.")
+                if !isUIReviewMode, state == .connected, networkEngineMode == .tun {
+                    do {
+                        let currentRoutingMode = sessionRoutingMode ?? routingMode
+                        let preparedReload = try await prepareReloadProfilePayload(
+                            requestedMode: currentRoutingMode
+                        )
+                        let client = makeProxySelectionProviderClient()
+                        try await reloadActiveProfileStagingResources(
+                            preparedReload,
+                            via: client,
+                            strategy: .hotReloadRulesOnly
+                        )
+                        await syncGlobalSelector(client: client)
+                        dnsRuntimePolicyMessage = nextPolicy.isInherited
+                            ? AppLocalization.string("DNS behavior restored to follow the profile and applied immediately.")
+                            : AppLocalization.string("DNS adjustments updated and applied immediately.")
+                    } catch {
+                        if !isUIReviewMode {
+                            try? await Task.detached(priority: .userInitiated) {
+                                try DNSRuntimePolicyStore.applicationGroup().save(
+                                    previousPolicy,
+                                    forProfileYAML: profileYAML
+                                )
+                            }.value
+                        }
+                        dnsRuntimePolicy = previousPolicy
+                        throw error
+                    }
+                } else {
+                    dnsRuntimePolicyMessage = nextPolicy.isInherited
+                        ? AppLocalization.string("DNS behavior will follow the active profile on the next TUN connection.")
+                        : AppLocalization.string("DNS overrides will apply on the next TUN connection.")
+                }
                 dnsRuntimePolicyMessageIsError = false
             } catch {
                 dnsRuntimePolicyMessage = localizedLocalProxyError(error)
@@ -3206,12 +3280,22 @@ final class TunnelManager: ObservableObject {
     }
 
     var canModifyBypassPolicy: Bool {
-        canModifyProfiles
+        canModifyInactiveProfiles
+    }
+
+    var bypassPolicyLockReason: String? {
+        guard !canModifyBypassPolicy else { return nil }
+        if !hasAcceptedPrivacyDisclosure {
+            return AppLocalization.string("Accept the privacy notice to make changes.")
+        }
+        if isTransitioning {
+            return AppLocalization.string("The connection is changing state…")
+        }
+        return AppLocalization.string("Saving other changes…")
     }
 
     var canModifyDNSRuntimePolicy: Bool {
         hasAcceptedPrivacyDisclosure
-            && !isEnabled
             && !isTransitioning
             && !isRefreshingSubscription
             && !isImportingProfile
@@ -3223,6 +3307,17 @@ final class TunnelManager: ObservableObject {
             && !isUpdatingRoutingResources
             && proxySelectionRequests.isEmpty
             && activeProfile != nil
+    }
+
+    var dnsRuntimeEditLockReason: String? {
+        guard !canModifyDNSRuntimePolicy else { return nil }
+        if !hasAcceptedPrivacyDisclosure {
+            return AppLocalization.string("Accept the privacy notice to make changes.")
+        }
+        if isTransitioning {
+            return AppLocalization.string("The connection is changing state…")
+        }
+        return AppLocalization.string("Saving other changes…")
     }
 
     var canModifyLocalProxySettings: Bool {

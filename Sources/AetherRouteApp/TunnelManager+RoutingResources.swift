@@ -288,7 +288,11 @@ extension TunnelManager {
                         requestedMode: currentRoutingMode
                     )
                     let client = makeProxySelectionProviderClient()
-                    try await reloadActiveProfileStagingResources(preparedReload, via: client)
+                    try await reloadActiveProfileStagingResources(
+                        preparedReload,
+                        via: client,
+                        strategy: .fullRestart
+                    )
                     await finalizeLiveProfileReload(client: client, resetReadiness: false)
                     syncedLive = true
                 } catch {

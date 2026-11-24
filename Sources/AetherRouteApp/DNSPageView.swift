@@ -689,7 +689,7 @@ private struct DNSContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, AetherVisual.s4)
                 .padding(.vertical, AetherVisual.s3)
-            } else if let reason = tunnel.profileEditLockReason {
+            } else if let reason = tunnel.dnsRuntimeEditLockReason {
                 Divider().padding(.horizontal, AetherVisual.s4)
                 Label(reason, systemImage: "lock")
                     .font(.caption)
@@ -705,9 +705,9 @@ private struct DNSContentView: View {
             HStack(spacing: AetherVisual.s2) {
                 if !policy.isInherited {
                     ChangedSettingDot()
-                    Text(AppLocalization.string("Marks a changed setting. Changes apply the next time you connect with TUN."))
+                    Text(AppLocalization.string("Marks a changed setting. Changes apply immediately when TUN is connected."))
                 } else {
-                    Text(AppLocalization.string("Changes apply the next time you connect with TUN."))
+                    Text(AppLocalization.string("Changes apply immediately when TUN is connected."))
                 }
             }
             .font(.caption)

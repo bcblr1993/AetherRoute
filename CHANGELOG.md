@@ -6,6 +6,54 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-24
+
+### Added & Improved
+- **Zero-Downtime Hot Reload & FFI Panic Safety（零断流热重载与 FFI 安全加固）**：
+  - `clash-lib` 与 `clash-ffi` 新增规则/订阅规则集/覆写/DNS/可选出站原地热重载（`clash_flow_reload_rules_v1` / `clash_packet_reload_rules_v1`、FlowABI v9、IPC Op 16 `.hotReloadRules`），连接期间编辑分流规则、场景预设、Bypass 与 DNS 策略无需重启 Tokio 运行时，避免透明代理双实例内存峰值并保持存量连接不中断。
+  - 修复 `TunnelManager.refreshActiveProfileSummary()` 主线程卡顿（下沉至后台异步计算）；消除 `clash-ffi` 中 `CString::new().unwrap()` 风险（改为 `cstring_lossy` 安全消毒）并为所有 `extern "C"` 导出函数补全 `std::panic::catch_unwind` 防边界崩溃。
+- **External Controller（Clash REST/WebSocket API）与受控 TUN Listeners**：
+  - 在主程序侧实现仅绑定 `127.0.0.1` 的 `NWListener` REST 与 RFC 6455 WebSocket 网关（默认端口 `9090`、默认关闭、钥匙串 32 位随机密钥与恒定时间鉴权、`ExternalControllerSettingsSection`），支持直接拉起 MetaCubeXD 与 Zashboard 外部控制面板。
+  - 新增受控 `listeners:` 白名单开关（允许 TUN 模式按需开启本地回环 `http`/`socks`/`mixed` 入站监听器），同时保持对订阅 YAML 原始 `listeners:` 的零信任忽略隔离。
+- **HTTPS MITM 解密、URL/Header/Body 改写与 QuickJS 沙盒脚本**：
+  - 新增本地 Mac 钥匙串 ECDSA P-256 X.509 v3 根证书签发与 PEM 公钥导出（`MITMCertificateAuthority`，私钥永不落盘），在 `clash-lib::app::mitm` 内通过 `rcgen` / `x509-parser` 与 256-LRU `ServerConfig` 缓存实现 H1/H2 按域名筛选解密（默认绕过 Apple 与 localhost）。
+  - 支持 URL 正则重写（302 重定向 / 拒绝拦截）、请求响应头与正文正则改写、内存上限 16 MiB 与 1–2000 ms 中断超时的 QuickJS HTTP 脚本钩子（`rquickjs` 0.14.0），并通过 128 条环形缓冲区在 `ConnectionInspector` 呈现解密报文细节与 `"Copy as cURL"` 一键复制。
+- **概览页“出口与 AI 可用性”等宽对齐与默认展开自动检测（`OverviewEgressRow.swift`）**：
+  - 将原 `GridItem(.adaptive(minimum: 155))` 跨列错位网格统一重构为全宽 3 列（`出口 IP` / `ASN 与类型` / `IP 纯净度`）与 4 列（`AI 服务` / `流媒体`）等宽弹性网格，消除最右空白缺口并保持左右边缘严丝合缝对齐。
+  - 移除“仅点击检查后才展开详情并在断开时折叠”的限制，默认常驻显示完整可用性抽屉（未探测时渲染占位服务项），并在连接建立或切换节点且处于非预览模式时自动触发探测与刷新。
+
+### Fixed
+- **ShadowQUIC UDP 会话复用竞争修复（`Core/Engine/vendor/shadowquic-0.3.12/src/squic/mod.rs`）**：
+  - 根因：Chrome 指纹 12 协议互通中第 2 条连接的 UDP 回包延迟到达已关闭接收端时，`IDStore::feed_datagram` 返回 `Err(InboundUnavailable)` 直接通过 `?` 中断了 `SQConn::handle_udp_packet_recv` 循环；且 `AssociateRecvSession::drop` 异步删除映射表与同 `context_id` 快速复用发生竞争。
+  - 修复：引入单调递增 `session_gen` 代次校验、无 `.await` 锁保护的映射切换、已关闭接收端优雅丢弃并按代次清理，杜绝连接 2 UDP 超时。
+- **Data Protection Keychain 迁移与启动期密钥延迟初始化（`ExternalControllerPreferences.swift` / `MITMCertificateAuthority.swift` / `TunnelManager.swift` / `TunnelManager+ExternalController.swift`）**：
+  - 根因：`300s` UI 性能门禁在隔离无登录钥匙串环境抓取到启动即卡死在 `8 MB` 内存：旧版钥匙串 API（未启用 `kSecUseDataProtectionKeychain: true`）在 `TunnelManager.init()` 解析 `isUIReviewMode` 之前即同步访问 `login.keychain-db`（`-25307`），触发阻塞型 `SecurityAgent` 授权弹窗。
+  - 修复：统一切换为 `kSecUseDataProtectionKeychain: true` + `kSecAttrSynchronizable: false` + 应用访问组隔离；`TunnelManager.init()` 默认不触发钥匙串访问，仅在开启或复制外部控制器密钥时通过 `ensureExternalControllerSecretLoaded()` 按需加载（预览/UI 审查模式使用纯内存临时密钥）。
+
+### Verification & Qualification
+- **TDD（Red -> Green）与本机/远程 ARM64 全量测试**：
+  - 三大核心特性的端到端与单元门禁（热重载不中断、受控 `listeners:` 白名单、IPC Op 16/17/18、`MITMTests`、QuickJS 死循环超时）与三大修复测试均验证修复前失败、修复后全通：
+    - `OverviewEgressRow` `[OVERVIEW-EGRESS-01..03]`：修复前失败，修复后 `MacUISmoothnessAndPolishTests` 全通；
+    - ShadowQUIC `udp_association_race_tests`（2 项）：修复前失败（`Err(InboundUnavailable)` / `replacement receiver should stay open`），修复后 `-D warnings` 下 PASS，同时 `clash-lib proxy::` `289 passed; 0 failed`；
+    - Keychain 与延迟初始化（`MITMTests.testKeychainBaseQueryUsesDataProtectionKeychainAndLocalOnly`、`ExternalControllerTests.testSecretStoreQueriesUseDataProtectionKeychainAndLocalOnly`、`MacFuncLifecycleAndV3FixTests.testV320_TunnelManagerInitDefersKeychainAndUIReviewSkipsIt`）：修复前编译/运行失败（`46/47`），修复后全过（`47/47`、`ExternalControllerTests` `6/6`、`MITMTests` `4/4`）。
+  - `./scripts/test_fast_lane.sh` **15/15 PASS**（`709s`，`outputs/fast-lane-20261124T090521Z`）。
+  - 全量 `./scripts/test.sh` 在构建 `2026112401` 最终源码树上于本机（`outputs/test-sh-3.2.0-final.log`）与隔离 ARM64 VM（`remote-arm64-20261124T100100Z-fast`）全数通过（零警告）：`776` XCTest、`144` Swift Testing（`22` suites）、`114` `TransparentProxySupportTests`、`29` `FlowCoreBridgeTests`、`47/47` `MacFuncLifecycleAndV3FixTests`、`MacUISmoothnessAndPolishTests`、本地化（`2,148` 直接字面量 / `2,351` 目录键 `en + zh-Hans`）、500 轮双引擎泄漏检查（`max_rss_bytes=13139968`，`fd_growth=0`）、吞吐压测（`flow_engine_mibps=1961.746`、`packet_engine_mibps=1551.891`）、16 协议手写节点（`32` 核心面）、63 组协议兼容测试（`126` 核心面）以及 SS 插件与恢复兼容门禁。
+- **核心引擎与协议对照门禁（`Core/Engine` `03ac470e8e8b10096c3f64a83003fb6df2e38c3f`）**：
+  - 核心静态库（`libclashrs.a`: `56a1dc40...`、`libclashrs-direct.a`: `2f55549e...`）与清单校验全绿：`EngineCapabilities.json`（`outbound=18 rules=37 networks=12 plugins=3`）、`verify_protocol_matrix.sh`（`protocols=16 interop_cases=34 independent_tests=10 uncovered_claims=0 status=integration`）与 `verify_licenses.sh`（`458 components, 124 license texts`，源码与构建产物双通过）。
+  - 默认指纹与 Chrome 指纹 12 协议互通门禁均 **11/11 suites PASS**（各 `68` 项互通 + `34` 项证书拒签，测试二进制 SHA-256 `e241627f2ff5487531581a9dce90709e61a0164d50c43f3777974880127429ee`）；Chrome `real_site_tests` **2/2 PASS**（`3.87s`，9 站 ALPS 握手与 Cloudflare ECH 全过）；`test_subscription_differential.py --e2e` **10/10 OK**（`4.824s`）；`clash-lib --lib` `635` 项全通；`vm:macos27` 43 节点实网对照 Mihomo `both_ok=41, mihomo_fail=1, both_fail=1, ours_missing=0, ours_fail=0`。
+- **完整默认并行隔离验收（`vm:macos27`，总耗时 `53m 54s`，Build `2026112401`）**：
+  - 6 维 Tart VM 矩阵：`160 PASS / 0 FAIL / 50 SKIP`（透明代理 5 大专项门禁各 `3/3 PASS`）。
+  - UI 卡顿与内存预算门禁（`300s / 300s`，`status=passed`）：
+    - `showcase`（`n=420`）：切页 `p50=91.6 ms / p95=141.4 ms / max=149.8 ms`（对比 `3.1.3` 的 `p95=155.3 ms / max=199.0 ms`），内存 `median=80 MB / max=95 MB / growth=+1 MB`；
+    - `large`（`n=420`）：切页 `p50=93.5 ms / p95=142.7 ms / max=204.0 ms`（`p95` 对比 `3.1.3` 的 `155.4 ms` 进一步下降），内存 `median=77 MB / max=92 MB / growth=+2 MB`。
+  - 公证稳定候选与双引擎运行时证据（候选 DMG `df572d9054860efbb9b3bfe5313f2f450c20e37e9f0a0e39df02c5f60b462494`，App Notary ID `5eb4fd38-8d29-4ace-88cf-bc3a1d22397e`；候选 DMG Notary ID `7018c53e-d577-4ac7-8440-e797319415e9`）：
+    - TUN：`50s` 空闲复用 PASS、`2 MiB` 上传 `2.887067s`、3 轮 6 次网卡切换恢复 `0/1/0/0/0/0 s`；
+    - 透明代理：`50s` 空闲复用 PASS、`2 MiB` 上传 `2.592996s`、3 轮 6 次网卡切换恢复 `0/0/0/0/0/0 s`。
+
+### Distribution
+- `AetherRoute-3.2.0-build-2026112401-arm64.dmg`: `34,807,312` bytes, SHA-256 `a7690a0ade409346dcefeed7252419d9051ced540b573fd211a6644f96dcb15e`
+- Sparkle Ed25519 Signature: `/A9Sum6OxkHbOYl/aamNkUv9jatrPZXy1o9Fb2ASSppsxymiEag/4ua+sXafl3Nqmp2H0hSEzlfIgGb/7lCXDQ==`
+
 ## [3.1.3] - 2026-11-22
 
 ### Fixed & Improved

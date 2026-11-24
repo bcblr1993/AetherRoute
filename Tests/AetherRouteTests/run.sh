@@ -101,6 +101,7 @@ xcrun --sdk macosx swiftc -sdk "$SDK_PATH" -swift-version 6 -warnings-as-errors 
   -framework AetherRouteKit -framework Sparkle \
   "$ROOT/Sources/AetherRouteApp/ProxyLatencyStore.swift" \
   "$ROOT"/Sources/AetherRouteApp/TunnelManager*.swift \
+  "$ROOT/Sources/AetherRouteApp/ExternalControllerCoordinator.swift" \
   "$ROOT/Sources/AetherRouteApp/LANProxyServer.swift" \
   "$ROOT/Sources/AetherRouteApp/AppAutomationController.swift" \
   "$ROOT/Sources/AetherRouteApp/AppStartupController.swift" \

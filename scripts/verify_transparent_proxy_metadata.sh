@@ -36,6 +36,9 @@ clash_flow_telemetry_snapshot_v3
 clash_flow_telemetry_snapshot_v4
 clash_flow_close_connections_v1
 clash_flow_engine_reset_network_state_v1
+clash_flow_reload_rules_v1
+clash_flow_set_mitm_config_v1
+clash_flow_http_captures_v1
 clash_flow_tcp_create
 clash_flow_tcp_create_v2
 clash_flow_udp_create
@@ -147,8 +150,8 @@ verify_core_artifact() {
   done
   flow_symbol_count=$(awk '{print $NF}' \
     "$core_symbols_directory/symbols.txt" | grep -Ec '^_clash_flow_' || true)
-  # 27 since 1.7.1's network reset; see scripts/build_core.sh.
-  test "$flow_symbol_count" -eq 27 || \
+  # 27 since 1.7.1's network reset; 30 since 3.2.0's hot reload + MITM (see scripts/build_core.sh).
+  test "$flow_symbol_count" -eq 30 || \
     fail "core artifact exposes an unexpected Flow ABI count: $flow_symbol_count"
   if awk '{print $NF}' "$core_symbols_directory/symbols.txt" \
     | grep -Eq '^_clash_(start|shutdown|packet_|push_packet_|install_packet_|uninstall_packet_|is_packet_)'; then

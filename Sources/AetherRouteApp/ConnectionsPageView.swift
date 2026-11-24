@@ -2038,6 +2038,8 @@ private struct ConnectionInspector: View {
     @ObservedObject private var model: NetworkTelemetryViewModel
     @State private var lastSeenConnection: ConnectionTelemetry
     @State private var cachedDecisionTrace: ConnectionRouteDecisionTrace?
+    @State private var httpCaptures: [MITMHTTPCaptureEntry] = []
+    @State private var isLoadingHTTPCaptures = false
 
     init(
         initialItem: ConnectionTableItem,
@@ -2185,8 +2187,13 @@ private struct ConnectionInspector: View {
                         )
                     }
                 }
+
+                httpInspectionSection(for: connection)
             }
             .aetherSettingsForm(isSheet: true)
+            .task(id: connection.destination) {
+                await reloadHTTPCaptures(for: connection.destination)
+            }
             .textSelection(.enabled)
             // Scrolls within a bounded height, with Copy and Done pinned
             // below: sized to its whole content the sheet grew past a
@@ -2398,6 +2405,154 @@ private struct ConnectionInspector: View {
         Int64(clamping: value).formatted(
             .byteCount(style: .file).locale(AppLocalization.currentLocale)
         )
+    }
+
+    @ViewBuilder
+    private func httpInspectionSection(for connection: ConnectionTelemetry) -> some View {
+        Section {
+            if !tunnel.mitmConfiguration.isEnabled {
+                Text(
+                    AppLocalization.string(
+                        "HTTPS decryption (MITM) is off. Enable it in Settings → Network to inspect decrypted HTTP requests and responses."
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(AetherVisual.secondaryText)
+            } else {
+                HStack {
+                    if isLoadingHTTPCaptures {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Text(
+                        httpCaptures.isEmpty
+                            ? AppLocalization.string("No decrypted HTTP captures recorded for this host yet.")
+                            : AppLocalization.format(
+                                "Showing %@ decrypted HTTP captures",
+                                String(min(httpCaptures.count, 20))
+                            )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(AetherVisual.secondaryText)
+
+                    Spacer()
+
+                    Button(AppLocalization.string("Refresh")) {
+                        Task { await reloadHTTPCaptures(for: connection.destination) }
+                    }
+                    .aetherButton()
+                    .controlSize(.small)
+                    .disabled(isLoadingHTTPCaptures)
+                }
+
+                ForEach(httpCaptures.prefix(20)) { entry in
+                    VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                        HStack(spacing: AetherVisual.s2) {
+                            Text(verbatim: "[\(entry.statusCode)] \(entry.method)")
+                                .font(.system(.callout, design: .monospaced).weight(.semibold))
+                                .foregroundStyle(
+                                    entry.statusCode >= 400
+                                        ? AnyShapeStyle(AetherReadableTint(color: .orange))
+                                        : AnyShapeStyle(AetherReadableTint(color: .green))
+                                )
+
+                            Text(AppLocalization.format("%@ ms", String(entry.durationMs)))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(AetherVisual.secondaryText)
+
+                            Spacer()
+
+                            AetherCopyButton(
+                                title: Text(AppLocalization.string("Copy as cURL")),
+                                systemImage: "terminal",
+                                copiedTitle: Text(AppLocalization.string("Copied")),
+                                action: { copyCaptureAsCURL(entry) }
+                            )
+                            .aetherButton()
+                            .controlSize(.small)
+                        }
+
+                        Text(entry.url)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+
+                        if !entry.appliedRules.isEmpty {
+                            Text(
+                                AppLocalization.format(
+                                    "Applied rules: %@",
+                                    entry.appliedRules.joined(separator: ", ")
+                                )
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(AetherReadableTint(color: .accentColor))
+                        }
+
+                        DisclosureGroup(AppLocalization.string("Headers & Body Preview")) {
+                            VStack(alignment: .leading, spacing: AetherVisual.s2) {
+                                if !entry.requestHeaders.isEmpty {
+                                    Text(AppLocalization.string("Request Headers"))
+                                        .font(.caption2.weight(.semibold))
+                                    Text(formattedHeaders(entry.requestHeaders))
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                                if !entry.requestBodyPreview.isEmpty {
+                                    Text(AppLocalization.string("Request Body"))
+                                        .font(.caption2.weight(.semibold))
+                                    Text(entry.requestBodyPreview)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                                if !entry.responseHeaders.isEmpty {
+                                    Text(AppLocalization.string("Response Headers"))
+                                        .font(.caption2.weight(.semibold))
+                                    Text(formattedHeaders(entry.responseHeaders))
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                                if !entry.responseBodyPreview.isEmpty {
+                                    Text(AppLocalization.string("Response Body"))
+                                        .font(.caption2.weight(.semibold))
+                                    Text(entry.responseBodyPreview)
+                                        .font(.system(.caption2, design: .monospaced))
+                                        .textSelection(.enabled)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, AetherVisual.s1)
+                        }
+                        .font(.caption)
+                    }
+                    .padding(.vertical, AetherVisual.s1)
+                }
+            }
+        } header: {
+            Text(AppLocalization.string("HTTP Inspection (MITM)"))
+        }
+    }
+
+    private func reloadHTTPCaptures(for destination: String) async {
+        guard tunnel.mitmConfiguration.isEnabled, tunnel.isConnected else {
+            httpCaptures = []
+            return
+        }
+        isLoadingHTTPCaptures = true
+        let entries = await tunnel.fetchMITMHTTPCaptures(matchingHost: destination)
+        isLoadingHTTPCaptures = false
+        httpCaptures = entries
+    }
+
+    private func copyCaptureAsCURL(_ entry: MITMHTTPCaptureEntry) -> Bool {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(entry.cURLCommand(), forType: .string)
+        return true
+    }
+
+    private func formattedHeaders(_ headers: [String: String]) -> String {
+        headers.keys.sorted().compactMap { key in
+            guard let value = headers[key] else { return nil }
+            return "\(key): \(value)"
+        }.joined(separator: "\n")
     }
 }
 

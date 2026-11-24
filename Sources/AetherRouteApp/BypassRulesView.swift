@@ -44,7 +44,7 @@ struct BypassRulesSection: View {
                 .accessibilityIdentifier("add-bypass-rule")
             }
 
-            if !tunnel.canModifyBypassPolicy, let lockReason = tunnel.profileEditLockReason {
+            if !tunnel.canModifyBypassPolicy, let lockReason = tunnel.bypassPolicyLockReason {
                 Text(lockReason)
                     .font(.caption)
                     .foregroundStyle(AetherVisual.secondaryText)
@@ -98,7 +98,7 @@ struct BypassRulesSection: View {
             VStack(alignment: .leading, spacing: AetherVisual.s2) {
                 providerSemantics
                 Text(AppLocalization.string("Use an ASCII domain suffix, IPv4 CIDR, or IPv6 CIDR. Wildcard domains such as *.example.com are normalized safely."))
-                Text(AppLocalization.string("Bypass changes apply on the next connection. CIDR exclusions can bypass routing rules at the system layer."))
+                Text(AppLocalization.string("Bypass changes apply immediately when connected, or on the next connection. CIDR exclusions can bypass routing rules at the system layer."))
                 Button(AppLocalization.string("View routing rules")) {
                     NotificationCenter.default.post(name: .aetherRouteNavigateToSection, object: AppSection.rules.rawValue)
                     AppWindowManager.shared.showMainWindow()

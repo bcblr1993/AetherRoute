@@ -99,17 +99,24 @@ struct TunnelLifecycleV3Tests {
     @Test("PacketTunnelProvider handleReloadProfile retains recipe, rolls back on failure, and inspects IPv6 from snapshot")
     func packetTunnelAtomicLiveReload() throws {
         let source = try Self.source("Sources/AetherRoutePacketTunnel/PacketTunnelProvider.swift")
-        let body = try #require(Self.functionBody(named: "private func handleReloadProfile(", in: source))
+        let handleBody = try #require(Self.functionBody(named: "private func handleReloadProfile(", in: source))
+        let prepareBody = try #require(Self.functionBody(named: "private func prepareReloadState(", in: source))
+        let performBody = try #require(Self.functionBody(named: "private func performFullCoreReload(", in: source))
+        let hotReloadBody = try #require(Self.functionBody(named: "private func handleHotReloadRules(", in: source))
         let rollbackBody = try #require(Self.functionBody(named: "private func rollbackReloadedCore(", in: source))
 
-        let normalizedBody = body
+        let normalizedPrepareBody = prepareBody
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
             .replacingOccurrences(of: " .", with: ".")
-        #expect(normalizedBody.contains("ProfileConfigurationInspector.inspect(yaml: snapshot.profileYAML).allowsIPv6"))
-        #expect(!body.contains("TunnelProviderConfigurationCodec.ipv6Enabled("))
-        #expect(body.contains("rollbackReloadedCore("))
+        #expect(handleBody.contains("prepareReloadState("))
+        #expect(handleBody.contains("performFullCoreReload("))
+        #expect(normalizedPrepareBody.contains("ProfileConfigurationInspector.inspect(yaml: snapshot.profileYAML).allowsIPv6"))
+        #expect(!prepareBody.contains("TunnelProviderConfigurationCodec.ipv6Enabled("))
+        #expect(performBody.contains("rollbackReloadedCore("))
+        #expect(hotReloadBody.contains("reloadRules("))
+        #expect(!hotReloadBody.contains("oldCore.stop"))
         #expect(rollbackBody.contains("cancelTunnelWithError"))
         #expect(source.contains("activeRecipe"))
     }
@@ -140,7 +147,7 @@ struct TunnelLifecycleV3Tests {
     @Test("reloadCustomRulesLive surfaces errors to customRuleMessage")
     func reloadCustomRulesSurfacesErrors() throws {
         let source = try Self.source("Sources/AetherRouteApp/TunnelManager+CustomRules.swift")
-        let body = try #require(Self.functionBody(named: "func reloadCustomRulesLive()", in: source))
+        let body = try #require(Self.functionBody(named: "func reloadCustomRulesLive(", in: source))
 
         #expect(body.contains("customRuleMessage = localizedCustomRuleError(error)"))
         #expect(body.contains("customRuleMessageIsError = true"))

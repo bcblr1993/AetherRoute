@@ -683,6 +683,23 @@ struct MacUISmoothnessAndPolishTests {
             v.append("[SHELL-25] OverviewEgressRow asnInsetCard missing .textSelection(.enabled) on ASN value")
         }
 
+        // V3.2.0: OverviewEgressRow equal-width full-row alignment, default-expanded, and auto-probe on connect
+        if !egressRow.contains("@State private var isExpanded = true")
+            || egressRow.contains("isExpanded = false") {
+            v.append("[OVERVIEW-EGRESS-01] OverviewEgressRow must default isExpanded to true and remain expanded across disconnects")
+        }
+        if egressRow.contains(".adaptive(minimum:")
+            || !egressRow.contains("GridItem(.flexible(), spacing: AetherVisual.s2), count: 3")
+            || !egressRow.contains("GridItem(.flexible(), spacing: AetherVisual.s2), count: 4") {
+            v.append("[OVERVIEW-EGRESS-02] OverviewEgressRow must use fixed 3-column and 4-column flexible grids instead of .adaptive so all cards align full-width")
+        }
+        if egressRow.contains("if isExpanded, tunnel.isConnected, let report")
+            || !egressRow.contains(".task(id:")
+            || !egressRow.contains("runEgressAvailabilityProbe()")
+            || !egressRow.contains("!tunnel.isUIReviewMode") {
+            v.append("[OVERVIEW-EGRESS-03] OverviewEgressRow must keep drawer visible while connected without waiting for report and auto-probe when !isUIReviewMode")
+        }
+
         return v
     }
 

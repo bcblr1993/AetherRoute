@@ -172,7 +172,7 @@ final class AppLifecycleAndPagesFixesTests: XCTestCase {
         )
 
         let reloadRulesBody = try XCTUnwrap(
-            functionBody(named: "func reloadCustomRulesLive()", in: customRules)
+            functionBody(named: "func reloadCustomRulesLive(", in: customRules)
         )
         XCTAssertTrue(
             reloadRulesBody.contains("GLOBAL") || reloadRulesBody.contains("syncGlobalSelector"),
@@ -621,7 +621,8 @@ final class AppLifecycleAndPagesFixesTests: XCTestCase {
             functionBody(named: "func setDomesticOptimizationEnabled(", in: tunnelManager)
         )
         XCTAssertTrue(
-            toggleBody.contains("refreshActiveProfileSummary()")
+            (toggleBody.contains("refreshActiveProfileSummary()")
+                || toggleBody.contains("refreshActiveProfileSummaryOffMainActor()"))
                 && toggleBody.contains("reloadCustomRulesLive()"),
             "setDomesticOptimizationEnabled must immediately refresh activeProfileSummary and live-reload when connected"
         )

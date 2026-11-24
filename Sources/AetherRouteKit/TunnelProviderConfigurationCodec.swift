@@ -26,6 +26,9 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
     /// in the user's App Group container, so the host carries it here.
     /// Optional so a snapshot from an older host still decodes.
     public let diagnosticLogLevel: DiagnosticLogLevel?
+    /// Explicit host-controlled loopback listeners (`http`/`socks`/`mixed`),
+    /// distinct from any `listeners:` in imported profile YAML.
+    public let controlledListeners: [ControlledListenerSpec]?
 
     public init(
         profileYAML: String,
@@ -35,7 +38,8 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         proxySelections: [String: String],
         routingResources: [RoutingResourceKind: Data],
         fakeIPCacheKey: Data? = nil,
-        diagnosticLogLevel: DiagnosticLogLevel? = nil
+        diagnosticLogLevel: DiagnosticLogLevel? = nil,
+        controlledListeners: [ControlledListenerSpec]? = nil
     ) throws {
         formatVersion = Self.currentFormatVersion
         self.profileYAML = profileYAML
@@ -46,6 +50,7 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         self.routingResources = routingResources
         self.fakeIPCacheKey = fakeIPCacheKey
         self.diagnosticLogLevel = diagnosticLogLevel
+        self.controlledListeners = controlledListeners
         try validate()
     }
 
@@ -91,6 +96,12 @@ public struct ProviderLaunchSnapshot: Codable, Equatable, Sendable {
         if let fakeIPCacheKey,
            fakeIPCacheKey.count != DataProtectionProfileKeyStore.keySizeBytes {
             throw ProfileKeyStoreError.invalidKeyLength(fakeIPCacheKey.count)
+        }
+        if let controlledListeners, !controlledListeners.isEmpty {
+            _ = try ExternalControllerSettings(
+                controlledListenersEnabled: true,
+                controlledListeners: controlledListeners
+            ).validated()
         }
     }
 

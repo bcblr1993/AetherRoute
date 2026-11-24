@@ -57,6 +57,17 @@ public protocol TransparentProxyFlowEngine: AnyObject, Sendable {
     /// connections and DNS clients still bound to the previous uplink.
     func resetNetworkState(interfaceIndex: UInt32) throws -> EngineNetworkResetOutcome
 
+    /// Hot-reloads routing rules (and optionally outbounds/groups) in place
+    /// without dropping active flows.
+    func reloadRules(
+        profileYAML: String,
+        workingDirectory: URL,
+        reloadOutbounds: Bool
+    ) throws
+
+    func setMITMConfig(_ configJSON: Data) throws
+    func httpCapturesJSON() throws -> Data
+
     func shutdown(completion: @escaping @Sendable () -> Void)
 }
 
@@ -103,6 +114,22 @@ public extension TransparentProxyFlowEngine {
     }
 
     func resetNetworkState(interfaceIndex _: UInt32) throws -> EngineNetworkResetOutcome {
+        throw TransparentProxySelectionError.unsupported
+    }
+
+    func reloadRules(
+        profileYAML _: String,
+        workingDirectory _: URL,
+        reloadOutbounds _: Bool
+    ) throws {
+        throw TransparentProxySelectionError.unsupported
+    }
+
+    func setMITMConfig(_: Data) throws {
+        throw TransparentProxySelectionError.unsupported
+    }
+
+    func httpCapturesJSON() throws -> Data {
         throw TransparentProxySelectionError.unsupported
     }
 }
@@ -458,6 +485,32 @@ public final class TransparentProxyFlowRuntime: @unchecked Sendable {
             "stage=flowRuntimeResetNetwork done outcome=\(String(describing: outcome), privacy: .public)"
         )
         return outcome
+    }
+
+    public func reloadRules(
+        profileYAML: String,
+        workingDirectory: URL,
+        reloadOutbounds: Bool
+    ) throws {
+        try withControlCall {
+            try engine.reloadRules(
+                profileYAML: profileYAML,
+                workingDirectory: workingDirectory,
+                reloadOutbounds: reloadOutbounds
+            )
+        }
+    }
+
+    public func setMITMConfig(_ configJSON: Data) throws {
+        try withControlCall {
+            try engine.setMITMConfig(configJSON)
+        }
+    }
+
+    public func httpCapturesJSON() throws -> Data {
+        try withControlCall {
+            try engine.httpCapturesJSON()
+        }
     }
 
     public func snapshot() -> TransparentProxyRuntimeSnapshot {
@@ -955,6 +1008,35 @@ public final class TransparentProxyProviderLifecycleController:
     ) -> EngineNetworkResetOutcome? {
         guard let runtime = runningRuntime() else { return nil }
         return runtime.resetNetworkState(interfaceIndex: interfaceIndex)
+    }
+
+    public func reloadRules(
+        profileYAML: String,
+        workingDirectory: URL,
+        reloadOutbounds: Bool
+    ) throws {
+        guard let runtime = runningRuntime() else {
+            throw TransparentProxySelectionError.providerUnavailable
+        }
+        try runtime.reloadRules(
+            profileYAML: profileYAML,
+            workingDirectory: workingDirectory,
+            reloadOutbounds: reloadOutbounds
+        )
+    }
+
+    public func setMITMConfig(_ configJSON: Data) throws {
+        guard let runtime = runningRuntime() else {
+            throw TransparentProxySelectionError.providerUnavailable
+        }
+        try runtime.setMITMConfig(configJSON)
+    }
+
+    public func httpCapturesJSON() throws -> Data {
+        guard let runtime = runningRuntime() else {
+            throw TransparentProxySelectionError.providerUnavailable
+        }
+        return try runtime.httpCapturesJSON()
     }
 
     private func completePreparation(

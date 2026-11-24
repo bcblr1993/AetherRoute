@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 3.1.3 (Build 2026112203)</title>
-            <pubDate>Sun, 22 Nov 2026 21:23:45 +0800</pubDate>
-            <sparkle:version>2026112203</sparkle:version>
-            <sparkle:shortVersionString>3.1.3</sparkle:shortVersionString>
+            <title>Version 3.2.0 (Build 2026112401)</title>
+            <pubDate>Tue, 24 Nov 2026 18:53:43 +0800</pubDate>
+            <sparkle:version>2026112401</sparkle:version>
+            <sparkle:shortVersionString>3.2.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.1.3/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.2.0/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,33 +120,33 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 3.1.3 更新要点</span>
-  <span class="release-badge">Build 2026112203 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.2.0 更新要点</span>
+  <span class="release-badge">Build 2026112401 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">体验修复与状态一致性</span>
+  <span class="section-tag tag-new">核心能力与零断流重磅升级</span>
   <ul>
-    <li><strong>出口探测与代理测速隔离</strong>：为出口可用性探测引入请求令牌与取消联动，切换节点、策略组或路由模式时自动作废旧请求，杜绝过期出口结论回写；连接态单节点与整组测速互不串扰，IPC 失败不再误回退为本地 TCP 假阳性。</li>
-    <li><strong>网络配置与卸载安全守护</strong>：网络设置引导与完整网络授权未就绪前阻止误切换代理模式或核心引擎，完成授权后自动清除陈旧失败提示；卸载确认弹窗在用户取消前不会提前退出主应用。</li>
-    <li><strong>规则、连接与 DNS 可信度</strong>：规则模拟测试器新增 <code>PROCESS-NAME</code>、<code>PROCESS-PATH</code>、<code>NETWORK</code>、<code>DOMAIN-WILDCARD</code>、<code>DOMAIN-REGEX</code> 与尊重 <code>no-resolve</code> 的 <code>IP-ASN</code> 匹配评估；自定义规则筛选期间限制上移/下移排序并支持一键清空筛选定位，<code>清除 DNS 记录</code> 后不再把存量活跃连接重新计入 DNS 查询历史。</li>
+    <li><strong>规则与配置零断流热重载</strong>：增删自定义规则、切换场景预设、刷新外部规则集与切换全局绕过/DNS 策略时支持连接态即时原地热切换（Flow ABI v9 / IPC Op 16），保持活跃 TCP/UDP 长连接不中断，消除透明代理双份核心峰值与连接态配置锁定；全量 C-ABI 边界加固 <code>catch_unwind</code> 与有损 UTF-8 防护。</li>
+    <li><strong>External Controller 与受控 TUN Listeners</strong>：新增默认关闭的本地环回（<code>127.0.0.1:9090</code>）Clash 兼容 REST API 与 RFC 6455 WebSocket 实时流量/日志流，内置 MetaCubeXD 与 Zashboard 一键面板跳转、Data Protection Keychain 随机 32 位鉴权密钥与按需加载机制，并支持 TUN 模式受控环回多端口入站监听（保持不信任外源 YAML <code>listeners:</code>）。</li>
+    <li><strong>HTTPS MITM 解密、Rewrite 与 QuickJS 沙盒</strong>：支持本地 Keychain ECDSA P-256 根 CA 签发、H1/H2 全双工域名解密（默认绕过 Apple 与 localhost）、URL/Header/Body 正则重写、QuickJS 安全沙盒脚本（16 MiB 内存 / 1–2000 ms 超时）、128 条请求抓包详情与 <code>Copy as cURL</code> 导出。</li>
   </ul>
 </div>
 <div class="section">
-  <span class="section-tag tag-improve">界面响应、流畅度与多语言</span>
+  <span class="section-tag tag-fix">界面体验与协议稳定性</span>
   <ul>
-    <li><strong>页面切换与高频列表性能飞跃</strong>：重构策略页列布局模型与延迟索引 O(1) 查找，消除连接页根视图对高频遥测的多余订阅；优化主导航页转场过渡与规则页惰性原生菜单，<code>300s</code> 全自动切页 <code>p95</code> 从 <code>177.1 ms</code> 降至 <code>155.3 ms</code>（<code>large</code> 夹具降至 <code>155.4 ms</code>），常驻内存稳定在 <code>78–79 MB</code>。</li>
-    <li><strong>交互细节与全量本地化</strong>：在导入导出密码窗、编辑弹窗与连接表键盘快捷键（<code>Return</code>/<code>Delete</code>/<code>Cmd+C</code>）补齐状态反馈与确认保护；全应用双语词条统一纳入本地化目录（<code>2,242</code> 条目录键，含单复数与本地化字节/错误格式化）。</li>
+    <li><strong>概览页“出口与 AI 可用性”对齐与自动常驻展开</strong>：修正 3 张出口身份卡与 4 列 AI/流媒体服务格的跨列不齐问题（统一全宽 3 列 + 4 列等宽网格），默认保持常驻展开并支持连接及切换节点后自动刷新检测，无需每次手动点击“检查”。</li>
+    <li><strong>ShadowQUIC UDP 并发与认证门禁加固</strong>：修复快速会话回收时的 UDP <code>IDStore</code> 关联竞争与默认/审查启动阶段 Keychain 同步弹窗阻塞；本地 <code>test.sh</code>、12 协议默认与 Chrome TLS 指纹双向互通、43 节点 <code>vm:macos27</code> 对照（<code>ours_missing=0, ours_fail=0</code>）及 <code>300s</code> 全自动 UI 性能门禁（<code>showcase</code> p95 <code>141.4 ms</code> / 中位内存 <code>80 MB</code>，<code>large</code> p95 <code>142.7 ms</code> / 中位内存 <code>77 MB</code>）全部通过。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.1.3/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.2.0/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.1.3/AetherRoute-3.1.3-build-2026112203-arm64.dmg"
-                sparkle:edSignature="Km+QImDFD39e7Zs+CB0DPCL+zhh7xXqA+l1Vmyj7eM0qOGLXI+0r+CzDJgwdzloR5Ql14qX0SpslDTbKr7P5Bg=="
-                length="32960320"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.2.0/AetherRoute-3.2.0-build-2026112401-arm64.dmg"
+                sparkle:edSignature="/A9Sum6OxkHbOYl/aamNkUv9jatrPZXy1o9Fb2ASSppsxymiEag/4ua+sXafl3Nqmp2H0hSEzlfIgGb/7lCXDQ=="
+                length="34807312"
                 type="application/octet-stream" />
         </item>
     </channel>

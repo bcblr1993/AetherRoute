@@ -113,7 +113,7 @@ extension TunnelManager {
             objectWillChange.send()
             cachedGlobalProfileOverride = validated
             cachedEffectiveProfileCompilation = nil
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             Self.runtimeLogger.info(
                 "stage=scenarioPresets saved enabled=\(states.filter(\.isEnabled).count, privacy: .public)"
             )

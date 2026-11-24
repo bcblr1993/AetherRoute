@@ -81,5 +81,35 @@ int main(void) {
     }
     aetherroute_flow_abi_v8_t mismatched_v8 = {0};
     mismatched_v8.struct_size = (uint32_t)sizeof(v7);
-    return aetherroute_flow_abi_load_v8(&mismatched_v8) == 0 ? 0 : 17;
+    if (aetherroute_flow_abi_load_v8(&mismatched_v8) != 0) {
+        return 17;
+    }
+    aetherroute_flow_abi_v9_t v9 = {0};
+    v9.struct_size = (uint32_t)sizeof(v9);
+    if (aetherroute_flow_abi_load_v9(&v9) != 1) {
+        return 18;
+    }
+    if (v9.v8.reset_network_state_v1 == NULL
+        || v9.reload_rules_v1 == NULL) {
+        return 19;
+    }
+    aetherroute_flow_abi_v9_t mismatched_v9 = {0};
+    mismatched_v9.struct_size = (uint32_t)sizeof(v8);
+    if (aetherroute_flow_abi_load_v9(&mismatched_v9) != 0) {
+        return 20;
+    }
+
+    aetherroute_flow_abi_v10_t v10 = {0};
+    v10.struct_size = (uint32_t)sizeof(v10);
+    if (aetherroute_flow_abi_load_v10(&v10) != 1) {
+        return 21;
+    }
+    if (v10.v9.reload_rules_v1 == NULL
+        || v10.set_mitm_config_v1 == NULL
+        || v10.http_captures_v1 == NULL) {
+        return 22;
+    }
+    aetherroute_flow_abi_v10_t mismatched_v10 = {0};
+    mismatched_v10.struct_size = (uint32_t)sizeof(v9);
+    return aetherroute_flow_abi_load_v10(&mismatched_v10) == 0 ? 0 : 23;
 }

@@ -789,30 +789,27 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     payloadData: payloadData,
                     watchdogState: watchdogState
                 ) { response in
-                    guard watchdogState.markCompleted() else { return }
-                    watchdog.cancel()
-                    if case let .failure(failure) = response {
-                        Self.runtimeLog.failure(
-                            "stage=providerMessage response=failure code=\(failure.rawValue)"
-                        )
-                        diagnostics.record(failure)
-                    } else {
-                        Self.runtimeLog.verbose("stage=providerMessage response=success")
-                    }
-                    do {
-                        completion.call(
-                            try ProxySelectionProviderMessageCodec.encode(
-                                response: response
-                            )
-                        )
-                    } catch {
-                        diagnostics.record(.oversizedControlResponse)
-                        completion.call(
-                            try? ProxySelectionProviderMessageCodec.encode(
-                                response: .failure(.responseTooLarge)
-                            )
-                        )
-                    }
+                    self.finishTimedProviderResponse(
+                        response,
+                        watchdog: watchdog,
+                        watchdogState: watchdogState,
+                        completion: completion
+                    )
+                }
+                return
+            }
+            if case let .hotReloadRules(payloadData, reloadOutbounds) = request {
+                self.handleHotReloadRules(
+                    payloadData: payloadData,
+                    reloadOutbounds: reloadOutbounds,
+                    watchdogState: watchdogState
+                ) { response in
+                    self.finishTimedProviderResponse(
+                        response,
+                        watchdog: watchdog,
+                        watchdogState: watchdogState,
+                        completion: completion
+                    )
                 }
                 return
             }
@@ -881,8 +878,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                     try self.handleStageRoutingResourceChunk(chunk)
                 case .installedRoutingResourceDigests:
                     .routingResourceDigests(self.resourceChunkReceiver.installedDigests())
-                case .reloadProfile:
-                    // Answered by the early branch above; never crash the
+                case let .setMITMConfig(configData):
+                    try {
+                        try self.runtimeController.setMITMConfig(configData)
+                        return .mitmConfigApplied
+                    }()
+                case .httpCaptures:
+                    .httpCaptures(try self.runtimeController.httpCapturesJSON())
+                case .reloadProfile, .hotReloadRules:
+                    // Answered by the early branches above; never crash the
                     // extension (and the user's network) if that changes.
                     .failure(.invalidRequest)
                 }
@@ -951,7 +955,7 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case let .activeLatency(_, _, timeoutMilliseconds, _):
             let probeSeconds = max(1, Int((timeoutMilliseconds + 999) / 1_000))
             return max(15, probeSeconds + 5)
-        case .reloadProfile, .stageRoutingResourceChunk:
+        case .reloadProfile, .hotReloadRules, .stageRoutingResourceChunk:
             return 30
         default:
             return 15
@@ -1092,6 +1096,196 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
     ) throws -> ProxySelectionProviderResponse {
         try resourceChunkReceiver.receive(chunk)
         return .routingResourceChunkStaged
+    }
+
+    private func finishTimedProviderResponse(
+        _ response: ProxySelectionProviderResponse,
+        watchdog: DispatchSourceTimer,
+        watchdogState: WatchdogState,
+        completion: ProxyMessageCompletion
+    ) {
+        guard watchdogState.markCompleted() else { return }
+        watchdog.cancel()
+        if case let .failure(failure) = response {
+            Self.runtimeLog.failure(
+                "stage=providerMessage response=failure code=\(failure.rawValue)"
+            )
+            diagnostics.record(failure)
+        } else {
+            Self.runtimeLog.verbose("stage=providerMessage response=success")
+        }
+        do {
+            completion.call(
+                try ProxySelectionProviderMessageCodec.encode(
+                    response: response
+                )
+            )
+        } catch {
+            diagnostics.record(.oversizedControlResponse)
+            completion.call(
+                try? ProxySelectionProviderMessageCodec.encode(
+                    response: .failure(.responseTooLarge)
+                )
+            )
+        }
+    }
+
+    private func decodeReloadSnapshot(
+        payloadData: Data
+    ) throws -> ProviderLaunchSnapshot {
+        let reloadPayload = try TransparentProxyReloadPayloadPolicy.decode(payloadData)
+        let previousRecipe = self.recipeLock.withLock { self.runtimeRecipe }
+        let fallbackDiagnosticLevel = previousRecipe?.snapshot.diagnosticLogLevel ?? DiagnosticLogCenter.current.level
+        let effectiveDiagnosticLevel = reloadPayload.diagnosticLogLevel ?? fallbackDiagnosticLevel
+        DiagnosticLogCenter.current.applyLevelOverride(effectiveDiagnosticLevel)
+        let store = try ActiveProfileStore.applicationGroup()
+        let resourceStore = RoutingResourceStore(
+            applicationSupportDirectory: store.directoryURL
+        )
+        let resources = try resourceStore.resolveReloadResourceSnapshot(
+            for: reloadPayload.profileYAML,
+            inlineResources: reloadPayload.routingResources
+        )
+        return try ProviderLaunchSnapshot(
+            profileYAML: reloadPayload.profileYAML,
+            routingMode: reloadPayload.routingMode,
+            bypassPolicy: reloadPayload.bypassPolicy,
+            dnsPolicy: reloadPayload.dnsPolicy,
+            proxySelections: reloadPayload.proxySelections,
+            routingResources: resources,
+            diagnosticLogLevel: effectiveDiagnosticLevel
+        )
+    }
+
+    private func handleHotReloadRules(
+        payloadData: Data,
+        reloadOutbounds: Bool,
+        watchdogState: WatchdogState,
+        outerCompletion: @escaping @Sendable (ProxySelectionProviderResponse) -> Void
+    ) {
+        reloadGate.enqueue { [weak self] finishReload in
+            let completion: @Sendable (ProxySelectionProviderResponse) -> Void = { response in
+                finishReload()
+                outerCompletion(response)
+            }
+            guard let self else {
+                completion(.failure(.unavailable))
+                return
+            }
+            if watchdogState.hasTimedOut {
+                finishReload()
+                return
+            }
+            self.reloadWorkerQueue.async { [weak self] in
+                guard let self else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                if watchdogState.hasTimedOut {
+                    finishReload()
+                    return
+                }
+                Self.runtimeLog.aggregate("stage=handleHotReloadRules requested reloadOutbounds=\(reloadOutbounds)")
+                guard !self.uplinkLock.withLock({ self.providerStopping }), !watchdogState.hasTimedOut else {
+                    completion(.failure(.unavailable))
+                    return
+                }
+                let snapshot: ProviderLaunchSnapshot
+                do {
+                    snapshot = try self.decodeReloadSnapshot(payloadData: payloadData)
+                } catch TransparentProxyReloadPayloadError.emptyPayload {
+                    Self.runtimeLog.failure("stage=handleHotReloadRules failed reason=emptyPayload")
+                    completion(.failure(.invalidRequest))
+                    return
+                } catch {
+                    Self.runtimeLog.failure(
+                        "stage=handleHotReloadRules decodeFailed error=\(String(reflecting: error))"
+                    )
+                    completion(.failure(.invalidRequest))
+                    return
+                }
+                do {
+                    let previousRecipe = self.recipeLock.withLock { self.runtimeRecipe }
+                    let input = try TransparentProxyRuntimeInputLoader.load(snapshot: snapshot)
+                    let nextInputs = try Self.networkSettingsInputs(for: snapshot)
+                    let previousInputs = previousRecipe.flatMap {
+                        try? Self.networkSettingsInputs(for: $0.snapshot)
+                    }
+                    let profileYAML = String(decoding: input.profile, as: UTF8.self)
+                    try self.runtimeController.reloadRules(
+                        profileYAML: profileYAML,
+                        workingDirectory: input.runtimeDirectory,
+                        reloadOutbounds: reloadOutbounds
+                    )
+                    try self.runtimeController.setRoutingMode(snapshot.routingMode)
+                    if reloadOutbounds {
+                        for (group, member) in snapshot.proxySelections.sorted(by: { $0.key < $1.key })
+                        where group != "GLOBAL" {
+                            _ = try? self.runtimeController.selectProxy(group: group, member: member)
+                        }
+                        if let global = snapshot.proxySelections["GLOBAL"] {
+                            _ = try? self.runtimeController.selectProxy(group: "GLOBAL", member: global)
+                        }
+                    }
+                    let newRecipe = RuntimeRecipe(
+                        snapshot: snapshot,
+                        selections: snapshot.proxySelections,
+                        routingMode: snapshot.routingMode
+                    )
+                    let sameSettings = previousInputs.map {
+                        $0.bypassPlan == nextInputs.bypassPlan && $0.exclusions == nextInputs.exclusions
+                    } ?? false
+                    if sameSettings {
+                        self.recipeLock.withLock {
+                            if !self.uplinkLock.withLock({ self.providerStopping }) {
+                                self.runtimeRecipe = newRecipe
+                            }
+                        }
+                        Self.runtimeLog.lifecycle("stage=handleHotReloadRules success skippedNetworkSettings=true")
+                        completion(.profileReloaded)
+                        return
+                    }
+                    let nextSettings = try Self.makeNetworkSettings(
+                        bypassPlan: nextInputs.bypassPlan,
+                        upstreamExclusions: nextInputs.exclusions
+                    )
+                    self.setTunnelNetworkSettings(nextSettings) { [weak self] settingsError in
+                        guard let self else {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        if self.uplinkLock.withLock({ self.providerStopping }) {
+                            completion(.failure(.unavailable))
+                            return
+                        }
+                        if let settingsError {
+                            Self.runtimeLog.failure(
+                                "stage=handleHotReloadRules settingsFailed error=\(String(reflecting: settingsError))"
+                            )
+                            completion(.failure(.internalFailure))
+                            return
+                        }
+                        self.recipeLock.withLock {
+                            if !self.uplinkLock.withLock({ self.providerStopping }) {
+                                self.runtimeRecipe = newRecipe
+                            }
+                        }
+                        Self.runtimeLog.lifecycle("stage=handleHotReloadRules success skippedNetworkSettings=false")
+                        completion(.profileReloaded)
+                    }
+                } catch is ProxySelectionProviderMessageError {
+                    completion(.failure(.invalidRequest))
+                } catch TransparentProxySelectionError.unsupported {
+                    completion(.failure(.rejected))
+                } catch TransparentProxySelectionError.providerUnavailable,
+                        TransparentProxySelectionError.runtimeStopping {
+                    completion(.failure(.unavailable))
+                } catch {
+                    Self.runtimeLog.failure("stage=handleHotReloadRules failed error=\(String(reflecting: error))")
+                    completion(.failure(.internalFailure))
+                }
+            }
+        }
     }
 
     private func handleReloadProfile(
@@ -1321,9 +1515,9 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         )
     }
 
-    private static func makeNetworkSettings(
+    private static func networkSettingsInputs(
         for snapshot: ProviderLaunchSnapshot
-    ) throws -> NETransparentProxyNetworkSettings {
+    ) throws -> (bypassPlan: BypassNetworkSettingsPlan, exclusions: [TransparentProxyUpstreamExclusion]) {
         let bypassPlan = try BypassNetworkSettingsPlan(policy: snapshot.bypassPolicy)
         let upstreamExclusions: [TransparentProxyUpstreamExclusion]
         do {
@@ -1331,9 +1525,16 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         } catch TransparentProxyUpstreamEndpointResolutionError.unresolvedEndpoint {
             upstreamExclusions = []
         }
+        return (bypassPlan, upstreamExclusions)
+    }
+
+    private static func makeNetworkSettings(
+        for snapshot: ProviderLaunchSnapshot
+    ) throws -> NETransparentProxyNetworkSettings {
+        let inputs = try networkSettingsInputs(for: snapshot)
         return try makeNetworkSettings(
-            bypassPlan: bypassPlan,
-            upstreamExclusions: upstreamExclusions
+            bypassPlan: inputs.bypassPlan,
+            upstreamExclusions: inputs.exclusions
         )
     }
 
@@ -1643,12 +1844,15 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
         case .setRoutingMode: "setRoutingMode"
         case .resetNetwork: "resetNetwork"
         case .reloadProfile: "reloadProfile"
+        case .hotReloadRules: "hotReloadRules"
         case .closeConnections: "closeConnections"
         case .recentLog: "recentLog"
         case .setDiagnosticLogLevel: "setDiagnosticLogLevel"
         case .traceRoute: "traceRoute"
         case .stageRoutingResourceChunk: "stageRoutingResourceChunk"
         case .installedRoutingResourceDigests: "installedRoutingResourceDigests"
+        case .setMITMConfig: "setMITMConfig"
+        case .httpCaptures: "httpCaptures"
         }
     }
 

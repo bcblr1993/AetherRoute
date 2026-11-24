@@ -164,6 +164,43 @@ public struct ProxySelectionProviderClient: Sendable {
         }
     }
 
+    public func hotReloadRules(
+        payload: Data = Data(),
+        reloadOutbounds: Bool = false
+    ) async throws {
+        switch try await send(.hotReloadRules(payload, reloadOutbounds: reloadOutbounds)) {
+        case .profileReloaded:
+            return
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        }
+    }
+
+    public func setMITMConfig(_ configPayload: Data) async throws {
+        switch try await send(.setMITMConfig(configPayload)) {
+        case .mitmConfigApplied:
+            return
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        }
+    }
+
+    public func httpCaptures() async throws -> [MITMHTTPCaptureEntry] {
+        switch try await send(.httpCaptures) {
+        case let .httpCaptures(data):
+            guard !data.isEmpty else { return [] }
+            return try JSONDecoder().decode([MITMHTTPCaptureEntry].self, from: data)
+        case let .failure(failure):
+            throw ProxySelectionProviderClientError.providerFailure(failure)
+        default:
+            throw ProxySelectionProviderClientError.unexpectedResponse
+        }
+    }
+
     /// Queries SHA-256 digests of usable routing databases currently installed in the running extension.
     public func installedRoutingResourceDigests() async throws -> [RoutingResourceKind: String] {
         switch try await send(.installedRoutingResourceDigests) {

@@ -376,6 +376,7 @@ enum MacFuncLifecycleAndV3FixTests {
             ("testV314_CONNDNS08_ClearDNSCacheSuppressesActiveFlowsAndReportsTruthfulErrors", testV314_CONNDNS08_ClearDNSCacheSuppressesActiveFlowsAndReportsTruthfulErrors),
             ("testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization", testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization),
             ("testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites", testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites),
+            ("testV320_TunnelManagerInitDefersKeychainAndUIReviewSkipsIt", testV320_TunnelManagerInitDefersKeychainAndUIReviewSkipsIt),
         ]
 
         var passed = 0
@@ -1569,7 +1570,7 @@ enum MacFuncLifecycleAndV3FixTests {
                 return try ProxySelectionProviderMessageCodec.encode(
                     response: .routingResourceChunkStaged
                 )
-            case .reloadProfile:
+            case .reloadProfile, .hotReloadRules:
                 recordedState.withLock { state in
                     state.events.append("reload")
                 }
@@ -2431,6 +2432,44 @@ enum MacFuncLifecycleAndV3FixTests {
         try expect(
             emissions <= 2,
             "SYS-14: Expected at most 2 latencyStore.objectWillChange emissions for 10-group flush (1 per dictionary), got \(emissions)"
+        )
+    }
+
+    @MainActor
+    private static func testV320_TunnelManagerInitDefersKeychainAndUIReviewSkipsIt() async throws {
+        // 1. Source guard: TunnelManager.init must never invoke Keychain synchronously at startup.
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let tunnelManagerSource = try String(
+            contentsOf: repoRoot.appendingPathComponent("Sources/AetherRouteApp/TunnelManager.swift"),
+            encoding: .utf8
+        )
+        if let initRange = tunnelManagerSource.range(of: "init(\n"),
+           let deinitRange = tunnelManagerSource.range(of: "deinit {", range: initRange.upperBound..<tunnelManagerSource.endIndex) {
+            let initBody = tunnelManagerSource[initRange.lowerBound..<deinitRange.lowerBound]
+            try expect(
+                !initBody.contains("loadOrCreateSecret()"),
+                "TunnelManager.init must defer ExternalControllerSecretStore Keychain access so headless/UI-review/default launch cannot hang on SecurityAgent"
+            )
+        } else {
+            throw TestFailure(message: "Could not locate TunnelManager.init body")
+        }
+
+        // 2. Runtime guard: neither default-disabled init nor UI-review connected init populates secret from Keychain.
+        let (defaultTunnel, _, defaultSuite) = makeTestTunnel(reviewState: nil)
+        defer { cleanupDefaults(defaultSuite) }
+        try expect(
+            defaultTunnel.externalControllerSecret.isEmpty,
+            "Default disabled External Controller must not eagerly access Keychain during TunnelManager.init"
+        )
+
+        let (reviewTunnel, _, reviewSuite) = makeTestTunnel(reviewState: "connected")
+        defer { cleanupDefaults(reviewSuite) }
+        try expect(
+            reviewTunnel.externalControllerSecret.isEmpty,
+            "UI-review launch must leave externalControllerSecret empty during TunnelManager.init without touching Keychain"
         )
     }
 }

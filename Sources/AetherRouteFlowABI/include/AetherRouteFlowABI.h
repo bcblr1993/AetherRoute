@@ -236,6 +236,43 @@ typedef struct aetherroute_flow_abi_v8 {
 
 int32_t aetherroute_flow_abi_load_v8(aetherroute_flow_abi_v8_t *output);
 
+/*
+ * V9 (3.2.0) adds zero-downtime live rule/config hot-reload in place without
+ * tearing down the runtime or closing active flows.
+ */
+typedef struct aetherroute_flow_abi_v9 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v8_t v8;
+    int32_t (*reload_rules_v1)(
+        void *,
+        const uint8_t *,
+        size_t,
+        const uint8_t *,
+        size_t,
+        int32_t
+    );
+} aetherroute_flow_abi_v9_t;
+
+int32_t aetherroute_flow_abi_load_v9(aetherroute_flow_abi_v9_t *output);
+
+typedef struct aetherroute_flow_abi_v10 {
+    uint32_t struct_size;
+    aetherroute_flow_abi_v9_t v9;
+    int32_t (*set_mitm_config_v1)(
+        void *,
+        const uint8_t *,
+        size_t
+    );
+    int32_t (*http_captures_v1)(
+        void *,
+        uint8_t *,
+        size_t,
+        size_t *
+    );
+} aetherroute_flow_abi_v10_t;
+
+int32_t aetherroute_flow_abi_load_v10(aetherroute_flow_abi_v10_t *output);
+
 #ifdef __cplusplus
 }
 #endif

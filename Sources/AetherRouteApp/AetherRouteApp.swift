@@ -2990,6 +2990,12 @@ private struct SettingsView: View {
             localProxySection
 #endif
 
+            ExternalControllerSettingsSection()
+                .environmentObject(tunnel)
+
+            MITMSettingsSection()
+                .environmentObject(tunnel)
+
             BypassRulesSection()
                 .environmentObject(tunnel)
         }
@@ -4084,7 +4090,7 @@ private struct SystemProxyBypassEditor: View {
 /// move between common ports such as 7890 and 1080. The value is committed on
 /// Return or when focus leaves; TunnelManager validates it and reports a bad
 /// port, and the field then shows the port actually in effect.
-private struct LocalProxyPortField: View {
+struct LocalProxyPortField: View {
     let title: String.LocalizationValue
     let port: Int
     let identifier: String

@@ -15,7 +15,7 @@ extension TunnelManager {
         do {
             customRules = try CustomRuleStore.applicationGroup().add(rule)
             let isLive = (state == .connected)
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             if isLive {
                 let reloaded = await reloadCustomRulesLive()
                 if reloaded {
@@ -47,7 +47,7 @@ extension TunnelManager {
             customRules = try CustomRuleStore.applicationGroup().update(rule)
             customRuleMessage = AppLocalization.string("Custom rule updated")
             customRuleMessageIsError = false
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
             return true
         } catch {
@@ -70,7 +70,7 @@ extension TunnelManager {
             customRules = try CustomRuleStore.applicationGroup().delete(id: id)
             customRuleMessage = AppLocalization.string("Custom rule deleted")
             customRuleMessageIsError = false
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
             return true
         } catch {
@@ -93,7 +93,7 @@ extension TunnelManager {
             customRules = try CustomRuleStore.applicationGroup().toggle(id: id)
             customRuleMessage = nil
             customRuleMessageIsError = false
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
             return true
         } catch {
@@ -121,7 +121,7 @@ extension TunnelManager {
             )
             customRuleMessage = nil
             customRuleMessageIsError = false
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             await reloadCustomRulesLive()
             return true
         } catch {
@@ -144,7 +144,7 @@ extension TunnelManager {
         do {
             customRules = try CustomRuleStore.applicationGroup().importBatch(rules)
             let isLive = (state == .connected)
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             if isLive {
                 let reloaded = await reloadCustomRulesLive()
                 if reloaded {
@@ -455,7 +455,7 @@ extension TunnelManager {
     }
 
     @discardableResult
-    func reloadCustomRulesLive() async -> Bool {
+    func reloadCustomRulesLive(reloadOutbounds: Bool = false) async -> Bool {
         guard !isUIReviewMode, state == .connected else { return true }
         do {
             let currentRoutingMode = sessionRoutingMode ?? routingMode
@@ -464,9 +464,13 @@ extension TunnelManager {
             )
             let client = makeProxySelectionProviderClient()
             Self.runtimeLogger.info(
-                "stage=customRules liveReload sending payload bytes=\(preparedReload.payloadData.count) resources=\(preparedReload.routingResources.count)"
+                "stage=customRules liveReload sending payload bytes=\(preparedReload.payloadData.count, privacy: .public) resources=\(preparedReload.routingResources.count, privacy: .public) reloadOutbounds=\(reloadOutbounds, privacy: .public)"
             )
-            try await reloadActiveProfileStagingResources(preparedReload, via: client)
+            try await reloadActiveProfileStagingResources(
+                preparedReload,
+                via: client,
+                strategy: reloadOutbounds ? .hotReloadFull : .hotReloadRulesOnly
+            )
             await syncGlobalSelector(client: client)
             Self.runtimeLogger.info("stage=customRules liveReload succeeded")
             return true
@@ -480,22 +484,55 @@ extension TunnelManager {
         }
     }
 
-    func refreshActiveProfileSummary() {
-        guard let activeProfile else { return }
-        let rawProfileYAML = effectiveProfileYAML(for: activeProfile)
-        let effectiveRules = effectiveRuntimeCustomRules
-        let remoteRules = compiledRemoteRulesCache
+    private nonisolated static func computeProfileSummary(
+        rawProfileYAML: String,
+        effectiveRules: [CustomRule],
+        remoteRules: [String],
+        enableDomesticDirect: Bool
+    ) -> ProfileConfigurationSummary {
         let profileYAML = DomesticRoutingOptimizer.optimizedProfile(
             for: rawProfileYAML,
             customRules: effectiveRules,
             remoteRules: remoteRules,
-            enableDomesticDirect: isDomesticOptimizationEnabled
+            enableDomesticDirect: enableDomesticDirect
         )
-        activeProfileSummary = ProfileConfigurationInspector.inspect(
+        return ProfileConfigurationInspector.inspect(
             yaml: profileYAML,
             customRules: effectiveRules,
             remoteRules: remoteRules
         )
+    }
+
+    func refreshActiveProfileSummary() {
+        activeProfileSummaryGeneration &+= 1
+        guard let activeProfile else { return }
+        activeProfileSummary = Self.computeProfileSummary(
+            rawProfileYAML: effectiveProfileYAML(for: activeProfile),
+            effectiveRules: effectiveRuntimeCustomRules,
+            remoteRules: compiledRemoteRulesCache,
+            enableDomesticDirect: isDomesticOptimizationEnabled
+        )
+        refreshRoutingResourceStatuses()
+    }
+
+    func refreshActiveProfileSummaryOffMainActor() async {
+        activeProfileSummaryGeneration &+= 1
+        let generation = activeProfileSummaryGeneration
+        guard let activeProfile else { return }
+        let rawProfileYAML = effectiveProfileYAML(for: activeProfile)
+        let effectiveRules = effectiveRuntimeCustomRules
+        let remoteRules = compiledRemoteRulesCache
+        let enableDomesticDirect = isDomesticOptimizationEnabled
+        let inspected = await Task.detached(priority: .userInitiated) {
+            Self.computeProfileSummary(
+                rawProfileYAML: rawProfileYAML,
+                effectiveRules: effectiveRules,
+                remoteRules: remoteRules,
+                enableDomesticDirect: enableDomesticDirect
+            )
+        }.value
+        guard generation == activeProfileSummaryGeneration else { return }
+        activeProfileSummary = inspected
         refreshRoutingResourceStatuses()
     }
 }

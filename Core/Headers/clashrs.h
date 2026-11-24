@@ -85,6 +85,25 @@ typedef struct clash_packet_local_proxy_v1 {
     uint32_t socks_port;
 } clash_packet_local_proxy_v1_t;
 
+enum clash_packet_listener_kind {
+    CLASH_PACKET_LISTENER_HTTP = 1,
+    CLASH_PACKET_LISTENER_SOCKS = 2,
+    CLASH_PACKET_LISTENER_MIXED = 3
+};
+
+/*
+ * Additional opt-in loopback listener configured explicitly by the host UI.
+ * Imported YAML listeners are always stripped during hardening; only entries
+ * supplied here are bound, strictly to 127.0.0.1 with allow-lan disabled.
+ */
+typedef struct clash_packet_controlled_listener_v1 {
+    uint32_t struct_size;
+    uint32_t kind;
+    uint16_t port;
+    uint16_t reserved;
+    const char *name;
+} clash_packet_controlled_listener_v1_t;
+
 typedef void (*clash_flow_completion_t)(
     uint64_t token,
     int32_t status,
@@ -163,6 +182,20 @@ char *clash_start_packet_flow_with_policy_local_proxy_and_cache_v2(
     size_t cache_key_length,
     int32_t multithread
 );
+char *clash_start_packet_flow_with_policy_local_proxy_cache_and_listeners_v3(
+    const char *profile,
+    const char *log,
+    const char *cwd,
+    int32_t mtu,
+    int32_t routing_mode,
+    const clash_packet_dns_policy_v1_t *dns_policy,
+    const clash_packet_local_proxy_v1_t *local_proxy,
+    const uint8_t *cache_key,
+    size_t cache_key_length,
+    const clash_packet_controlled_listener_v1_t *controlled_listeners,
+    size_t controlled_listener_count,
+    int32_t multithread
+);
 int32_t clash_shutdown(void);
 void clash_free_string(char *value);
 
@@ -193,6 +226,24 @@ int32_t clash_packet_selector_select_v1(
     size_t member_length
 );
 int32_t clash_packet_set_routing_mode_v1(int32_t routing_mode);
+int32_t clash_packet_reload_rules_v1(
+    const char *profile,
+    const char *cwd,
+    int32_t mtu,
+    int32_t routing_mode,
+    const clash_packet_dns_policy_v1_t *dns_policy,
+    const clash_packet_local_proxy_v1_t *local_proxy,
+    int32_t reload_outbounds
+);
+int32_t clash_packet_set_mitm_config_v1(
+    const uint8_t *config_json,
+    size_t config_json_length
+);
+int32_t clash_packet_http_captures_v1(
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
+);
 int32_t clash_packet_reset_network_state_v1(void);
 int32_t clash_packet_reset_network_state_on_interface_v1(uint32_t interface_index);
 /*
@@ -410,6 +461,25 @@ int32_t clash_flow_close_connections_v1(
 int32_t clash_flow_engine_reset_network_state_v1(
     clash_flow_engine_t *engine,
     uint32_t interface_index
+);
+int32_t clash_flow_reload_rules_v1(
+    clash_flow_engine_t *engine,
+    const uint8_t *profile,
+    size_t profile_length,
+    const uint8_t *cwd,
+    size_t cwd_length,
+    int32_t reload_outbounds
+);
+int32_t clash_flow_set_mitm_config_v1(
+    clash_flow_engine_t *engine,
+    const uint8_t *config_json,
+    size_t config_json_length
+);
+int32_t clash_flow_http_captures_v1(
+    clash_flow_engine_t *engine,
+    uint8_t *output,
+    size_t output_capacity,
+    size_t *required_length
 );
 
 /*

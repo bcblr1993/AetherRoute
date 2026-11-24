@@ -75,13 +75,13 @@ extension TunnelManager {
             guard id == activeProfileID else { return true }
             let previousCustomGroups = Set(activeProfile?.overrides?.groups.map(\.name) ?? [])
             activeProfile = catalog.profiles.first { $0.id == id }?.profile
-            refreshActiveProfileSummary()
+            await refreshActiveProfileSummaryOffMainActor()
             applyCustomGroupModes(removing: previousCustomGroups)
             Self.runtimeLogger.info(
                 "stage=profileOverrides saved groups=\(validated?.groups.count ?? 0, privacy: .public) chains=\(validated?.chainedProxies.count ?? 0, privacy: .public) hidden=\(validated?.hiddenNodeKeywords.count ?? 0, privacy: .public)"
             )
             if reloadsRunningProfile {
-                let reloaded = await reloadCustomRulesLive()
+                let reloaded = await reloadCustomRulesLive(reloadOutbounds: true)
                 guard reloaded else {
                     profileMessage = customRuleMessage
                         ?? AppLocalization.string("Overrides saved, but the running connection could not reload them.")
