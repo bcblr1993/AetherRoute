@@ -354,7 +354,7 @@ extension TunnelManager {
             enableIPv6: providerAllowsIPv6
         )
         manager.protocolConfiguration = provider
-        manager.localizedDescription = AppConstants.localizedDescription
+        manager.localizedDescription = mode.systemConfigurationDescription
         manager.isEnabled = isEnabled
         return manager
     }
@@ -375,6 +375,7 @@ extension TunnelManager {
             Self.runtimeLogger.error("stage=persistConfiguration failed reason=invalidProtocol")
             throw TunnelManagerError.invalidProtocolConfiguration
         }
+        let expectedDescription = networkEngineMode.systemConfigurationDescription
         let enableIPv6 = providerAllowsIPv6
         guard TunnelProviderConfigurationCodec.requiresPersistence(
             routingMode: requestedMode,
@@ -382,7 +383,7 @@ extension TunnelManager {
             enableIPv6: enableIPv6,
             configuration: provider.providerConfiguration,
             isEnabled: manager.isEnabled
-        ) else {
+        ) || manager.localizedDescription != expectedDescription else {
             Self.runtimeLogger.info("stage=persistConfiguration skipped reason=unchanged")
             return
         }
@@ -399,6 +400,7 @@ extension TunnelManager {
             in: provider.providerConfiguration
         )
         manager.protocolConfiguration = updatedProvider
+        manager.localizedDescription = expectedDescription
         manager.isEnabled = true
         Self.runtimeLogger.info("stage=persistConfiguration save begin")
         try await manager.saveToPreferences()
@@ -580,17 +582,13 @@ extension TunnelManager {
         for activeMode: NetworkEngineMode
     ) async {
         do {
+#if AETHERROUTE_INDEPENDENT
+            let opposingMode: NetworkEngineMode = activeMode == .transparent ? .tun : .transparent
             let opposingManagers: [NEVPNManager] = switch activeMode {
             case .transparent:
-#if AETHERROUTE_INDEPENDENT
                 try await NETunnelProviderManager.loadAllFromPreferences().map { $0 }
-#else
-                []
-#endif
-#if AETHERROUTE_INDEPENDENT
             case .tun:
                 try await NETransparentProxyManager.loadAllFromPreferences().map { $0 }
-#endif
             }
             for opposing in opposingManagers {
                 if opposing.connection.status != .disconnected && opposing.connection.status != .invalid {
@@ -599,11 +597,119 @@ extension TunnelManager {
                     )
                     opposing.connection.stopVPNTunnel()
                 }
+                if (opposing.protocolConfiguration as? NETunnelProviderProtocol)?
+                    .providerBundleIdentifier == opposingMode.providerBundleIdentifier,
+                   opposing.isEnabled || opposing.localizedDescription != opposingMode.systemConfigurationDescription {
+                    let wasPersisting = isPersistingConfiguration
+                    isPersistingConfiguration = true
+                    defer { isPersistingConfiguration = wasPersisting }
+                    try await opposing.loadFromPreferences()
+                    opposing.isEnabled = false
+                    opposing.localizedDescription = opposingMode.systemConfigurationDescription
+                    try await opposing.saveToPreferences()
+                }
             }
+            let matching = opposingManagers.filter {
+                ($0.protocolConfiguration as? NETunnelProviderProtocol)?
+                    .providerBundleIdentifier == opposingMode.providerBundleIdentifier
+            }
+            observeOpposingManager(matching.count == 1 ? matching.first : nil, mode: opposingMode)
+#else
+            observeOpposingManager(nil, mode: activeMode)
+#endif
         } catch {
             Self.runtimeLogger.error(
                 "stage=deactivateOpposing failed reason=\(error.localizedDescription, privacy: .public)"
             )
+        }
+    }
+
+    func observeOpposingManager(_ manager: NEVPNManager?, mode opposingMode: NetworkEngineMode) {
+        if let opposingStatusObserver {
+            NotificationCenter.default.removeObserver(opposingStatusObserver)
+            self.opposingStatusObserver = nil
+        }
+        opposingManager = manager
+        guard let manager else { return }
+        opposingStatusObserver = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: manager.connection,
+            queue: .main
+        ) { [weak self] _ in
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    self?.handleOpposingStatusChange(mode: opposingMode)
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    self?.handleOpposingStatusChange(mode: opposingMode)
+                }
+            }
+        }
+    }
+
+    func canAdoptExternalSystemStart(providerStatus: NEVPNStatus) -> Bool {
+        TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
+            providerIsConnecting: providerStatus == .connecting,
+            isUIReviewMode: isUIReviewMode,
+            isPreparing: isPreparing,
+            isPersistingConfiguration: isPersistingConfiguration,
+            isReloadingConfiguration: isReloadingConfiguration,
+            isSwitchingNetworkEngine: isSwitchingNetworkEngine,
+            hostIsTransitioning: isTransitioning,
+            connectionRequestPending: connectionRequestID != nil,
+            connectionAttemptPending: connectionAttemptID != nil,
+            disconnectionAttemptPending: disconnectionAttemptID != nil,
+            isApplicationTerminating: isApplicationTerminating,
+            hasAcceptedPrivacyDisclosure: hasAcceptedPrivacyDisclosure,
+            isNetworkSetupRequired: isNetworkSetupRequired,
+            permitsNewConnection: distributionConnectionAccess.permitsNewConnection,
+            hasActiveProfile: activeProfile != nil
+        )
+    }
+
+    func handleOpposingStatusChange(mode opposingMode: NetworkEngineMode) {
+        guard let opposing = opposingManager,
+              opposingMode != networkEngineMode,
+              externalSystemSwitchTask == nil,
+              canAdoptExternalSystemStart(providerStatus: opposing.connection.status) else {
+            return
+        }
+        Self.runtimeLogger.info(
+            "stage=externalSystemStart opposingDetected targetEngine=\(opposingMode.rawValue, privacy: .public)"
+        )
+        externalSystemSwitchTask = Task { @MainActor [weak self] in
+            for _ in 0..<40 {
+                guard !Task.isCancelled, let self, self.opposingManager === opposing else {
+                    self?.externalSystemSwitchTask = nil
+                    return
+                }
+                let currentStatus = opposing.connection.status
+                if Self.isTerminalProviderStatus(currentStatus) || currentStatus == .connected {
+                    break
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard let self else { return }
+            self.externalSystemSwitchTask = nil
+            guard !Task.isCancelled,
+                  !self.isApplicationTerminating,
+                  !self.isSwitchingNetworkEngine,
+                  self.opposingManager === opposing,
+                  self.networkEngineMode != opposingMode else {
+                return
+            }
+            if self.isEnabled || self.state == .connected {
+                await self.setNetworkEngineMode(opposingMode)
+            } else if !self.isTransitioning,
+                      self.connectionRequestID == nil,
+                      self.connectionAttemptID == nil,
+                      self.disconnectionAttemptID == nil {
+                await self.setNetworkEngineMode(opposingMode)
+                if self.networkEngineMode == opposingMode {
+                    await self.setEnabled(true)
+                }
+            }
         }
     }
 
@@ -627,6 +733,14 @@ extension TunnelManager {
             NotificationCenter.default.removeObserver(statusObserver)
             self.statusObserver = nil
         }
+        if let opposingStatusObserver {
+            NotificationCenter.default.removeObserver(opposingStatusObserver)
+            self.opposingStatusObserver = nil
+        }
+        opposingManager = nil
+        pendingExternalSystemStart = false
+        externalSystemSwitchTask?.cancel()
+        externalSystemSwitchTask = nil
         resetManagerScopedLifecycleState()
         manager = nil
         connectedSince = nil
@@ -757,6 +871,34 @@ extension TunnelManager {
             Self.runtimeLogger.info(
                 "stage=updateState switchingNetworkEngine transientStatus=\(status.rawValue, privacy: .public)"
             )
+            return
+        }
+        if pendingExternalSystemStart {
+            if disconnectionAttemptID != nil || status == .connected {
+                pendingExternalSystemStart = false
+            } else if Self.isTerminalProviderStatus(status) {
+                pendingExternalSystemStart = false
+                lastObservedProviderStatus = status
+                Self.runtimeLogger.info("stage=updateState externalSystemStart terminalTriggerConnect")
+                Task { @MainActor [weak self] in
+                    guard let self, !self.isApplicationTerminating else { return }
+                    if self.state == .connecting {
+                        self.state = .disconnected
+                    }
+                    await self.setEnabled(true)
+                }
+                return
+            } else {
+                state = .connecting
+                return
+            }
+        }
+        if status == .connecting,
+           (state == .disconnected || isFailed),
+           canAdoptExternalSystemStart(providerStatus: status) {
+            pendingExternalSystemStart = true
+            state = .connecting
+            Self.runtimeLogger.info("stage=updateState externalSystemStartDetected")
             return
         }
         if status == .connected, previousProviderStatus != .connected {

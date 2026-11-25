@@ -6,6 +6,38 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-11-25
+
+### Fixed & Improved
+- **系统设置 › VPN 状态协同与双引擎配置名称区分（`TunnelConfiguration.swift` / `TunnelLifecycleTransitionPolicy.swift` / `TunnelManager.swift` / `TunnelManager+ProviderManagement.swift` / `ContentView.swift` / `AetherRouteApp.swift` / `HelpTopics.swift`）**：
+  - 根因：`NETransparentProxyManager`（由 macOS 归类在「系统设置 › 网络 › 过滤器和代理」，从不出现在「系统设置 › VPN」）与 `NETunnelProviderManager`（显示在「系统设置 › VPN」）此前共用 `"AetherRoute"` 作为 `localizedDescription`，且切换引擎时未将对侧配置置为 `isEnabled = false` 并观察其状态；当应用处于透明代理已连接态、或从系统设置 › VPN 直接拨动 `AetherRoute` 开关以 `options: nil` 启动扩展时，因缺少内存启动快照立刻失败，造成应用内显示“已连接”而系统设置 › VPN 显示“已断开连接”的认知冲突与外部开关失效。
+  - 修复：保持 TUN 配置 `localizedDescription` 为 `"AetherRoute"`（确保 `scutil --nc` 及生命周期门禁兼容），将透明代理系统配置命名区分设为 `"AetherRoute (Transparent Proxy)"`；`deactivateOpposingNetworkEngineManagers(for:)` 停止对侧会话并将对侧配置写回 `isEnabled = false`，同时注册 `observeOpposingManager(_:mode:)`；新增 `TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(...)`，在宿主空闲或透明代理已连接状态下检测到系统设置 › VPN 拨动开启时自动切至目标引擎并由宿主发起携带完整 `ProviderLaunchSnapshot` 的连接；`ConnectionHero.heroSubtitle` 与 `MenuBarContent.headerSubtitle` 明确展示当前承载流量的引擎名称（`透明代理` / `TUN`）。
+- **菜单栏“选择节点”自动策略组叶节点解析、子组上下文与单源悬停修复（`TunnelManager.swift` / `AetherRouteApp.swift`）**：
+  - 根因：`MenuNodeSelectorPane.selectedMember` 此前仅读取 `tunnel.proxySelections[activeGroup.name]?.selectedMember`，导致 `url-test` / `fallback` / `load-balance` 策略组（如“自动选择”、“故障转移”）切入后没有任何选中勾选且行内容整体被 `.disabled(!isSelectStrategy)` 置灰；`select` 组内的子组行也不显示实际叶节点与区域标牌，且 Fastest 模式锁死点击；此外 `MenuNodeRow` 自持 `@State private var isHovered` 导致 `MenuBarExtra` 非激活面板滚动中丢失 `mouseExited` 时出现多行悬停背景卡死。
+  - 修复：在 `TunnelManager` 新增 `resolvedAutomaticGroupMember(for:)`、`resolvedMenuSelectedMember(for:)` 与 `resolvedSubgroupDisplayLeaf(for:in:)`，并升级 `resolvedLeafNode(from:)` 按策略组类型（优先 `automaticGroupLeaves`，回退至测速延迟最优/首个可用节点）一致解析叶节点；`MenuNodeSelectorPane` 改为单源 `@State private var hoveredMember: String?`（切组/搜索/离开滚动区/失活时自动清零）、点击 `.fastest` 组节点自动切回手动模式、子组行展示区域标识与 `→ 叶节点` 指示，并为被代理的实际叶节点行展示蓝色圆点标记。
+
+### Verification & Qualification
+- **TDD（Red -> Green）与本地/远程 ARM64 全量测试**：
+  - 新增 3 组回归验证并在修复前确认失败（`MacUISmoothnessAndPolishTests` 抓获 6 项 `[MENU-LEAF-01/02]` / `[MENU-HOVER-01/02]` / `[VPN-SUBTITLE-01/02]` 失败，退出码 `133`；`TunnelLifecycleV3Tests.testShouldAdoptExternalSystemStartPolicy` 与 `MacFuncLifecycleAndV3FixTests.testMenuNodeSelectorResolvesAutomaticGroupAndSubgroupLeafDeterministically` 在新实现前不通过），修复后全数通过。
+  - `./scripts/test_distribution_web.sh`、`./scripts/verify_localizations.sh`（`2,148` 直接字面量 / `2,354` 目录键 `en + zh-Hans`）、`./scripts/verify_ui_design_tokens.sh`、`./scripts/test_ui_design_token_guards.sh`、`./scripts/test_motion_guards.sh`、`./scripts/test_telemetry_observation_scope.sh` 与 `./scripts/test_signed_network_extension_guards.sh` 全部 PASS。
+  - `./scripts/test_fast_lane.sh` **14/14 PASS**（`77s`，`outputs/fast-lane-20261125T012737Z`）。
+  - 全量 `./scripts/test.sh` 在构建 `2026112501` 最终源码树上于本机（`outputs/test-sh-3.2.1-final.log`）与隔离 ARM64 VM（`outputs/test-evidence/remote-arm64-20261125T014959Z-fast`）全数通过（零警告）：`776` XCTest、`145` Swift Testing（`22` suites）、`114` `TransparentProxySupportTests`、`29` `FlowCoreBridgeTests`、`48/48` `MacFuncLifecycleAndV3FixTests`、`MacUISmoothnessAndPolishTests`、`AppUpdateWindow` 13 阶段双语布局回归、500 轮双引擎泄漏检查（本机 `max_rss_bytes=13205504`，VM `max_rss_bytes=12926976`，`fd_growth=0`）、吞吐压测（本机 `flow_engine_mibps=2114.584` / `packet_engine_mibps=1803.731`，VM `flow_engine_mibps=3133.568` / `packet_engine_mibps=3270.312`）、16 协议手写节点（`32` 核心面）与 63 组协议兼容测试。
+- **核心引擎与协议对照门禁（`Core/Engine` `03ac470e8e8b10096c3f64a83003fb6df2e38c3f` 零改动）**：
+  - `verify_protocol_matrix.sh`（`protocols=16 interop_cases=34 independent_tests=10 uncovered_claims=0 status=integration`）与 `verify_licenses.sh`（`458 components` 源码与构建产物双通过）均 PASS。
+  - 默认指纹（`outputs/interop-default-3.2.1-2026112501`）与 Chrome 指纹（`outputs/interop-chrome-3.2.1-2026112501`）12 协议互通门禁均 **11/11 suites PASS**（各 `68` 项互通 + `34` 项证书拒签，测试二进制 SHA-256 `e241627f2ff5487531581a9dce90709e61a0164d50c43f3777974880127429ee`）；Chrome `real_site_tests` **2/2 PASS**（`6.35s`，9 站 ALPS 握手与 Cloudflare ECH 全过）；`vm:macos27` 43 节点实网对照 Mihomo（`outputs/protocol-lab-diff-3.2.1-2026112501`）`both_ok=41, mihomo_fail=1, both_fail=1, ours_missing=0, ours_fail=0, mihomo_missing=0`。
+- **完整默认并行隔离验收（`vm:macos27`，总耗时 `60m 45s`，`outputs/acceptance-3.2.1-2026112501`，Build `2026112501`）**：
+  - 6 维 Tart VM 矩阵：`160 PASS / 0 FAIL / 50 SKIP`（透明代理 5 大专项门禁各 `3 passed`）。
+  - UI 卡顿与内存预算门禁（`300s / 300s`，`status=passed`，预算 `p95<=180 ms`、`max<=300 ms`、`median<=90 MB`、`max<=110 MB`、`growth<=8 MB`）：
+    - `showcase`（`n=420`）：切页 `p50=101.0 ms / p95=158.8 ms / max=242.2 ms`（对比 `3.2.0` `p95=141.4 ms / max=149.8 ms`），内存 `median=80 MB / max=94 MB / growth=+2 MB`（对比 `3.2.0` `80 MB / 95 MB / +1 MB`）；
+    - `large`（`n=420`）：切页 `p50=99.6 ms / p95=153.1 ms / max=197.5 ms`（对比 `3.2.0` `p95=142.7 ms / max=204.0 ms`，最大值继续降低），内存 `median=78 MB / max=92 MB / growth=+3 MB`（对比 `3.2.0` `77 MB / 92 MB / +2 MB`）。
+  - 公证稳定候选与双引擎运行时证据（候选 DMG `1031b2efa4b6dd9b856783713eb2eecabd9aaf2643a8702427c4a1aad9edd06c`，App Notary ID `88aeb3ba-004f-442f-9ada-f7174838f1b4`，候选 DMG Notary ID `23e05ae8-a325-4e28-831f-dc2c85f627f2`）：
+    - TUN：`50s` 空闲复用 PASS、`2 MiB` 上传 `12.304244s`、3 轮 6 次网卡切换恢复 `1/2/1/2/1/2 s`；
+    - 透明代理：`50s` 空闲复用 PASS、`2 MiB` 上传 `17.359804s`、3 轮 6 次网卡切换恢复 `0/4/4/4/11/3 s`。
+
+### Distribution
+- `AetherRoute-3.2.1-build-2026112501-arm64.dmg`: `34,667,564` bytes, SHA-256 `abcf1f8a51a3def41f712f6cf70c62ef9f113be5a487de8e474742fd79026306`
+- Sparkle Ed25519 Signature: `YfIX5bRpaC+/NorsO36sL3aFtDVIwKkl7QzaDrtWE8iEHgrx64ugEEKS+fbqXOitgRv5uD/5r/3kiRKMu4hODg==`
+
 ## [3.2.0] - 2026-11-24
 
 ### Added & Improved

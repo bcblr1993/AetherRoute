@@ -34,6 +34,8 @@ public enum AppConstants {
         profileArchiveTypeIdentifierInfoKey
     )
     public static let localizedDescription = "AetherRoute"
+    public static let transparentProxyLocalizedDescription =
+        "AetherRoute (Transparent Proxy)"
 
     static func optionalIdentityValue(
         _ key: String,

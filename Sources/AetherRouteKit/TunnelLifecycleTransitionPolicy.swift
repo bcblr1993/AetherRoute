@@ -75,7 +75,7 @@ public enum TunnelLifecycleTransitionPolicy {
         disconnectionAttemptPending: Bool = false,
         providerIsActive: Bool = false
     ) -> Bool {
-        !isUIReviewMode
+        return !isUIReviewMode
             && !isPreparing
             && !isPersistingConfiguration
             && !isReloadingConfiguration
@@ -85,5 +85,39 @@ public enum TunnelLifecycleTransitionPolicy {
             && !connectionAttemptPending
             && !disconnectionAttemptPending
             && !providerIsActive
+    }
+
+    public static func shouldAdoptExternalSystemStart(
+        providerIsConnecting: Bool,
+        isUIReviewMode: Bool,
+        isPreparing: Bool,
+        isPersistingConfiguration: Bool,
+        isReloadingConfiguration: Bool,
+        isSwitchingNetworkEngine: Bool,
+        hostIsTransitioning: Bool,
+        connectionRequestPending: Bool,
+        connectionAttemptPending: Bool,
+        disconnectionAttemptPending: Bool,
+        isApplicationTerminating: Bool,
+        hasAcceptedPrivacyDisclosure: Bool,
+        isNetworkSetupRequired: Bool,
+        permitsNewConnection: Bool,
+        hasActiveProfile: Bool
+    ) -> Bool {
+        providerIsConnecting
+            && !isUIReviewMode
+            && !isPreparing
+            && !isPersistingConfiguration
+            && !isReloadingConfiguration
+            && !isSwitchingNetworkEngine
+            && !hostIsTransitioning
+            && !connectionRequestPending
+            && !connectionAttemptPending
+            && !disconnectionAttemptPending
+            && !isApplicationTerminating
+            && hasAcceptedPrivacyDisclosure
+            && !isNetworkSetupRequired
+            && permitsNewConnection
+            && hasActiveProfile
     }
 }

@@ -377,6 +377,7 @@ enum MacFuncLifecycleAndV3FixTests {
             ("testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization", testV314_SYS10_LANProxyStatusFailureClassificationAndLocalization),
             ("testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites", testV314_SYS14_FlushPendingLatencyBatchesTenGroupsIntoSingleWrites),
             ("testV320_TunnelManagerInitDefersKeychainAndUIReviewSkipsIt", testV320_TunnelManagerInitDefersKeychainAndUIReviewSkipsIt),
+            ("testMenuNodeSelectorResolvesAutomaticGroupAndSubgroupLeafDeterministically", testMenuNodeSelectorResolvesAutomaticGroupAndSubgroupLeafDeterministically),
         ]
 
         var passed = 0
@@ -2471,5 +2472,82 @@ enum MacFuncLifecycleAndV3FixTests {
             reviewTunnel.externalControllerSecret.isEmpty,
             "UI-review launch must leave externalControllerSecret empty during TunnelManager.init without touching Keychain"
         )
+    }
+
+    @MainActor
+    private static func testMenuNodeSelectorResolvesAutomaticGroupAndSubgroupLeafDeterministically() async throws {
+        try expect(
+            NetworkEngineMode.tun.systemConfigurationDescription == "AetherRoute",
+            "TUN configuration description must remain 'AetherRoute' for scutil --nc compatibility"
+        )
+        try expect(
+            NetworkEngineMode.transparent.systemConfigurationDescription == "AetherRoute (Transparent Proxy)",
+            "Transparent Proxy configuration description must disambiguate from TUN in System Settings"
+        )
+
+        let (tunnel, _, suiteName) = makeTestTunnel(reviewState: nil)
+        defer {
+            LANProxyServerController.shared.stop()
+            cleanupDefaults(suiteName)
+        }
+
+        let yaml = """
+        proxies:
+          - {name: 首尔-Hysteria2-优化, type: direct}
+          - {name: 首尔-VLESS-Reality, type: direct}
+        proxy-groups:
+          - {name: 节点选择, type: select, proxies: [自动选择, 故障转移, 首尔-Hysteria2-优化, 首尔-VLESS-Reality, DIRECT]}
+          - {name: 自动选择, type: url-test, proxies: [首尔-Hysteria2-优化, 首尔-VLESS-Reality], url: http://www.gstatic.com/generate_204, interval: 300}
+          - {name: 故障转移, type: fallback, proxies: [首尔-Hysteria2-优化, 首尔-VLESS-Reality], url: http://www.gstatic.com/generate_204, interval: 300}
+        rules:
+          - MATCH,节点选择
+        """
+        let profile = ActiveProfile(name: "MenuLeafTest", yaml: yaml, importedAt: Date())
+        let managed = ManagedProfile(profile: profile)
+        tunnel.installReviewProfileCatalog(ProfileCatalog(activeProfileID: managed.id, profiles: [managed]))
+        tunnel.refreshActiveProfileSummary()
+
+        let summary = try expectUnwrap(tunnel.activeProfileSummary, "Expected activeProfileSummary")
+        let selectGroup = try expectUnwrap(summary.proxyGroups.first(where: { $0.name == "节点选择" }), "Expected 节点选择")
+        let autoGroup = try expectUnwrap(summary.proxyGroups.first(where: { $0.name == "自动选择" }), "Expected 自动选择")
+        let fallbackGroup = try expectUnwrap(summary.proxyGroups.first(where: { $0.name == "故障转移" }), "Expected 故障转移")
+
+        tunnel.automaticGroupLeaves["自动选择"] = "首尔-VLESS-Reality"
+        try expect(
+            tunnel.resolvedMenuSelectedMember(for: autoGroup) == "首尔-VLESS-Reality",
+            "Automatic group must resolve active leaf from automaticGroupLeaves"
+        )
+        try expect(
+            tunnel.resolvedLeafNode(from: "自动选择") == "首尔-VLESS-Reality",
+            "resolvedLeafNode must resolve automatic group leaf"
+        )
+        try expect(
+            tunnel.resolvedSubgroupDisplayLeaf(for: "自动选择", in: selectGroup) == "首尔-VLESS-Reality",
+            "Subgroup row in select group must surface active leaf"
+        )
+
+        tunnel.automaticGroupLeaves = [:]
+        let token = tunnel.prepareLatencyIndex()
+        tunnel.recordLatency(member: "首尔-Hysteria2-优化", measurement: .verified(80), runToken: token, force: false)
+        tunnel.recordLatency(member: "首尔-VLESS-Reality", measurement: .verified(35), runToken: token, force: false)
+        tunnel.flushPendingLatency()
+
+        try expect(
+            tunnel.resolvedMenuSelectedMember(for: autoGroup) == "首尔-VLESS-Reality",
+            "url-test group without live telemetry must pick lowest-latency node"
+        )
+        try expect(
+            tunnel.resolvedLeafNode(from: "自动选择") == "首尔-VLESS-Reality",
+            "resolvedLeafNode on url-test group without live telemetry must match lowest-latency node"
+        )
+        try expect(
+            tunnel.resolvedMenuSelectedMember(for: fallbackGroup) == "首尔-Hysteria2-优化",
+            "fallback group without live telemetry must pick first responsive candidate"
+        )
+    }
+
+    private static func expectUnwrap<T>(_ value: T?, _ message: String) throws -> T {
+        guard let value else { throw TestFailure(message: message) }
+        return value
     }
 }

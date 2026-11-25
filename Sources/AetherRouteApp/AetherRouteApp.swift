@@ -1107,11 +1107,13 @@ private struct MenuBarContent: View {
     @ViewBuilder
     private var headerSubtitle: some View {
         if tunnel.isConnected, let since = tunnel.connectedSince {
+            let engineTitle = tunnel.effectiveConnectedEngineMode.shortTitle
             if isMenuVisible {
                 TimelineView(.periodic(from: since, by: 60)) { context in
                     Text(
                         AppLocalization.format(
-                            "Connected for %@",
+                            "%@ · Connected for %@",
+                            engineTitle,
                             AppLocalization.duration(context.date.timeIntervalSince(since))
                         )
                     )
@@ -1119,7 +1121,8 @@ private struct MenuBarContent: View {
             } else {
                 Text(
                     AppLocalization.format(
-                        "Connected for %@",
+                        "%@ · Connected for %@",
+                        engineTitle,
                         AppLocalization.duration(Date.now.timeIntervalSince(since))
                     )
                 )
@@ -1738,6 +1741,8 @@ private struct MenuNodeSelectorPane: View {
     @State private var orderedMembers: [String] = []
     @State private var selecting = false
     @State private var searchText = ""
+    @State private var hoveredMember: String?
+    @State private var latencyRevision: UInt64 = 0
 
     private var activeGroup: ProxyGroupConfigurationSummary {
         if let selectedGroupName,
@@ -1748,11 +1753,8 @@ private struct MenuNodeSelectorPane: View {
     }
 
     private var selectedMember: String? {
-        if activeGroup.name == "GLOBAL" {
-            return tunnel.proxySelections["GLOBAL"]?.selectedMember
-                ?? tunnel.activeProfileSummary.flatMap { TunnelManager.resolvedGlobalTargetMember(in: $0) }
-        }
-        return tunnel.proxySelections[activeGroup.name]?.selectedMember
+        _ = latencyRevision
+        return tunnel.resolvedMenuSelectedMember(for: activeGroup)
     }
 
     private var proxySummaryByName: [String: ProxyConfigurationSummary] {
@@ -1887,43 +1889,72 @@ private struct MenuNodeSelectorPane: View {
                     let currentSelected = selectedMember
                     let isRequestPending = tunnel.proxySelectionRequests.contains(group.name)
                     let isSelectStrategy = group.strategy.lowercased() == "select"
-                    let isFastestLocked = group.name != "GLOBAL" && tunnel.proxySelectionMode(for: group.name) == .fastest
+                    let activeDelegatedLeaf = isSelectStrategy
+                        ? currentSelected.flatMap { tunnel.resolvedSubgroupDisplayLeaf(for: $0, in: group) }
+                        : nil
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredMembers, id: \.self) { member in
                                 let proxy = summariesByName[member]
                                 let isMemberUnsupported = unsupportedSet.contains(member)
-                                MenuNodeRow(
+                                let subgroupLeaf = tunnel.resolvedSubgroupDisplayLeaf(for: member, in: group)
+                                let isSelectedRow = member == currentSelected
+                                let isDelegatedRow = !isSelectedRow && activeDelegatedLeaf == member
+                                let row = MenuNodeRow(
                                     groupName: group.name,
                                     member: member,
+                                    subgroupLeaf: subgroupLeaf,
                                     protocolName: proxy?.protocolName,
                                     transportName: proxy?.transportName,
-                                    isSelected: member == currentSelected,
+                                    isSelected: isSelectedRow,
+                                    isDelegatedLeaf: isDelegatedRow,
+                                    isInteractive: isSelectStrategy,
+                                    isHovered: hoveredMember == member,
                                     isUnsupported: isMemberUnsupported,
                                     latencyStore: tunnel.latencyStore,
-                                    tunnel: tunnel
-                                ) {
-                                    if member == currentSelected {
-                                        onClose()
-                                        return
-                                    }
-                                    selecting = true
-                                    Task {
-                                        if group.name == "GLOBAL" {
-                                            await tunnel.selectGlobalOutlet(member)
-                                        } else {
-                                            await tunnel.selectProxy(group: group.name, member: member)
+                                    tunnel: tunnel,
+                                    onHoverChange: { hovering in
+                                        if hovering {
+                                            hoveredMember = member
+                                        } else if hoveredMember == member {
+                                            hoveredMember = nil
                                         }
-                                        selecting = false
+                                    },
+                                    action: {
+                                        let needsManualSwitch = group.name != "GLOBAL"
+                                            && tunnel.proxySelectionMode(for: group.name) == .fastest
+                                        if member == currentSelected && !needsManualSwitch {
+                                            onClose()
+                                            return
+                                        }
+                                        selecting = true
+                                        Task {
+                                            defer { selecting = false }
+                                            if group.name == "GLOBAL" {
+                                                await tunnel.selectGlobalOutlet(member)
+                                            } else {
+                                                if needsManualSwitch {
+                                                    await tunnel.setProxySelectionMode(.manual, for: group.name)
+                                                }
+                                                await tunnel.selectProxy(group: group.name, member: member)
+                                            }
+                                        }
                                     }
+                                )
+                                if isSelectStrategy {
+                                    row.disabled(selecting || isRequestPending || isMemberUnsupported)
+                                } else {
+                                    row
                                 }
-                                .disabled(selecting || isRequestPending
-                                    || !isSelectStrategy || isMemberUnsupported
-                                    || isFastestLocked)
                             }
                         }
                     }
                     .frame(maxHeight: .infinity)
+                    .onHover { inside in
+                        if !inside {
+                            hoveredMember = nil
+                        }
+                    }
                 }
             }
             .padding(AetherVisual.s2)
@@ -1937,7 +1968,7 @@ private struct MenuNodeSelectorPane: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             } else if group.name != "GLOBAL", tunnel.proxySelectionMode(for: group.name) == .fastest {
-                Text(AppLocalization.string("Manual selection is paused while Fastest mode picks the lowest-latency node."))
+                Text(AppLocalization.string("Auto-fastest active · click any node to switch to manual"))
                     .font(.caption2)
                     .foregroundStyle(AetherVisual.secondaryText)
                     .lineLimit(2)
@@ -1951,6 +1982,21 @@ private struct MenuNodeSelectorPane: View {
                     .accessibilityIdentifier("menu-node-message")
             }
         }
+        .onChange(of: selectedGroupName) { _, _ in
+            hoveredMember = nil
+        }
+        .onChange(of: searchText) { _, _ in
+            hoveredMember = nil
+        }
+        .onDisappear {
+            hoveredMember = nil
+        }
+        .onReceive(tunnel.latencyStore.$proxyLatencies) { _ in
+            guard activeGroup.strategy.lowercased() != "select"
+                || orderedMembers.contains(where: { tunnel.resolvedSubgroupDisplayLeaf(for: $0, in: activeGroup) != nil })
+            else { return }
+            latencyRevision &+= 1
+        }
         .task(id: group.name) {
             if group.name == "GLOBAL" {
                 tunnel.seedGlobalSelectionIfNeeded()
@@ -1960,6 +2006,10 @@ private struct MenuNodeSelectorPane: View {
             guard !Task.isCancelled else { return }
             updateOrder(for: group)
             if tunnel.isConnected {
+                if !tunnel.isUIReviewMode && group.strategy.lowercased() != "select" {
+                    await tunnel.refreshTelemetry()
+                    guard !Task.isCancelled else { return }
+                }
                 await tunnel.refreshProxyLatencyIfNeeded(group: group.name)
                 guard !Task.isCancelled else { return }
                 updateOrder(for: group)
@@ -2084,57 +2134,103 @@ private struct MenuNodeRow: View {
 
     let groupName: String
     let member: String
+    var subgroupLeaf: String? = nil
     var protocolName: String? = nil
     var transportName: String? = nil
     let isSelected: Bool
+    var isDelegatedLeaf: Bool = false
+    var isInteractive: Bool = true
+    let isHovered: Bool
     let isUnsupported: Bool
     let latencyStore: ProxyLatencyStore
     let tunnel: TunnelManager
+    let onHoverChange: (Bool) -> Void
     let action: () -> Void
-    @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: AetherVisual.s2) {
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.accentColor)
-                    .opacity(isSelected ? 1 : 0)
-                    .frame(width: AetherVisual.s3)
-                    .accessibilityHidden(true)
-                AetherRegionCode(name: member)
-                Text(verbatim: member)
-                    .font(.callout.weight(isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let protocolName {
-                    AetherProtocolBadge(type: protocolName, transport: transportName)
+        let helpTitle = subgroupLeaf.map { "\(member) → \($0)" } ?? member
+        Group {
+            if isInteractive {
+                Button(action: action) {
+                    rowContent
                 }
-                MenuNodeRowLatencyLeaf(
-                    groupName: groupName,
-                    member: member,
-                    isUnsupported: isUnsupported,
-                    latencyStore: latencyStore,
-                    tunnel: tunnel
-                )
+                .buttonStyle(.aetherPressable)
+            } else {
+                rowContent
             }
-            .padding(.horizontal, AetherVisual.s2)
-            .frame(height: Self.height)
-            .opacity(isEnabled ? 1 : 0.45)
-            .background(
-                isHovered && isEnabled ? AetherVisual.hoverFill : Color.clear,
-                in: RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.aetherPressable)
-        .onHover { isHovered = $0 }
+        .opacity(isEnabled ? (isUnsupported ? 0.45 : 1) : 0.45)
+        .onHover(perform: onHoverChange)
         .animation(AetherVisual.animation(AetherVisual.quickFade), value: isHovered)
-        .help(Text(verbatim: member))
+        .help(Text(verbatim: helpTitle))
         .accessibilityIdentifier("menu-node-\(member)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var rowContent: some View {
+        let shape = RoundedRectangle(cornerRadius: AetherVisual.controlRadius, style: .continuous)
+        let rowFill: Color = if isSelected {
+            AetherVisual.selectionFill
+        } else if isHovered && isInteractive && isEnabled && !isUnsupported {
+            AetherVisual.hoverFill
+        } else {
+            Color.clear
+        }
+        return HStack(spacing: AetherVisual.s2) {
+            leadingIndicator
+                .frame(width: AetherVisual.s3)
+                .accessibilityHidden(true)
+            AetherRegionCode(name: subgroupLeaf ?? member)
+            HStack(alignment: .firstTextBaseline, spacing: AetherVisual.sCompact) {
+                Text(verbatim: member)
+                    .font(.callout.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                if let subgroupLeaf {
+                    Text(verbatim: "→ \(subgroupLeaf)")
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let protocolName {
+                AetherProtocolBadge(type: protocolName, transport: transportName)
+            }
+            MenuNodeRowLatencyLeaf(
+                groupName: groupName,
+                member: member,
+                isUnsupported: isUnsupported,
+                latencyStore: latencyStore,
+                tunnel: tunnel
+            )
+        }
+        .padding(.horizontal, AetherVisual.s2)
+        .frame(height: Self.height)
+        .background(rowFill, in: shape)
+        .overlay {
+            if isSelected {
+                shape.strokeBorder(AetherVisual.tintBorder(.accentColor), lineWidth: 0.5)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var leadingIndicator: some View {
+        if isSelected {
+            Image(systemName: "checkmark")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.accentColor)
+        } else if isDelegatedLeaf {
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: AetherVisual.statusDotSize, height: AetherVisual.statusDotSize)
+        }
     }
 }
 

@@ -332,6 +332,40 @@
         }
       }
     },
+    "%@ · Connected for %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Connected for %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 已连接 %@"
+          }
+        }
+      }
+    },
+    "%@ · Connected for %@ · via %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · Connected for %@ · via %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 已连接 %@ · 经由 %@"
+          }
+        }
+      }
+    },
     "%@ · %lld members": {
       "localizations": {
         "zh-Hans": {
@@ -12968,6 +13002,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "闪电"
+          }
+        }
+      }
+    },
+    "Listed by macOS under System Settings › Network › Filters & Proxies as “AetherRoute (Transparent Proxy)”; System Settings › VPN only reflects the TUN virtual interface.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listed by macOS under System Settings › Network › Filters & Proxies as “AetherRoute (Transparent Proxy)”; System Settings › VPN only reflects the TUN virtual interface."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 macOS「系统设置 › 网络 › 过滤器和代理」中显示为“AetherRoute (Transparent Proxy)”；「系统设置 › VPN」仅反映 TUN 虚拟网卡状态。"
           }
         }
       }

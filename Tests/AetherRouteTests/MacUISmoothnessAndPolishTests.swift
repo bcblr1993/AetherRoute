@@ -1993,14 +1993,55 @@ struct MacUISmoothnessAndPolishTests {
            (!flushSlice.contains("var nextLatencies = proxyLatencies") || !flushSlice.contains("var nextDates = latencyMeasuredAt")) {
             v.append("[SYS-14] flushPendingLatency() must batch proxyLatencies and latencyMeasuredAt into one write each")
         }
-        let sourcesDir = rootURL.appendingPathComponent("Sources")
-        if let enumerator = FileManager.default.enumerator(at: sourcesDir, includingPropertiesForKeys: nil) {
-            for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
-                let text = try String(contentsOf: fileURL, encoding: .utf8)
-                if text.contains("connectionStage") {
-                    v.append("[SYS-15] Dead connectionStage reference remains in \(fileURL.lastPathComponent)")
+        if let sourcesDir = Optional(rootURL.appendingPathComponent("Sources")) {
+            let enumerator = FileManager.default.enumerator(at: sourcesDir, includingPropertiesForKeys: nil)
+            if let enumerator {
+                for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
+                    let text = try String(contentsOf: fileURL, encoding: .utf8)
+                    if text.contains("connectionStage") {
+                        v.append("[SYS-15] Dead connectionStage reference remains in \(fileURL.lastPathComponent)")
+                    }
                 }
             }
+        }
+
+        // MenuBar node selector: resolves automatic group leaf, single-source hover, subgroup context, fastest auto-switch, and active engine subtitle
+        if let paneSlice = slice(in: aetherApp, from: "private struct MenuNodeSelectorPane:", maxChars: 13_000) {
+            if !paneSlice.contains("tunnel.resolvedMenuSelectedMember(for:") {
+                v.append("[MENU-LEAF-01] MenuNodeSelectorPane must resolve active selection via tunnel.resolvedMenuSelectedMember(for:)")
+            }
+            if !paneSlice.contains("@State private var hoveredMember: String?") {
+                v.append("[MENU-HOVER-01] MenuNodeSelectorPane must track single-source @State private var hoveredMember: String?")
+            }
+            if !paneSlice.contains("subgroupLeaf:") {
+                v.append("[MENU-LEAF-02] MenuNodeSelectorPane must pass subgroupLeaf to MenuNodeRow")
+            }
+            if paneSlice.contains("isFastestLocked") {
+                v.append("[MENU-FASTEST-01] MenuNodeSelectorPane must auto-switch Fastest mode to Manual on click instead of locking rows")
+            }
+        } else {
+            v.append("[MENU-LEAF-01] Could not locate MenuNodeSelectorPane")
+        }
+
+        if let rowSlice = slice(in: aetherApp, from: "private struct MenuNodeRow:", maxChars: 2_500) {
+            if rowSlice.contains("@State private var isHovered") {
+                v.append("[MENU-HOVER-02] MenuNodeRow must not own per-row @State isHovered inside MenuBarExtra ScrollView")
+            }
+            if !rowSlice.contains(".opacity(isEnabled ?") {
+                v.append("[MENU-23] MenuNodeRow lost .opacity(isEnabled ?")
+            }
+        } else {
+            v.append("[MENU-HOVER-02] Could not locate MenuNodeRow")
+        }
+
+        if let menuSubtitleSlice = slice(in: aetherApp, from: "private var headerSubtitle:", maxChars: 1_000),
+           !menuSubtitleSlice.contains("effectiveConnectedEngineMode") {
+            v.append("[VPN-SUBTITLE-01] MenuBarContent.headerSubtitle must display effectiveConnectedEngineMode")
+        }
+
+        if let heroSubtitleSlice = slice(in: contentView, from: "private var heroSubtitle:", maxChars: 1_200),
+           !heroSubtitleSlice.contains("effectiveConnectedEngineMode") {
+            v.append("[VPN-SUBTITLE-02] ConnectionHero.heroSubtitle must display effectiveConnectedEngineMode")
         }
 
         return v

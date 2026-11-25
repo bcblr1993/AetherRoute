@@ -74,6 +74,107 @@ struct TunnelLifecycleV3Tests {
         )
     }
 
+    @Test("shouldAdoptExternalSystemStart only triggers when host is idle and eligible")
+    func testShouldAdoptExternalSystemStartPolicy() {
+        #expect(
+            TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
+                providerIsConnecting: true,
+                isUIReviewMode: false,
+                isPreparing: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                hostIsTransitioning: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false,
+                isApplicationTerminating: false,
+                hasAcceptedPrivacyDisclosure: true,
+                isNetworkSetupRequired: false,
+                permitsNewConnection: true,
+                hasActiveProfile: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
+                providerIsConnecting: false,
+                isUIReviewMode: false,
+                isPreparing: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                hostIsTransitioning: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false,
+                isApplicationTerminating: false,
+                hasAcceptedPrivacyDisclosure: true,
+                isNetworkSetupRequired: false,
+                permitsNewConnection: true,
+                hasActiveProfile: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
+                providerIsConnecting: true,
+                isUIReviewMode: false,
+                isPreparing: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                hostIsTransitioning: false,
+                connectionRequestPending: true,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false,
+                isApplicationTerminating: false,
+                hasAcceptedPrivacyDisclosure: true,
+                isNetworkSetupRequired: false,
+                permitsNewConnection: true,
+                hasActiveProfile: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
+                providerIsConnecting: true,
+                isUIReviewMode: false,
+                isPreparing: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: true,
+                hostIsTransitioning: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false,
+                isApplicationTerminating: false,
+                hasAcceptedPrivacyDisclosure: true,
+                isNetworkSetupRequired: false,
+                permitsNewConnection: true,
+                hasActiveProfile: true
+            )
+        )
+        #expect(
+            !TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
+                providerIsConnecting: true,
+                isUIReviewMode: false,
+                isPreparing: false,
+                isPersistingConfiguration: false,
+                isReloadingConfiguration: false,
+                isSwitchingNetworkEngine: false,
+                hostIsTransitioning: false,
+                connectionRequestPending: false,
+                connectionAttemptPending: false,
+                disconnectionAttemptPending: false,
+                isApplicationTerminating: false,
+                hasAcceptedPrivacyDisclosure: true,
+                isNetworkSetupRequired: false,
+                permitsNewConnection: true,
+                hasActiveProfile: false
+            )
+        )
+        #expect(AppConstants.localizedDescription == "AetherRoute")
+        #expect(AppConstants.transparentProxyLocalizedDescription == "AetherRoute (Transparent Proxy)")
+    }
+
     // MARK: - P0-Bug-1: Atomic Live Profile Reload with Rollback
 
     @Test("TransparentProxyProvider handleReloadProfile uses atomic rebuildRuntime and rolls back on failure")

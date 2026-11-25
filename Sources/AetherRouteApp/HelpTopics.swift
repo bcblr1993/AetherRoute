@@ -75,6 +75,7 @@ enum HelpTopic: String, CaseIterable, Identifiable {
                         AppLocalization.string("Bypass rules can use domains and IP ranges."),
                         AppLocalization.string("No local proxy port, so exporting a proxy in Terminal does not work."),
                         AppLocalization.string("DNS page overrides do not apply; the system DNS is used."),
+                        AppLocalization.string("Listed by macOS under System Settings › Network › Filters & Proxies as “AetherRoute (Transparent Proxy)”; System Settings › VPN only reflects the TUN virtual interface."),
                     ]
                 ),
                 Section(

@@ -1472,24 +1472,27 @@ private struct ConnectionHero: View {
     private var heroSubtitle: some View {
         if tunnel.isConnected, !tunnel.isAutomaticRouteRecovering, let since = tunnel.connectedSince {
             let outlet = ActiveOutlet(tunnel: tunnel)
+            let engineTitle = tunnel.effectiveConnectedEngineMode.localizedTitle
             TimelineView(.periodic(from: since, by: 60)) { context in
                 let duration = AppLocalization.duration(context.date.timeIntervalSince(since))
                 if let outlet {
                     if outlet.isDirectMode {
                         let connectedPrefix = AppLocalization.format(
-                            "Connected for %@",
+                            "%@ · Connected for %@",
+                            engineTitle,
                             duration
                         )
                         Text(verbatim: "\(connectedPrefix) · \(outlet.resolvedNode)")
                     } else {
                         Text(AppLocalization.format(
-                            "Connected for %@ · via %@",
+                            "%@ · Connected for %@ · via %@",
+                            engineTitle,
                             duration,
                             outlet.resolvedNode
                         ))
                     }
                 } else {
-                    Text(AppLocalization.format("Connected for %@", duration))
+                    Text(AppLocalization.format("%@ · Connected for %@", engineTitle, duration))
                 }
             }
         } else if tunnel.state == .disconnected, tunnel.activeProfile != nil {

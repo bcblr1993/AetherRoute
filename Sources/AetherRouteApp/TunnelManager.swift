@@ -57,6 +57,15 @@ extension NetworkEngineMode {
         }
     }
 
+    var systemConfigurationDescription: String {
+        switch self {
+        case .transparent: AppConstants.transparentProxyLocalizedDescription
+#if AETHERROUTE_INDEPENDENT
+        case .tun: AppConstants.localizedDescription
+#endif
+        }
+    }
+
     init?(providerBundleIdentifier: String?) {
         guard let providerBundleIdentifier else { return nil }
         switch providerBundleIdentifier {
@@ -759,6 +768,10 @@ final class TunnelManager: ObservableObject {
     var manager: NEVPNManager?
     var statusObserver: NSObjectProtocol?
     var configurationObserver: NSObjectProtocol?
+    var opposingManager: NEVPNManager?
+    nonisolated(unsafe) var opposingStatusObserver: (any NSObjectProtocol)?
+    var pendingExternalSystemStart = false
+    var externalSystemSwitchTask: Task<Void, Never>?
     nonisolated(unsafe) var cloudSyncObserver: (any NSObjectProtocol)?
     nonisolated(unsafe) var cloudSyncUserRulesObserver: (any NSObjectProtocol)?
     nonisolated(unsafe) var cloudSyncRuleProvidersObserver: (any NSObjectProtocol)?
@@ -1284,6 +1297,10 @@ final class TunnelManager: ObservableObject {
 
     deinit {
         subscriptionUpdateSchedule?.cancel()
+        externalSystemSwitchTask?.cancel()
+        if let opposingStatusObserver {
+            NotificationCenter.default.removeObserver(opposingStatusObserver)
+        }
         if let cloudSyncObserver {
             NotificationCenter.default.removeObserver(cloudSyncObserver)
         }
@@ -1766,6 +1783,9 @@ final class TunnelManager: ObservableObject {
             "stage=setEnabled request=\(enabled ? "connect" : "disconnect", privacy: .public) state=\(Self.diagnosticEventCode(for: self.state).rawValue, privacy: .public) engine=\(self.networkEngineMode.rawValue, privacy: .public) routing=\(self.routingMode.rawValue, privacy: .public)"
         )
         if !enabled {
+            pendingExternalSystemStart = false
+            externalSystemSwitchTask?.cancel()
+            externalSystemSwitchTask = nil
             cancelStartupRestore(reason: clearsUserIntent ? "userDisconnected" : "internalRestart")
             engineReconnect.cancel()
             cancelEgressAvailabilityProbe()
@@ -3746,9 +3766,96 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    func resolvedAutomaticGroupMember(for groupName: String) -> String? {
+        resolvedAutomaticGroupMember(for: groupName, visited: [groupName])
+    }
+
+    private func resolvedAutomaticGroupMember(
+        for groupName: String,
+        visited: Set<String>
+    ) -> String? {
+        guard let summary = activeProfileSummary,
+              let group = summary.proxyGroups.first(where: { $0.name == groupName }) else {
+            return automaticGroupLeaves[groupName]
+        }
+        let rawMembers = proxySelections[groupName]?.members ?? group.members
+        let nonMetadata = rawMembers.filter { !InitialProxySelectionPolicy.isSubscriptionMetadata($0) }
+        let candidates = nonMetadata.isEmpty ? rawMembers : nonMetadata
+
+        if let autoLeaf = automaticGroupLeaves[groupName], !autoLeaf.isEmpty {
+            if candidates.contains(autoLeaf) {
+                return autoLeaf
+            }
+            if let directMember = candidates.first(where: { candidate in
+                var nestedVisited = visited
+                guard nestedVisited.insert(candidate).inserted else { return false }
+                return resolvedLeafNode(from: candidate, maxDepth: 6, visited: nestedVisited) == autoLeaf
+            }) {
+                return directMember
+            }
+            return autoLeaf
+        }
+
+        let resultsByMember = latencyStore.proxyLatencies[groupName]?.resultsByMember ?? [:]
+        switch group.strategy.lowercased() {
+        case "url-test":
+            var bestCandidate: String?
+            var bestDelay: UInt32?
+            for candidate in candidates {
+                guard let delay = resultsByMember[candidate]?.delayMilliseconds else { continue }
+                if bestDelay == nil || delay < bestDelay! {
+                    bestDelay = delay
+                    bestCandidate = candidate
+                }
+            }
+            if let bestCandidate {
+                return bestCandidate
+            }
+        case "fallback":
+            if let firstResponsive = candidates.first(where: { resultsByMember[$0]?.delayMilliseconds != nil }) {
+                return firstResponsive
+            }
+        default:
+            break
+        }
+
+        return candidates.first
+    }
+
+    func resolvedMenuSelectedMember(for group: ProxyGroupConfigurationSummary) -> String? {
+        if group.name == "GLOBAL" {
+            return proxySelections["GLOBAL"]?.selectedMember
+                ?? activeProfileSummary.flatMap { Self.resolvedGlobalTargetMember(in: $0) }
+        }
+        if group.strategy.lowercased() == "select" {
+            return proxySelections[group.name]?.selectedMember
+        }
+        return resolvedAutomaticGroupMember(for: group.name)
+    }
+
+    func resolvedSubgroupDisplayLeaf(
+        for member: String,
+        in group: ProxyGroupConfigurationSummary
+    ) -> String? {
+        guard member != group.name,
+              activeProfileSummary?.proxyGroups.contains(where: { $0.name == member }) == true else {
+            return nil
+        }
+        let leaf = resolvedLeafNode(from: member)
+        return (leaf != member && !leaf.isEmpty) ? leaf : nil
+    }
+
     func resolvedLeafNode(from member: String, maxDepth: Int = 6) -> String {
+        resolvedLeafNode(from: member, maxDepth: maxDepth, visited: [member])
+    }
+
+    private func resolvedLeafNode(
+        from member: String,
+        maxDepth: Int,
+        visited initialVisited: Set<String>
+    ) -> String {
         var current = member
-        var visited: Set<String> = [current]
+        var visited = initialVisited
         for _ in 0..<maxDepth {
             if let autoLeaf = automaticGroupLeaves[current],
                !autoLeaf.isEmpty,
@@ -3762,12 +3869,16 @@ final class TunnelManager: ObservableObject {
                 current = selected
                 continue
             }
-            if let group = activeProfileSummary?.proxyGroups.first(where: { $0.name == current }),
-               let first = group.members.first,
-               !first.isEmpty,
-               visited.insert(first).inserted {
-                current = first
-                continue
+            if let group = activeProfileSummary?.proxyGroups.first(where: { $0.name == current }) {
+                let nextCandidate: String? = group.strategy.lowercased() == "select"
+                    ? group.members.first
+                    : resolvedAutomaticGroupMember(for: current, visited: visited)
+                if let next = nextCandidate,
+                   !next.isEmpty,
+                   visited.insert(next).inserted {
+                    current = next
+                    continue
+                }
             }
             break
         }
@@ -3863,8 +3974,12 @@ final class TunnelManager: ObservableObject {
         }
     }
 
+    var effectiveConnectedEngineMode: NetworkEngineMode {
+        sessionNetworkEngineMode ?? networkEngineMode
+    }
+
     var diagnosticEngine: DiagnosticReport.Engine {
-        switch sessionNetworkEngineMode ?? networkEngineMode {
+        switch effectiveConnectedEngineMode {
         case .transparent: .transparentProxy
 #if AETHERROUTE_INDEPENDENT
         case .tun: .packetTunnel
