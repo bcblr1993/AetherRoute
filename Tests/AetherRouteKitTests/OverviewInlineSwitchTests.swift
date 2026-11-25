@@ -35,27 +35,66 @@ final class OverviewInlineSwitchTests: XCTestCase {
     func testOverviewViewPreservesThreeSectionLayoutAndOverviewExitRowUsesInlineDrawer() throws {
         let contentView = try readSource("Sources/AetherRouteApp/ContentView.swift")
 
-        // 1. OverviewView keeps ConnectionHero -> TrafficCard -> routeSection intact.
+        // 1. OverviewView places ConnectionHero -> controlsSection -> TrafficCard -> routeSection.
         let overviewBody = try XCTUnwrap(
-            sliceBetween(startMarker: "private var overviewSections", endMarker: "private var routeSection", in: contentView)
-                ?? sliceBetween(startMarker: "ConnectionHero(", endMarker: "private var routeSection", in: contentView),
-            "OverviewView must preserve ConnectionHero -> TrafficCard -> routeSection layout"
+            sliceBetween(startMarker: "ConnectionHero(", endMarker: "private var needsOnboarding", in: contentView),
+            "OverviewView must preserve ConnectionHero -> controlsSection -> TrafficCard -> routeSection layout"
         )
         let heroIndex = try XCTUnwrap(overviewBody.range(of: "ConnectionHero(")?.lowerBound)
+        let controlsIndex = try XCTUnwrap(overviewBody.range(of: "controlsSection")?.lowerBound)
         let trafficIndex = try XCTUnwrap(overviewBody.range(of: "TrafficCard(")?.lowerBound)
         let routeIndex = try XCTUnwrap(overviewBody.range(of: "routeSection")?.lowerBound)
-        XCTAssertLessThan(heroIndex, trafficIndex)
+        XCTAssertLessThan(heroIndex, controlsIndex)
+        XCTAssertLessThan(controlsIndex, trafficIndex)
         XCTAssertLessThan(trafficIndex, routeIndex)
 
-        // 2. routeSection still places OverviewExitRow above OverviewRowDivider and OverviewModeRows.
-        let routeSection = try XCTUnwrap(
-            sliceBetween(startMarker: "private var routeSection", endMarker: "private struct ActiveOutlet", in: contentView)
+        // 2. Compact headerless controlsSection above TrafficCard orders Network engine -> Routing mode -> Exit node.
+        let controlsSection = try XCTUnwrap(
+            sliceBetween(startMarker: "private var controlsSection: some View", endMarker: "private var routeSection: some View", in: contentView),
+            "OverviewView must define controlsSection above routeSection"
         )
-        let exitIndex = try XCTUnwrap(routeSection.range(of: "OverviewExitRow()")?.lowerBound)
-        let dividerIndex = try XCTUnwrap(routeSection.range(of: "OverviewRowDivider()")?.lowerBound)
-        let modesIndex = try XCTUnwrap(routeSection.range(of: "OverviewModeRows(")?.lowerBound)
-        XCTAssertLessThan(exitIndex, dividerIndex)
-        XCTAssertLessThan(dividerIndex, modesIndex)
+        XCTAssertFalse(
+            controlsSection.contains("AetherSectionHeader("),
+            "controlsSection must stay compact without a section header above Live Traffic"
+        )
+        XCTAssertTrue(
+            controlsSection.contains(".aetherPanel()") && controlsSection.contains("overview-controls-panel"),
+            "controlsSection must render inside an .aetherPanel() card with identifier overview-controls-panel"
+        )
+        let modesIndex = try XCTUnwrap(controlsSection.range(of: "OverviewModeRows(")?.lowerBound)
+        let exitIndex = try XCTUnwrap(controlsSection.range(of: "OverviewExitRow()")?.lowerBound)
+        XCTAssertLessThan(modesIndex, exitIndex)
+        XCTAssertTrue(
+            controlsSection.contains("overview-network-engine-message")
+                && controlsSection.contains("overview-engine-message-open-setup")
+                && controlsSection.contains("overview-routing-mode-message"),
+            "controlsSection must keep engine and routing inline error banners with setup action"
+        )
+
+        let modeRowsSection = try XCTUnwrap(
+            sliceBetween(startMarker: "private struct OverviewModeRows: View", endMarker: "private struct OverviewRouteCheckRow: View", in: contentView),
+            "OverviewModeRows definition must exist in ContentView.swift"
+        )
+        let engineRowIndex = try XCTUnwrap(modeRowsSection.range(of: "\"Network engine\"")?.lowerBound)
+        let modeDividerIndex = try XCTUnwrap(modeRowsSection.range(of: "OverviewRowDivider()")?.lowerBound)
+        let routingRowIndex = try XCTUnwrap(modeRowsSection.range(of: "\"Routing mode\"")?.lowerBound)
+        XCTAssertLessThan(engineRowIndex, modeDividerIndex)
+        XCTAssertLessThan(modeDividerIndex, routingRowIndex)
+
+        // 3. routeSection below TrafficCard holds only Route check and Egress & AI availability.
+        let routeSection = try XCTUnwrap(
+            sliceBetween(startMarker: "private var routeSection: some View", endMarker: "private struct ActiveOutlet", in: contentView)
+        )
+        XCTAssertTrue(
+            routeSection.contains("AetherSectionHeader(title: AppLocalization.string(\"Overview route section\"))")
+        )
+        let routeCheckIndex = try XCTUnwrap(routeSection.range(of: "OverviewRouteCheckRow()")?.lowerBound)
+        let routeDividerIndex = try XCTUnwrap(routeSection.range(of: "OverviewRowDivider()")?.lowerBound)
+        let egressIndex = try XCTUnwrap(routeSection.range(of: "OverviewEgressRow()")?.lowerBound)
+        XCTAssertLessThan(routeCheckIndex, routeDividerIndex)
+        XCTAssertLessThan(routeDividerIndex, egressIndex)
+        XCTAssertFalse(routeSection.contains("OverviewModeRows("))
+        XCTAssertFalse(routeSection.contains("OverviewExitRow()"))
 
         // 3. OverviewExitRow expands/collapses inline instead of unconditionally navigating on click.
         let exitRowSection = try XCTUnwrap(

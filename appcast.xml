@@ -6,12 +6,12 @@
         <description>Most recent updates for AetherRoute</description>
         <language>en</language>
         <item>
-            <title>Version 3.2.1 (Build 2026112501)</title>
-            <pubDate>Wed, 25 Nov 2026 10:49:02 +0800</pubDate>
-            <sparkle:version>2026112501</sparkle:version>
-            <sparkle:shortVersionString>3.2.1</sparkle:shortVersionString>
+            <title>Version 3.2.2 (Build 2026112503)</title>
+            <pubDate>Wed, 25 Nov 2026 23:49:00 +0800</pubDate>
+            <sparkle:version>2026112503</sparkle:version>
+            <sparkle:shortVersionString>3.2.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.2.1/</sparkle:fullReleaseNotesLink>
+            <sparkle:fullReleaseNotesLink xml:lang="en">https://aethernative.com/apps/aetherroute/releases/3.2.2/</sparkle:fullReleaseNotesLink>
             <description xml:lang="en"><![CDATA[
 <style>
   :root {
@@ -120,26 +120,26 @@
 </style>
 
 <div class="release-header">
-  <span class="release-title">AetherRoute 3.2.1 更新要点</span>
-  <span class="release-badge">Build 2026112501 · 正式发布</span>
+  <span class="release-title">AetherRoute 3.2.2 更新要点</span>
+  <span class="release-badge">Build 2026112503 · 正式发布</span>
 </div>
 <div class="section">
-  <span class="section-tag tag-fix">核心修复与交互优化</span>
+  <span class="section-tag tag-fix">核心修复与界面升级</span>
   <ul>
-    <li><strong>系统设置 › VPN 状态协同与透明代理标识区分</strong>：将透明代理与 TUN 系统配置分别命名为 <code>AetherRoute (Transparent Proxy)</code> 与 <code>AetherRoute</code>，并在概览与菜单栏已连接副标题中明确标注当前承载引擎；切换引擎时主动停用并置灰对侧配置（<code>isEnabled = false</code>），监听系统设置 › VPN 拨动开启事件并自动拉起完整 <code>ProviderLaunchSnapshot</code> 会话，彻底消除「应用内已连接、系统设置 VPN 仍显示已断开」的困惑。</li>
-    <li><strong>菜单栏「选择节点」自动策略组叶节点展示与单源悬停</strong>：新增 <code>resolvedAutomaticGroupMember</code>、<code>resolvedMenuSelectedMember</code> 与 <code>resolvedSubgroupDisplayLeaf</code>，切入 <code>自动选择</code> / <code>故障转移</code> 页签或查看嵌套子组行时实时展示当前命中叶节点与区域标牌；支持 Fastest 模式下点击节点自动切回手动，并将悬停态收拢为列表级单源 <code>hoveredMember</code>，根治多行悬停背景卡死。</li>
-    <li><strong>全量 TDD 回归与隔离验证</strong>：新增外部系统启动采纳及自动策略组叶节点解析回归测试（先红后绿）；本地与远程 ARM64 <code>test.sh</code>、<code>test_fast_lane.sh</code>、双指纹 12 协议互通、Chrome 真实站点（含 ALPS 与 Cloudflare ECH）、43 节点 <code>vm:macos27</code> Mihomo 对照、6 维 VM 矩阵与 <code>300s</code> UI 性能门禁（<code>showcase</code> p95 <code>158.8 ms</code> / 80 MB，<code>large</code> p95 <code>153.1 ms</code> / 78 MB）全部通过。</li>
+    <li><strong>系统设置 › VPN 开关恢复与外部启动宽限握持</strong>：切换或连接透明代理时保持 <code>NETunnelProviderManager.isEnabled = true</code>（确保 <code>scutil --nc list</code> 始终将 <code>AetherRoute</code> 注册为可用状态而非 <code>(Invalid)</code>），并在 Packet Tunnel 与透明代理双扩展补充 <code>450 ms</code> 外部启动载荷轮询宽限，支持从「系统设置 › VPN」随时一键开启开关并由宿主平滑切入 TUN 连接。</li>
+    <li><strong>概览页紧凑无小标题核心控制面板</strong>：在实时流量卡片上方新增无小标题紧凑控制面板（<code>overview-controls-panel</code>），按 <code>网络引擎 → 路由模式 → 出口节点</code> 顺序一屏直达核心切换操作。</li>
+    <li><strong>TUIC v5 QUIC 流不分片与首包保序修复（<code>Core/Engine</code> <code>a42eefa</code>）</strong>：修复 <code>UdpRelayMode::Quic</code> 误按原生数据报 MTU 拆包及首包并发流乱序导致的 <code>sing-box</code> 偶发丢包问题；默认与 Chrome TLS 双指纹 12 协议互通、10 轮 Chrome TUIC 压测、Chrome 真实站点与 43 节点 <code>vm:macos27</code> Mihomo 实网对照均全绿通过。</li>
   </ul>
 </div>
 <div class="footer-bar">
   <span>已通过 Apple 官方公证 · Ed25519 签名验证</span>
-  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.2.1/" target="_blank">查看网页完整更新日志 ↗</a>
+  <a class="footer-link" href="https://aethernative.com/apps/aetherroute/releases/3.2.2/" target="_blank">查看网页完整更新日志 ↗</a>
 </div>
             ]]></description>
             <enclosure
-                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.2.1/AetherRoute-3.2.1-build-2026112501-arm64.dmg"
-                sparkle:edSignature="YfIX5bRpaC+/NorsO36sL3aFtDVIwKkl7QzaDrtWE8iEHgrx64ugEEKS+fbqXOitgRv5uD/5r/3kiRKMu4hODg=="
-                length="34667564"
+                url="https://github.com/bcblr1993/AetherRoute/releases/download/v3.2.2/AetherRoute-3.2.2-build-2026112503-arm64.dmg"
+                sparkle:edSignature="KbhX6Sr0vmL/7BtHQ5hVRUQr3M7NOkWD6iI9QS8amfjwv/4NsLBm0sylaGxpLogyeR53hQcMGHD+0sGWvWIQAA=="
+                length="35202507"
                 type="application/octet-stream" />
         </item>
     </channel>

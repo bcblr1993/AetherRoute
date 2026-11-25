@@ -139,8 +139,16 @@ extension TunnelManager {
     private func saveConfigurationForSetup(_ mode: NetworkEngineMode) async {
         networkSetupStates[mode] = .awaitingConfigurationConsent
         do {
-            if try await loadExistingManager(for: mode) == nil {
-                let manager = makeProviderManager(for: mode, isEnabled: false)
+            if let existing = try await loadExistingManager(for: mode) {
+                if !existing.isEnabled || existing.localizedDescription != mode.systemConfigurationDescription {
+                    try await existing.loadFromPreferences()
+                    existing.isEnabled = true
+                    existing.localizedDescription = mode.systemConfigurationDescription
+                    try await existing.saveToPreferences()
+                    try await existing.loadFromPreferences()
+                }
+            } else {
+                let manager = makeProviderManager(for: mode, isEnabled: true)
                 try await manager.saveToPreferences()
             }
             networkSetupStates[mode] = .ready
@@ -190,6 +198,7 @@ extension TunnelManager {
         // live session is left alone.
         switch state {
         case .connected, .connecting, .recovering, .disconnecting:
+            await deactivateOpposingNetworkEngineManagers(for: networkEngineMode)
             return
         default:
             break

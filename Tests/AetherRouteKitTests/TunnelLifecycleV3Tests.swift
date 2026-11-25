@@ -173,6 +173,8 @@ struct TunnelLifecycleV3Tests {
         )
         #expect(AppConstants.localizedDescription == "AetherRoute")
         #expect(AppConstants.transparentProxyLocalizedDescription == "AetherRoute (Transparent Proxy)")
+        #expect(ProviderLaunchSnapshotCodec.externalBootstrapHoldMilliseconds == 450)
+        #expect(ProviderLaunchSnapshotCodec.externalBootstrapPollMilliseconds == 50)
     }
 
     // MARK: - P0-Bug-1: Atomic Live Profile Reload with Rollback

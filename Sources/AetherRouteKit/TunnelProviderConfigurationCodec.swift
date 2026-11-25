@@ -118,6 +118,8 @@ public enum ProviderLaunchSnapshotCodec {
     public static let startOptionsKey = "aetherRouteLaunchSnapshotV1"
     public static let maximumCompressedBytes = 96 * 1_024 * 1_024
     public static let maximumDecodedBytes = 160 * 1_024 * 1_024
+    public static let externalBootstrapHoldMilliseconds = 450
+    public static let externalBootstrapPollMilliseconds = 50
 
     public static func startOptions(
         for snapshot: ProviderLaunchSnapshot

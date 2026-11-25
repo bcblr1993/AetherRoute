@@ -5,38 +5,38 @@ log-level: warning
 mode: rule
 
 listeners:
-  - name: aetherroute-mieru-59200
+  - name: aetherroute-mieru-39200
     type: mieru
     listen: 127.0.0.1
-    port: 59200
+    port: 39200
     transport: TCP
     users:
       mieru-user: mieru-pass
-  - name: aetherroute-mieru-59201
+  - name: aetherroute-mieru-39201
     type: mieru
     listen: 127.0.0.1
-    port: 59201
+    port: 39201
     transport: UDP
     users:
       mieru-user: mieru-pass
-  - name: aetherroute-mieru-59202
+  - name: aetherroute-mieru-39202
     type: mieru
     listen: 127.0.0.1
-    port: 59202
+    port: 39202
     transport: TCP
     users:
       mieru-user: mieru-pass
-  - name: aetherroute-mieru-59203
+  - name: aetherroute-mieru-39203
     type: mieru
     listen: 127.0.0.1
-    port: 59203
+    port: 39203
     transport: TCP
     users:
       mieru-user: mieru-pass
-  - name: aetherroute-mieru-59204
+  - name: aetherroute-mieru-39204
     type: mieru
     listen: 127.0.0.1
-    port: 59204
+    port: 39204
     transport: TCP
     users:
       mieru-user: mieru-pass

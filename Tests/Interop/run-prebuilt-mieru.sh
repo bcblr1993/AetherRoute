@@ -49,7 +49,58 @@ if grep -Eq '0\.0\.0\.0|listen:[[:space:]]*::|^[[:space:]]*tun:' "$CONFIG"; then
   exit 1
 fi
 mkdir -p "$WORK_DIR/home"
-if ! "$WORK_DIR/mihomo" -d "$WORK_DIR/home" -t -f "$CONFIG" >"$WORK_DIR/check.log" 2>&1; then
+BASE_PORT=$(python3 -c '
+import socket, sys
+for base in range(39200, 39900, 5):
+    ok = True
+    for p in range(base, base + 5):
+        for fam, addr in ((socket.AF_INET6, ("::", p)), (socket.AF_INET, ("127.0.0.1", p))):
+            for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
+                s = socket.socket(fam, kind)
+                try:
+                    if fam == socket.AF_INET6 and hasattr(socket, "IPV6_V6ONLY"):
+                        s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                    s.bind(addr)
+                except OSError:
+                    ok = False
+                    break
+                finally:
+                    s.close()
+            if not ok:
+                break
+        if not ok:
+            break
+    if ok:
+        print(base)
+        sys.exit(0)
+sys.exit(1)
+') || {
+  echo "could not find a free contiguous 5-port Mieru range in 39200..39899" >&2
+  exit 1
+}
+
+P0=$BASE_PORT
+P1=$((BASE_PORT + 1))
+P2=$((BASE_PORT + 2))
+P3=$((BASE_PORT + 3))
+P4=$((BASE_PORT + 4))
+
+sed \
+  -e "s/39200/$P0/g" \
+  -e "s/39201/$P1/g" \
+  -e "s/39202/$P2/g" \
+  -e "s/39203/$P3/g" \
+  -e "s/39204/$P4/g" \
+  "$CONFIG" >"$WORK_DIR/server.yaml"
+sed \
+  -e "s/39200/$P0/g" \
+  -e "s/39201/$P1/g" \
+  -e "s/39202/$P2/g" \
+  -e "s/39203/$P3/g" \
+  -e "s/39204/$P4/g" \
+  "$CASES" >"$WORK_DIR/cases.txt"
+
+if ! "$WORK_DIR/mihomo" -d "$WORK_DIR/home" -t -f "$WORK_DIR/server.yaml" >"$WORK_DIR/check.log" 2>&1; then
   cat "$WORK_DIR/check.log" >&2
   exit 1
 fi
@@ -57,9 +108,9 @@ fi
 run_cycle() {
   cycle=$1
   echo "Prebuilt Mieru cycle $cycle"
-  "$WORK_DIR/mihomo" -d "$WORK_DIR/home" -f "$CONFIG" >"$WORK_DIR/mihomo.log" 2>&1 &
+  "$WORK_DIR/mihomo" -d "$WORK_DIR/home" -f "$WORK_DIR/server.yaml" >"$WORK_DIR/mihomo.log" 2>&1 &
   SERVER_PID=$!
-  for port in 59200 59202 59203 59204; do
+  for port in "$P0" "$P2" "$P3" "$P4"; do
     attempt=0
     until lsof -nP -a -p "$SERVER_PID" -iTCP:"$port" -sTCP:LISTEN 2>/dev/null \
       | grep -F ":$port" >/dev/null; do
@@ -72,7 +123,7 @@ run_cycle() {
     done
   done
 
-  if ! AETHER_INTEROP_MIERU_CASES="$CASES" \
+  if ! AETHER_INTEROP_MIERU_CASES="$WORK_DIR/cases.txt" \
     AETHER_INTEROP_MIERU_USERNAME=mieru-user \
     AETHER_INTEROP_MIERU_PASSWORD=mieru-pass \
     "$TEST_BIN" proxy::interop_tests::interoperates_with_mieru_mihomo_server \
@@ -88,4 +139,4 @@ run_cycle() {
 
 run_cycle 1
 run_cycle 2
-echo "Prebuilt Mieru gate passed: $(grep -Evc '^[[:space:]]*(#|$)' "$CASES" | tr -d ' ') cases"
+echo "Prebuilt Mieru gate passed: $(grep -Evc '^[[:space:]]*(#|$)' "$WORK_DIR/cases.txt" | tr -d ' ') cases"

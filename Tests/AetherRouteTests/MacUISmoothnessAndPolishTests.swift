@@ -2044,6 +2044,107 @@ struct MacUISmoothnessAndPolishTests {
             v.append("[VPN-SUBTITLE-02] ConnectionHero.heroSubtitle must display effectiveConnectedEngineMode")
         }
 
+        // Overview compact headerless controls panel above Live Traffic:
+        // Network engine -> Routing mode -> Exit node; bottom routeSection keeps Route check + Egress.
+        if let overviewBodySlice = slice(in: contentView, from: "private struct OverviewView: View", maxChars: 3_100),
+           let heroRange = overviewBodySlice.range(of: "ConnectionHero("),
+           let controlsRange = overviewBodySlice.range(of: "controlsSection"),
+           let trafficRange = overviewBodySlice.range(of: "TrafficCard("),
+           let routeRange = overviewBodySlice.range(of: "routeSection") {
+            if !(heroRange.lowerBound < controlsRange.lowerBound
+                && controlsRange.lowerBound < trafficRange.lowerBound
+                && trafficRange.lowerBound < routeRange.lowerBound) {
+                v.append("[OVERVIEW-CONTROLS-01] OverviewView must order ConnectionHero -> controlsSection -> TrafficCard -> routeSection")
+            }
+        } else {
+            v.append("[OVERVIEW-CONTROLS-01] Could not locate OverviewView section order (controlsSection above TrafficCard)")
+        }
+
+        if let controlsSlice = slice(in: contentView, from: "private var controlsSection: some View", maxChars: 2_870) {
+            if controlsSlice.contains("AetherSectionHeader(") {
+                v.append("[OVERVIEW-CONTROLS-01] controlsSection must stay a compact headerless panel")
+            }
+            if let modesRange = controlsSlice.range(of: "OverviewModeRows("),
+               let exitRange = controlsSlice.range(of: "OverviewExitRow()") {
+                if modesRange.lowerBound >= exitRange.lowerBound {
+                    v.append("[OVERVIEW-CONTROLS-02] controlsSection must place OverviewModeRows before OverviewExitRow")
+                }
+            } else {
+                v.append("[OVERVIEW-CONTROLS-02] controlsSection must include both OverviewModeRows and OverviewExitRow")
+            }
+        } else {
+            v.append("[OVERVIEW-CONTROLS-02] Could not locate OverviewView.controlsSection")
+        }
+
+        if let modeRowsSlice = slice(in: contentView, from: "private struct OverviewModeRows: View", maxChars: 2_500),
+           let engineRange = modeRowsSlice.range(of: "\"Network engine\""),
+           let routingRange = modeRowsSlice.range(of: "\"Routing mode\"") {
+            if engineRange.lowerBound >= routingRange.lowerBound {
+                v.append("[OVERVIEW-CONTROLS-02] OverviewModeRows must order Network engine before Routing mode")
+            }
+        } else {
+            v.append("[OVERVIEW-CONTROLS-02] Could not verify Network engine -> Routing mode order in OverviewModeRows")
+        }
+
+        if let routeSlice = slice(in: contentView, from: "private var routeSection: some View", maxChars: 900) {
+            if !routeSlice.contains("OverviewRouteCheckRow()") || !routeSlice.contains("OverviewEgressRow()")
+                || routeSlice.contains("OverviewModeRows(") || routeSlice.contains("OverviewExitRow()") {
+                v.append("[OVERVIEW-CONTROLS-03] routeSection must hold only OverviewRouteCheckRow and OverviewEgressRow")
+            }
+        } else {
+            v.append("[OVERVIEW-CONTROLS-03] Could not locate OverviewView.routeSection")
+        }
+
+        // System Settings > VPN interactive availability & external bootstrap adoption
+        let tunnelProviderManagement = try readRepoFile(rootURL, "Sources/AetherRouteApp/TunnelManager+ProviderManagement.swift")
+        let tunnelNetworkSetup = try readRepoFile(rootURL, "Sources/AetherRouteApp/TunnelManager+NetworkSetup.swift")
+        let packetTunnelProvider = try readRepoFile(rootURL, "Sources/AetherRoutePacketTunnel/PacketTunnelProvider.swift")
+        let transparentProxyProvider = try readRepoFile(rootURL, "Sources/AetherRouteTransparentProxy/TransparentProxyProvider.swift")
+
+        if let deactivateSlice = slice(in: tunnelProviderManagement, from: "func deactivateOpposingNetworkEngineManagers(", maxChars: 2_600) {
+            if deactivateSlice.contains("opposing.isEnabled = false") || !deactivateSlice.contains("opposing.isEnabled = true") {
+                v.append("[VPN-EXT-01] deactivateOpposingNetworkEngineManagers must keep opposing.isEnabled = true instead of disabling System Settings VPN")
+            }
+            if let saveRange = deactivateSlice.range(of: "try await opposing.saveToPreferences()"),
+               let reloadRange = deactivateSlice.range(of: "try await opposing.loadFromPreferences()", range: saveRange.upperBound..<deactivateSlice.endIndex) {
+                _ = reloadRange
+            } else {
+                v.append("[VPN-EXT-01] deactivateOpposingNetworkEngineManagers must reload opposing via loadFromPreferences() after saveToPreferences()")
+            }
+        } else {
+            v.append("[VPN-EXT-01] Could not locate deactivateOpposingNetworkEngineManagers")
+        }
+
+        if let setupSaveSlice = slice(in: tunnelNetworkSetup, from: "private func saveConfigurationForSetup(", maxChars: 1_500) {
+            if setupSaveSlice.contains("isEnabled: false") || !setupSaveSlice.contains("makeProviderManager(for: mode, isEnabled: true)") {
+                v.append("[VPN-EXT-01] saveConfigurationForSetup must save configurations enabled (isEnabled: true)")
+            }
+        } else {
+            v.append("[VPN-EXT-01] Could not locate saveConfigurationForSetup")
+        }
+
+        if !packetTunnelProvider.contains("catch ProviderLaunchSnapshotError.missingPayload")
+            || !packetTunnelProvider.contains("completeExternalBootstrapMissingPayload") {
+            v.append("[VPN-EXT-02] PacketTunnelProvider must hold ProviderLaunchSnapshotError.missingPayload via completeExternalBootstrapMissingPayload")
+        }
+        if !transparentProxyProvider.contains("catch ProviderLaunchSnapshotError.missingPayload")
+            || !transparentProxyProvider.contains("completeExternalBootstrapMissingPayload") {
+            v.append("[VPN-EXT-02] TransparentProxyProvider must hold ProviderLaunchSnapshotError.missingPayload via completeExternalBootstrapMissingPayload")
+        }
+
+        if let opposingHandlerSlice = slice(in: tunnelProviderManagement, from: "func handleOpposingStatusChange(", maxChars: 1_800),
+           !opposingHandlerSlice.contains("opposing.connection.stopVPNTunnel()") {
+            v.append("[VPN-EXT-03] handleOpposingStatusChange must call opposing.connection.stopVPNTunnel() immediately on external start detection")
+        }
+        if let updateStateSlice = slice(in: tunnelProviderManagement, from: "func updateState()", maxChars: 3_000) {
+            if !updateStateSlice.contains("canAdoptExternalSystemStart(providerStatus: status)")
+                || !updateStateSlice.contains("connection.stopVPNTunnel()") {
+                v.append("[VPN-EXT-03] updateState must call connection.stopVPNTunnel() when adopting an external system start")
+            }
+        } else {
+            v.append("[VPN-EXT-03] Could not locate TunnelManager.updateState()")
+        }
+
         return v
     }
 }

@@ -6,6 +6,38 @@ All notable changes to AetherRoute are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-11-25
+
+### Fixed & Improved
+- **系统设置 › VPN 开关恢复与外部启动宽限握持（`TunnelManager+ProviderManagement.swift` / `TunnelManager+NetworkSetup.swift` / `TunnelProviderConfigurationCodec.swift` / `PacketTunnelProvider.swift` / `TransparentProxyProvider.swift`）**：
+  - 根因：`3.2.1` 中切换至透明代理时 `deactivateOpposingNetworkEngineManagers(for:)` 将对侧 `NETunnelProviderManager` 的 `isEnabled` 设为 `false`，导致 macOS 系统网络配置数据库（`scutil --nc list`）将 `AetherRoute` VPN 服务标记为 `(Invalid)`，系统设置 › VPN 开关无法打开；同时双扩展在系统设置拨动开关触发的无载荷启动（`options: nil`）下立即上报 `ProviderLaunchSnapshotError.missingPayload` 失败并产生短暂 `.reasserting` 竞态。
+  - 修复：保持对侧 VPN/代理配置 `isEnabled = true` 并补充 `saveToPreferences()` 后的 `loadFromPreferences()` 重载；在 `PacketTunnelProvider` 与 `TransparentProxyProvider` 新增 `450 ms`（`50 ms` 轮询）`ProviderLaunchSnapshotError.missingPayload` 外部启动宽限等待且不误记启动失败遥测；扩展 `canAdoptExternalSystemStart` 兼容 `.reasserting` 并于检测到外部开启时立即 `stopVPNTunnel()` 由宿主无缝切入 TUN 连接；经 `vm:macos27` `scutil --nc` 四场景实机验证通过（透明代理连接态 `scutil --nc list` 呈 `* (Disconnected)`、`scutil --nc start AetherRoute` 接管 TUN 成功、停用重开正常、`LastConnectionIntent=false` 外部开启自动拉起 TUN）。
+- **概览页紧凑无小标题核心控制面板（`ContentView.swift`）**：
+  - 按视觉稿设计将 `网络引擎`、`路由模式` 与 `出口节点` 从概览页底部迁移至 `实时流量`（`TrafficCard`）正上方的新增无小标题紧凑控制面板（`overview-controls-panel`），固定展示顺序 `网络引擎 → 路由模式 → 出口节点`，底部 `routeSection` 专注保留 `线路检查` 与 `出口与 AI 可用性`。
+- **核心引擎 TUIC v5 QUIC 流不分片与首包保序修复（`Core/Engine` commit `a42eefa6ccce39831df617b440ec8e2a21340e7b`，`aether_tuic/mod.rs`）及 Mieru 互通临时端口隔离（`Tests/Interop/run-prebuilt-mieru.sh` / `mihomo-mieru-server.yaml` / `mieru-cases.txt`）**：
+  - 根因：Chrome 指纹 12 协议互通门禁捕获 `TUIC v5 QUIC relay` 偶发 `UDP echo 0 timed out`——`aether_tuic/mod.rs` 在 `UdpRelayMode::Quic` 模式下误按原生不可靠数据报上限（`max_udp_relay_packet_size - 300 = 900` 字节）分片且未在首包/多分片流上等待 `stream.stopped()`，造成 `sing-box` 并发 `accept_uni` 协程竞争初始化 `udpSessionMap[0]`；此外 Mieru 互通夹具固定端口 `59200..59204` 落入 macOS `49152..65535` 临时出站端口段而与宿主机双栈套接字偶发端口冲突。
+  - 修复：`UdpRelayMode::Quic` 载荷分片上限统一对齐 `u16::MAX`（`65,535` 字节）并在 `(packet_id == 0 && fragment_id == 0)` 及 `fragment_id + 1 < fragment_total` 时等待流完成保序；Mieru 测试夹具端口迁移至 `39200..39204` 并支持连续 5 端口动态探测避让；重编双架构静态库（`libclashrs.a` SHA-256 `ef872111ae219a1135cc5e7cf1a339b1e2f33b24bb3d27c09164ebe32baa4ec8`、`libclashrs-direct.a` SHA-256 `db12ea1e87dcc71a025167776b0771748605bcbe56fb0d18d546a5f002552264`）并同步 `Config/ProtocolCoreEvidence.json` 与 `Config/Licenses/ThirdPartyLicenses.json`（`458` 组件 / `124` 许可文本）。
+
+### Verification & Qualification
+- **TDD（Red -> Green）与全量单元回归**：
+  - UI/VPN 守卫（`MacUISmoothnessAndPolishTests` `[OVERVIEW-CONTROLS-01..03]` 与 `[VPN-EXT-01..03]`、`OverviewInlineSwitchTests`、`TunnelLifecycleV3Tests`）与 TUIC 引擎单测（`quic_stream_relays_standard_udp_unfragmented_and_orders_initial_stream` 等）均先验证旧代码失败，再完成实现直到全绿；`RUSTFLAGS="-D warnings"` `proxy::tuic::tests` `5 passed; 0 failed; 1 ignored`。
+  - `./scripts/test_fast_lane.sh` **15/15 PASS**（`846s`，`outputs/fast-lane-20261125T124042Z`，含 `engine-unit` `612 passed`、`differential-e2e` `10/10`、`engine-capabilities` 及完整 11 套件协议互通）；`./scripts/test_distribution_web.sh`、`./scripts/test_sparkle_appcast_generator.sh`、`./scripts/verify_localizations.sh`（`2,148` 直接字面量 / `2,354` 目录键 `en + zh-Hans`）与 `./scripts/verify_protocol_matrix.sh`（`protocols=16 interop_cases=34 independent_tests=10 uncovered_claims=0`）全部 PASS。
+  - 全量 `./scripts/test.sh` 在构建 `2026112503` 最终源码树上于本机（`outputs/test-sh-3.2.2-final.log`）与隔离 ARM64 VM（`outputs/test-evidence/remote-arm64-20261125T145915Z-fast`）全数通过（零警告）：`776` XCTest、`145` Swift Testing（`22` suites）、`114` `TransparentProxySupportTests`、`29` `FlowCoreBridgeTests`、500 轮双引擎泄漏检查（本机 `max_rss_bytes=13156352`，VM `max_rss_bytes=12943360`，`fd_growth=0`）、吞吐压测（本机 `flow_engine_mibps=2477.164` / `packet_engine_mibps=2286.204`，VM `flow_engine_mibps=3439.011` / `packet_engine_mibps=3049.943`）。
+- **双指纹 12 协议互通、Chrome 真实站点与 43 节点实网对照**：
+  - 默认指纹（`outputs/interop-default-3.2.2-2026112503`）与 Chrome 指纹（`outputs/interop-chrome-3.2.2-2026112503`）12 协议互通均 **11/11 suites PASS**（各 `68` 项互通 + `34` 项证书拒签，测试二进制 SHA-256 `a416dbbdc28b2be0b09a1fd791db723650e51b81c39524cc7b35ad02b8ce51fd`），外加 10 轮 Chrome `TUIC v5,TUIC v5 QUIC relay` 连续压测零丢包；Chrome `real_site_tests` **2/2 PASS**（`3.35s`，Cloudflare ECH + 9 站 ALPS 全过）；`vm:macos27` 43 节点实网对照 Mihomo（`outputs/protocol-lab-diff-3.2.2-2026112503`）`both_ok=42, both_fail=1, ours_missing=0, ours_fail=0, mihomo_fail=0`。
+- **全量隔离验收（`vm:macos27`，`outputs/acceptance-3.2.2-2026112503`，Build `2026112503`）**：
+  - 6 维 Tart VM 矩阵：`160 PASS / 0 FAIL / 50 SKIP`（透明代理 5 大专项门禁各 `3 passed`）。
+  - UI 卡顿与内存预算门禁（`300s / 300s`，`status=passed`，预算 `p95<=180 ms`、`max<=300 ms`、`median<=90 MB`、`max<=110 MB`、`growth<=8 MB`）：
+    - `showcase`（`n=420`）：切页 `p50=104.7 ms / p95=151.0 ms / max=160.9 ms`（对比 `3.2.1` `p95=158.8 ms / max=242.2 ms`，`p95` 与峰值双双显著下降），内存 `median=79 MB / max=94 MB / growth=+2 MB`（对比 `3.2.1` `80 MB / 94 MB / +2 MB`）；
+    - `large`（`n=420`）：切页 `p50=104.9 ms / p95=148.4 ms / max=160.2 ms`（对比 `3.2.1` `p95=153.1 ms / max=197.5 ms`），内存 `median=77 MB / max=92 MB / growth=+2 MB`（对比 `3.2.1` `78 MB / 92 MB / +3 MB`）。
+  - 公证稳定候选与双引擎运行时证据（候选 DMG `94b1e3a6535a945dd38860fe1f4b5d8b74d3eaf696fbfa7457de0d93e280e57e`，App Notary ID `b507a267-057e-4e8c-af19-9d47df796ed0`，候选 DMG Notary ID `e4d9b7ef-f2f4-4c9b-a920-fc5c4d48c3cf`）：
+    - TUN：`50s` 空闲复用 PASS、`2 MiB` 上传 `1.568765s`、3 轮 6 次网卡切换恢复 `1/3/3/2/3/4 s`；
+    - 透明代理：`50s` 空闲复用 PASS、`2 MiB` 上传 `1.463150s`、3 轮 6 次网卡切换恢复 `3/3/2/3/2/3 s`。
+
+### Distribution
+- `AetherRoute-3.2.2-build-2026112503-arm64.dmg`: `35,202,507` bytes, SHA-256 `e70f3113d2cad142f95a0e9a7d8afd287c802351a812f7c49cf09003a6254cc3`
+- Sparkle Ed25519 Signature: `KbhX6Sr0vmL/7BtHQ5hVRUQr3M7NOkWD6iI9QS8amfjwv/4NsLBm0sylaGxpLogyeR53hQcMGHD+0sGWvWIQAA==`
+
 ## [3.2.1] - 2026-11-25
 
 ### Fixed & Improved

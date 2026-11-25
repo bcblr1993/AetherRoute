@@ -332,9 +332,9 @@ extension TunnelManager {
         return manager
     }
 
-    /// A new, unsaved configuration for `mode`. First-run setup saves one
-    /// per engine disabled, so creating the TUN configuration does not switch
-    /// off another app's VPN; connecting enables it.
+    /// A new, unsaved configuration for `mode`. Keeping both engines enabled in
+    /// preferences (without On-Demand rules) allows System Settings › VPN to
+    /// remain interactive while only the active engine carries traffic.
     func makeProviderManager(
         for mode: NetworkEngineMode,
         isEnabled: Bool
@@ -599,14 +599,20 @@ extension TunnelManager {
                 }
                 if (opposing.protocolConfiguration as? NETunnelProviderProtocol)?
                     .providerBundleIdentifier == opposingMode.providerBundleIdentifier,
-                   opposing.isEnabled || opposing.localizedDescription != opposingMode.systemConfigurationDescription {
+                   !opposing.isEnabled || opposing.localizedDescription != opposingMode.systemConfigurationDescription {
                     let wasPersisting = isPersistingConfiguration
                     isPersistingConfiguration = true
                     defer { isPersistingConfiguration = wasPersisting }
                     try await opposing.loadFromPreferences()
-                    opposing.isEnabled = false
+                    opposing.isEnabled = true
                     opposing.localizedDescription = opposingMode.systemConfigurationDescription
                     try await opposing.saveToPreferences()
+                    try await opposing.loadFromPreferences()
+                    var settleAttempts = 0
+                    while opposing.connection.status == .invalid && settleAttempts < 40 {
+                        settleAttempts += 1
+                        try? await Task.sleep(for: .milliseconds(25))
+                    }
                 }
             }
             let matching = opposingManagers.filter {
@@ -650,7 +656,7 @@ extension TunnelManager {
 
     func canAdoptExternalSystemStart(providerStatus: NEVPNStatus) -> Bool {
         TunnelLifecycleTransitionPolicy.shouldAdoptExternalSystemStart(
-            providerIsConnecting: providerStatus == .connecting,
+            providerIsConnecting: providerStatus == .connecting || providerStatus == .reasserting,
             isUIReviewMode: isUIReviewMode,
             isPreparing: isPreparing,
             isPersistingConfiguration: isPersistingConfiguration,
@@ -678,6 +684,7 @@ extension TunnelManager {
         Self.runtimeLogger.info(
             "stage=externalSystemStart opposingDetected targetEngine=\(opposingMode.rawValue, privacy: .public)"
         )
+        opposing.connection.stopVPNTunnel()
         externalSystemSwitchTask = Task { @MainActor [weak self] in
             for _ in 0..<40 {
                 guard !Task.isCancelled, let self, self.opposingManager === opposing else {
@@ -685,8 +692,11 @@ extension TunnelManager {
                     return
                 }
                 let currentStatus = opposing.connection.status
-                if Self.isTerminalProviderStatus(currentStatus) || currentStatus == .connected {
+                if Self.isTerminalProviderStatus(currentStatus) {
                     break
+                }
+                if currentStatus == .connected {
+                    opposing.connection.stopVPNTunnel()
                 }
                 try? await Task.sleep(for: .milliseconds(50))
             }
@@ -833,6 +843,7 @@ extension TunnelManager {
             }
             installManager(reloaded)
             updateState()
+            await deactivateOpposingNetworkEngineManagers(for: networkEngineMode)
             Self.runtimeLogger.info("stage=configurationChange reload success")
         } catch {
             Self.runtimeLogger.error(
@@ -893,12 +904,13 @@ extension TunnelManager {
                 return
             }
         }
-        if status == .connecting,
+        if status == .connecting || status == .reasserting,
            (state == .disconnected || isFailed),
            canAdoptExternalSystemStart(providerStatus: status) {
             pendingExternalSystemStart = true
             state = .connecting
             Self.runtimeLogger.info("stage=updateState externalSystemStartDetected")
+            connection.stopVPNTunnel()
             return
         }
         if status == .connected, previousProviderStatus != .connected {

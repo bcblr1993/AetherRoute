@@ -278,6 +278,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
                 }
             }
             Self.runtimeLogger.info("stage=startCore submitted")
+        } catch ProviderLaunchSnapshotError.missingPayload {
+            Self.runtimeLogger.info(
+                "stage=startTunnel externalBootstrapMissingPayload holdingForHostAdoption"
+            )
+            completeExternalBootstrapMissingPayload(completion)
         } catch {
             Self.runtimeLogger.error(
                 "stage=startTunnel failed error=\(String(reflecting: error), privacy: .public)"
@@ -288,6 +293,28 @@ final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
             )
             diagnostics.record(.startupFailure)
             currentCore().stop { completion.call(error) }
+        }
+    }
+
+    private func completeExternalBootstrapMissingPayload(
+        _ completion: TunnelStartCompletion,
+        elapsedMilliseconds: Int = 0
+    ) {
+        let isStopping = uplinkLock.withLock { providerStopping }
+        if isStopping || elapsedMilliseconds >= ProviderLaunchSnapshotCodec.externalBootstrapHoldMilliseconds {
+            completion.call(ProviderLaunchSnapshotError.missingPayload)
+            return
+        }
+        let pollInterval = ProviderLaunchSnapshotCodec.externalBootstrapPollMilliseconds
+        providerMessageQueue.asyncAfter(deadline: .now() + .milliseconds(pollInterval)) { [weak self] in
+            guard let self else {
+                completion.call(ProviderLaunchSnapshotError.missingPayload)
+                return
+            }
+            self.completeExternalBootstrapMissingPayload(
+                completion,
+                elapsedMilliseconds: elapsedMilliseconds + pollInterval
+            )
         }
     }
 

@@ -229,6 +229,12 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 policy: snapshot.bypassPolicy
             )
             Self.runtimeLog.aggregate("stage=loadBypassPolicy success")
+        } catch ProviderLaunchSnapshotError.missingPayload {
+            Self.runtimeLog.lifecycle(
+                "stage=startProxy externalBootstrapMissingPayload holdingForHostAdoption"
+            )
+            completeExternalBootstrapMissingPayload(completion)
+            return
         } catch {
             diagnostics.record(.startupFailure)
             Self.runtimeLog.failure(
@@ -406,6 +412,28 @@ final class TransparentProxyProvider: NETransparentProxyProvider,
                 "runtime preparation failed: \(String(reflecting: error))"
             )
             throw error
+        }
+    }
+
+    private func completeExternalBootstrapMissingPayload(
+        _ completion: ProxyStartCompletion,
+        elapsedMilliseconds: Int = 0
+    ) {
+        let isStopping = uplinkLock.withLock { providerStopping }
+        if isStopping || elapsedMilliseconds >= ProviderLaunchSnapshotCodec.externalBootstrapHoldMilliseconds {
+            completion.call(ProviderLaunchSnapshotError.missingPayload)
+            return
+        }
+        let pollInterval = ProviderLaunchSnapshotCodec.externalBootstrapPollMilliseconds
+        reloadWorkerQueue.asyncAfter(deadline: .now() + .milliseconds(pollInterval)) { [weak self] in
+            guard let self else {
+                completion.call(ProviderLaunchSnapshotError.missingPayload)
+                return
+            }
+            self.completeExternalBootstrapMissingPayload(
+                completion,
+                elapsedMilliseconds: elapsedMilliseconds + pollInterval
+            )
         }
     }
 

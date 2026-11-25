@@ -1074,6 +1074,9 @@ private struct OverviewView: View {
                     openProfiles: openProfiles,
                     openNetworkSetup: { activeSheet = .networkSetup }
                 )
+                if !needsOnboarding {
+                    controlsSection
+                }
                 if showsTraffic {
                     TrafficCard(
                         isConnected: tunnel.isConnected,
@@ -1152,62 +1155,72 @@ private struct OverviewView: View {
         )
     }
 
-    /// Where traffic goes and how: one grouped list, as in System Settings.
+    /// Core connection controls above Live Traffic:
+    /// 1. Network engine -> 2. Routing mode -> 3. Exit node (with inline drawer).
+    private var controlsSection: some View {
+        VStack(spacing: 0) {
+            OverviewModeRows(
+                networkEngineMode: tunnel.networkEngineMode,
+                routingMode: tunnel.effectiveRoutingMode,
+                canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
+                canChangeRoutingMode: tunnel.canChangeRoutingMode,
+                selectNetworkEngine: { mode in
+                    Task { await tunnel.setNetworkEngineMode(mode) }
+                },
+                selectRoutingMode: { mode in
+                    Task { await tunnel.setRoutingMode(mode) }
+                }
+            )
+            if let message = tunnel.networkEngineMessage, tunnel.networkEngineMessageIsError {
+                OverviewRowDivider()
+                HStack(spacing: AetherVisual.s2) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AetherReadableTint(color: .orange))
+                        .accessibilityHidden(true)
+                    Text(verbatim: message)
+                        .font(.caption)
+                        .foregroundStyle(AetherVisual.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("overview-network-engine-message")
+                    if tunnel.networkEngineBlockedNeedsSetup {
+                        Button {
+                            activeSheet = .networkSetup
+                        } label: {
+                            Text(
+                                AppLocalization.string("Open Network Setup…")
+                            )
+                        }
+                        .aetherButton()
+                        .controlSize(.small)
+                        .accessibilityIdentifier("overview-engine-message-open-setup")
+                    }
+                }
+                .padding(.horizontal, AetherVisual.s3)
+                .padding(.vertical, AetherVisual.s2)
+            }
+            if let message = tunnel.routingModeMessage, tunnel.routingModeMessageIsError {
+                OverviewRowDivider()
+                AetherInlineMessage(text: message, kind: .failure, isCompact: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, AetherVisual.s3)
+                    .padding(.vertical, AetherVisual.s2)
+                    .accessibilityIdentifier("overview-routing-mode-message")
+            }
+            OverviewRowDivider()
+            OverviewExitRow()
+        }
+        .aetherPanel()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("overview-controls-panel")
+        .transition(.opacity)
+    }
+
+    /// Route quality and egress diagnostics below Live Traffic.
     private var routeSection: some View {
         VStack(alignment: .leading, spacing: AetherVisual.s2) {
             AetherSectionHeader(title: AppLocalization.string("Overview route section"))
             VStack(spacing: 0) {
-                OverviewExitRow()
-                OverviewRowDivider()
-                OverviewModeRows(
-                    networkEngineMode: tunnel.networkEngineMode,
-                    routingMode: tunnel.effectiveRoutingMode,
-                    canChangeNetworkEngine: tunnel.canChangeNetworkEngine,
-                    canChangeRoutingMode: tunnel.canChangeRoutingMode,
-                    selectNetworkEngine: { mode in
-                        Task { await tunnel.setNetworkEngineMode(mode) }
-                    },
-                    selectRoutingMode: { mode in
-                        Task { await tunnel.setRoutingMode(mode) }
-                    }
-                )
-                if let message = tunnel.routingModeMessage, tunnel.routingModeMessageIsError {
-                    OverviewRowDivider()
-                    AetherInlineMessage(text: message, kind: .failure, isCompact: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, AetherVisual.s3)
-                        .padding(.vertical, AetherVisual.s2)
-                        .accessibilityIdentifier("overview-routing-mode-message")
-                }
-                if let message = tunnel.networkEngineMessage, tunnel.networkEngineMessageIsError {
-                    OverviewRowDivider()
-                    HStack(spacing: AetherVisual.s2) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(AetherReadableTint(color: .orange))
-                            .accessibilityHidden(true)
-                        Text(verbatim: message)
-                            .font(.caption)
-                            .foregroundStyle(AetherVisual.secondaryText)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityIdentifier("overview-network-engine-message")
-                        if tunnel.networkEngineBlockedNeedsSetup {
-                            Button {
-                                activeSheet = .networkSetup
-                            } label: {
-                                Text(
-                                    AppLocalization.string("Open Network Setup…")
-                                )
-                            }
-                            .aetherButton()
-                            .controlSize(.small)
-                            .accessibilityIdentifier("overview-engine-message-open-setup")
-                        }
-                    }
-                    .padding(.horizontal, AetherVisual.s3)
-                    .padding(.vertical, AetherVisual.s2)
-                }
-                OverviewRowDivider()
                 OverviewRouteCheckRow()
                 OverviewRowDivider()
                 OverviewEgressRow()
@@ -2632,6 +2645,18 @@ private struct OverviewModeRows: View, @MainActor Equatable {
 
     var body: some View {
         VStack(spacing: 0) {
+#if AETHERROUTE_INDEPENDENT
+            OverviewModeRow(
+                symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
+                tint: .blue,
+                title: AppLocalization.string("Network engine"),
+                help: .networkEngine,
+                hint: networkEngineMode.shortHint
+            ) {
+                enginePicker
+            }
+            OverviewRowDivider()
+#endif
             // Side by side with its hint, then without it; when even the
             // control alone does not fit beside the title (long
             // translations), the control moves below it rather than
@@ -2645,18 +2670,6 @@ private struct OverviewModeRows: View, @MainActor Equatable {
             ) {
                 routingPicker
             }
-#if AETHERROUTE_INDEPENDENT
-            OverviewRowDivider()
-            OverviewModeRow(
-                symbol: networkEngineMode == .tun ? "bolt.shield.fill" : "shield.fill",
-                tint: .blue,
-                title: AppLocalization.string("Network engine"),
-                help: .networkEngine,
-                hint: networkEngineMode.shortHint
-            ) {
-                enginePicker
-            }
-#endif
         }
     }
 
